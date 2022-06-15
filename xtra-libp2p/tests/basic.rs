@@ -9,6 +9,10 @@ use libp2p_core::Multiaddr;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_tasks::Tasks;
+use tracing::level_filters::LevelFilter;
+use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
@@ -26,6 +30,7 @@ use xtra_libp2p::ListenOn;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncSafe;
 
 #[tokio::test]
 async fn hello_world() {
@@ -492,4 +497,180 @@ async fn hello_world_listener(stream: xtra_libp2p::Substream) -> Result<()> {
     stream.send(Bytes::from(format!("Hello {name}!"))).await?;
 
     Ok(())
+}
+
+#[derive(Default)]
+struct ParallelMessageExchange {
+    is_done: bool,
+    tasks: Tasks,
+}
+
+#[xtra_productivity(message_impl = false)]
+impl ParallelMessageExchange {
+    async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
+        tracing::info!("New parallel message stream from {}", msg.peer);
+
+        let this = ctx.address().expect("self to be alive");
+
+        let future = async move {
+            parallel_message_exchange_listener(msg.stream).await?;
+            this.send_async_safe(ListenerDone).await?;
+
+            anyhow::Ok(())
+        };
+
+        self.tasks.add_fallible(future, move |e| async move {
+            tracing::warn!("Parallel message with peer {} failed: {}", msg.peer, e);
+        });
+    }
+}
+
+#[xtra_productivity]
+impl ParallelMessageExchange {
+    async fn handle(&mut self, _: ListenerDone) {
+        self.is_done = true;
+    }
+
+    async fn handle(&mut self, _: CheckListenerDone) -> bool {
+        self.is_done
+    }
+}
+
+struct ListenerDone;
+struct CheckListenerDone;
+
+#[async_trait]
+impl Actor for ParallelMessageExchange {
+    type Stop = ();
+
+    async fn stopped(self) -> Self::Stop {}
+}
+
+#[tokio::test]
+async fn parallel_message_exchange() {
+    let _guard = init_tracing();
+
+    for _ in 0..50 {
+        let alice_pme_handler = ParallelMessageExchange::default()
+            .create(None)
+            .spawn_global();
+
+        let (alice, bob, _) = alice_and_bob(
+            [(
+                "/pme/1.0.0",
+                xtra::message_channel::StrongMessageChannel::clone_channel(&alice_pme_handler),
+            )],
+            [],
+        )
+        .await;
+
+        let bob_to_alice = bob
+            .endpoint
+            .send(OpenSubstream::single_protocol(alice.peer_id, "/pme/1.0.0"))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let dialer = async move {
+            parallel_message_exchange_dialer(bob_to_alice)
+                .await
+                .unwrap();
+        };
+
+        tokio::task::spawn(dialer);
+
+        // Wait for listener to finish
+        while !alice_pme_handler.send(CheckListenerDone).await.unwrap() {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+}
+
+async fn parallel_message_exchange_dialer(stream: xtra_libp2p::Substream) -> Result<()> {
+    let mut stream =
+        asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec).fuse();
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    tracing::info!("dialer before send 1");
+    stream.send(Bytes::from("Dialer1")).await?;
+    tracing::info!("dialer after send1");
+
+    tracing::info!("dialer before receive 1");
+    let bytes = stream
+        .select_next_some()
+        .await
+        .context("Expected message")?;
+    tracing::info!("dialer after receive 1");
+    let message = String::from_utf8(bytes.to_vec())?;
+
+    assert_eq!(message, "Listener1");
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    tracing::info!("dialer before send 2");
+    stream.send(Bytes::from("Dialer2")).await?;
+    tracing::info!("dialer after send 2");
+
+    tracing::info!("dialer before receive 2");
+    let bytes = stream
+        .select_next_some()
+        .await
+        .context("Expected message")?;
+    tracing::info!("dialer after receive 2");
+    let message = String::from_utf8(bytes.to_vec())?;
+
+    tracing::info!("Dialer finished");
+
+    assert_eq!(message, "Listener2");
+
+    Ok(())
+}
+
+async fn parallel_message_exchange_listener(stream: xtra_libp2p::Substream) -> Result<()> {
+    let mut stream =
+        asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec).fuse();
+
+    tracing::info!("listener before send 1");
+    stream.send(Bytes::from("Listener1")).await?;
+    tracing::info!("listener after send 1");
+
+    tracing::info!("listener before receive 1");
+    let bytes = stream.select_next_some().await?;
+    tracing::info!("listener after receive 1");
+    let name = String::from_utf8(bytes.to_vec())?;
+
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    assert_eq!(name, "Dialer1");
+
+    tracing::info!("listener before send 2");
+    stream.send(Bytes::from("Listener2")).await?;
+    tracing::info!("listener after send 2");
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    tracing::info!("listener before receive 2");
+    let bytes = stream.select_next_some().await?;
+    tracing::info!("listener after receive 2");
+    let name = String::from_utf8(bytes.to_vec())?;
+
+    tracing::info!("Listener finished");
+
+    assert_eq!(name, "Dialer2");
+
+    Ok(())
+}
+
+pub fn init_tracing() -> DefaultGuard {
+    let filter = EnvFilter::from_default_env()
+        // apply warning level globally
+        .add_directive(LevelFilter::WARN.into())
+        // log traces from test itself
+        .add_directive("basic=debug".parse().unwrap())
+        .add_directive("xtra_libp2p=debug".parse().unwrap());
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_test_writer()
+        .set_default()
 }
