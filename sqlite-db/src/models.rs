@@ -374,3 +374,19 @@ impl From<model::Identity> for Identity {
         Self(model.pk())
     }
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct Timestamp(i64);
+
+impl From<Timestamp> for model::Timestamp {
+    fn from(t: Timestamp) -> Self {
+        model::Timestamp::new(t.0)
+    }
+}
+
+impl From<model::Timestamp> for Timestamp {
+    fn from(t: model::Timestamp) -> Self {
+        Self(t.seconds())
+    }
+}

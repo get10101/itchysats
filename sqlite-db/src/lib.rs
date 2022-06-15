@@ -213,6 +213,7 @@ impl Connection {
         let (event_name, event_data) = event.event.to_json();
 
         let order_id = models::OrderId::from(event.id);
+        let timestamp = models::Timestamp::from(event.timestamp);
         let query_result = sqlx::query(
             r##"
         insert into events (
@@ -228,7 +229,7 @@ impl Connection {
         .bind(&order_id)
         .bind(&event_name)
         .bind(&event_data)
-        .bind(&event.timestamp)
+        .bind(&timestamp)
         .execute(&mut conn)
         .await?;
 
@@ -616,7 +617,7 @@ async fn load_cfd_events(
             events.id as event_row_id,
             name,
             data,
-            created_at as "created_at: model::Timestamp"
+            created_at as "created_at: models::Timestamp"
         from
             events
         join
@@ -636,7 +637,7 @@ async fn load_cfd_events(
             row.cfd_row_id.context("CFD with id not found {id}")?,
             row.event_row_id,
             CfdEvent {
-                timestamp: row.created_at,
+                timestamp: row.created_at.into(),
                 id: id.into(),
                 event: EventKind::from_json(row.name, row.data)?,
             },
