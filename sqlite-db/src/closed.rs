@@ -171,7 +171,7 @@ impl Connection {
                 uuid as "uuid: models::OrderId",
                 position as "position: model::Position",
                 initial_price as "initial_price: models::Price",
-                taker_leverage as "taker_leverage: model::Leverage",
+                taker_leverage as "taker_leverage: models::Leverage",
                 n_contracts as "n_contracts: model::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
@@ -216,7 +216,7 @@ impl Connection {
             id,
             position: cfd.position,
             initial_price: cfd.initial_price.into(),
-            taker_leverage: cfd.taker_leverage,
+            taker_leverage: cfd.taker_leverage.into(),
             n_contracts: cfd.n_contracts,
             counterparty_network_identity: cfd.counterparty_network_identity,
             counterparty_peer_id: cfd.counterparty_peer_id,
@@ -592,6 +592,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
     };
     let id = models::OrderId::from(cfd.id);
     let role = models::Role::from(cfd.role);
+    let taker_leverage = models::Leverage::from(cfd.taker_leverage);
 
     let query_result = sqlx::query!(
         r#"
@@ -615,7 +616,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         id,
         cfd.position,
         cfd.initial_price,
-        cfd.taker_leverage,
+        taker_leverage,
         cfd.n_contracts,
         cfd.counterparty_network_identity,
         counterparty_peer_id,

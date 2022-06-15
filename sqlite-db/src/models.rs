@@ -289,3 +289,28 @@ impl FromStr for Price {
 }
 
 impl_sqlx_type_display_from_str!(Price);
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct Leverage(u8);
+
+impl fmt::Display for Leverage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let leverage = self.0;
+
+        write!(f, "x{leverage}")
+    }
+}
+
+impl From<model::Leverage> for Leverage {
+    fn from(leverage: model::Leverage) -> Self {
+        Self(leverage.get())
+    }
+}
+
+impl From<Leverage> for model::Leverage {
+    fn from(leverage: Leverage) -> Self {
+        model::Leverage::new(leverage.0)
+            .expect("Self conversion from one leverage to the other should work")
+    }
+}

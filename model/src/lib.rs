@@ -156,8 +156,7 @@ impl InversePrice {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
-#[sqlx(transparent)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Leverage(u8);
 
 impl Leverage {

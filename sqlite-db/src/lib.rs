@@ -147,6 +147,7 @@ impl Connection {
         let role = models::Role::from(cfd.role());
         let quantity = models::Usd::from(cfd.quantity());
         let initial_price = models::Price::from(cfd.initial_price());
+        let leverage = models::Leverage::from(cfd.taker_leverage());
 
         let query_result = sqlx::query(
             r#"
@@ -168,7 +169,7 @@ impl Connection {
         .bind(&id)
         .bind(&cfd.position())
         .bind(&initial_price)
-        .bind(&cfd.taker_leverage())
+        .bind(&leverage)
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
         .bind(&quantity)
         .bind(&cfd.counterparty_network_identity())
@@ -520,7 +521,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 uuid as "uuid: models::OrderId",
                 position as "position: model::Position",
                 initial_price as "initial_price: models::Price",
-                leverage as "leverage: model::Leverage",
+                leverage as "leverage: models::Leverage",
                 settlement_time_interval_hours,
                 quantity_usd as "quantity_usd: models::Usd",
                 counterparty_network_identity as "counterparty_network_identity: model::Identity",
@@ -552,7 +553,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
         id: cfd_row.uuid.into(),
         position: cfd_row.position,
         initial_price: cfd_row.initial_price.into(),
-        taker_leverage: cfd_row.leverage,
+        taker_leverage: cfd_row.leverage.into(),
         settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
         quantity_usd: cfd_row.quantity_usd.into(),
         counterparty_network_identity,
