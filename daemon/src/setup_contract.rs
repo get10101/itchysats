@@ -665,16 +665,35 @@ pub async fn roll_over(
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
-    sink.send(RolloverMsg::Msg3(RolloverMsg3))
-        .await
-        .context("Failed to send Msg3")?;
-    let _ = stream
-        .next()
-        .timeout(ROLLOVER_MSG_TIMEOUT)
-        .await
-        .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
-        .context("Empty stream instead of Msg3")?
-        .try_into_msg3()?;
+    match our_role {
+        Role::Taker => {
+            // Taker sends first and then waits for maker to send so we don't accidentally close the
+            // substream too early
+            sink.send(RolloverMsg::Msg3(RolloverMsg3))
+                .await
+                .context("Failed to send Msg3")?;
+            let _ = stream
+                .next()
+                .timeout(ROLLOVER_MSG_TIMEOUT)
+                .await
+                .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+                .context("Empty stream instead of Msg3")?
+                .try_into_msg3()?;
+        }
+        Role::Maker => {
+            // Maker first waits for taker to send and then sends.
+            let _ = stream
+                .next()
+                .timeout(ROLLOVER_MSG_TIMEOUT)
+                .await
+                .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+                .context("Empty stream instead of Msg3")?
+                .try_into_msg3()?;
+            sink.send(RolloverMsg::Msg3(RolloverMsg3))
+                .await
+                .context("Failed to send Msg3")?;
+        }
+    }
 
     Ok(Dlc {
         identity: sk,
