@@ -23,12 +23,11 @@ use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
 use model::olivia;
+use model::Contracts;
 use model::Identity;
 use model::Leverage;
 use model::OrderId;
 use model::Position;
-use model::Usd;
-use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -204,7 +203,7 @@ async fn taker_takes_order_and_maker_rejects() {
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(order_id, Usd::new(dec!(10)), Leverage::TWO)
+        .place_order(order_id, Contracts::new(10), Leverage::TWO)
         .await
         .unwrap();
 
@@ -236,7 +235,7 @@ async fn another_offer_is_automatically_created_after_taker_takes_order() {
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(order_id_take, Usd::new(dec!(10)), Leverage::TWO)
+        .place_order(order_id_take, Contracts::new(10), Leverage::TWO)
         .await
         .unwrap();
 
@@ -281,14 +280,14 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
         .await
         .unwrap();
 
-    let order_id = received.short.unwrap().id;
+    let offer_id = received.short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
 
-    taker
+    let order_id = taker
         .system
-        .take_offer(order_id, Usd::new(dec!(5)), Leverage::TWO)
+        .place_order(offer_id, Contracts::new(5), Leverage::TWO)
         .await
         .unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
@@ -704,7 +703,7 @@ async fn start_from_open_cfd_state(
 
     taker
         .system
-        .take_offer(order_to_take.id, Usd::new(dec!(5)), Leverage::TWO)
+        .place_order(order_to_take.id, Contracts::new(5), Leverage::TWO)
         .await
         .unwrap();
     wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);

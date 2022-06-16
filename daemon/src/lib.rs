@@ -12,13 +12,12 @@ use libp2p_tcp::TokioTcpConfig;
 use maia_core::secp256k1_zkp::schnorrsig;
 use model::libp2p::PeerId;
 use model::olivia;
-use model::Identity;
+use model::Contracts;
 use model::Leverage;
 use model::Order;
 use model::OrderId;
 use model::Price;
 use model::Role;
-use model::Usd;
 use parse_display::Display;
 use seed::Identities;
 use std::time::Duration;
@@ -50,6 +49,7 @@ pub mod libp2p_utils;
 pub mod monitor;
 pub mod noise;
 pub mod oracle;
+pub mod order;
 pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
@@ -75,15 +75,17 @@ pub const PING_INTERVAL: Duration = Duration::from_secs(5);
 pub const N_PAYOUTS: usize = 200;
 
 pub struct TakerActorSystem<O, W, P> {
-    pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
+    pub cfd_actor: Address<taker_cfd::Actor>,
     pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
+    _oracle_actor: Address<O>, // NOTE: Hard to supervise because of our tests
     pub auto_rollover_actor: Address<auto_rollover::Actor>,
     pub price_feed_actor: Address<P>,
     executor: command::Executor,
     /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
     /// address.
     _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
+    _order_supervisor: Address<supervisor::Actor<order::taker::Actor, supervisor::UnitReason>>,
     _collab_settlement_supervisor:
         Address<supervisor::Actor<collab_settlement::taker::Actor, supervisor::UnitReason>>,
     _rollover_supervisor:
@@ -124,7 +126,6 @@ where
         maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
-        maker_identity: Identity,
         maker_multiaddr: Multiaddr,
         environment: Environment,
     ) -> Result<Self>
@@ -165,6 +166,27 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
+        let (order_supervisor, order) = supervisor::Actor::new({
+            let oracle = oracle_addr.clone();
+            let db = db.clone();
+            let process_manager = process_manager_addr;
+            let wallet = wallet_actor_addr.clone();
+            let projection = projection_actor.clone();
+            let endpoint = endpoint_addr.clone();
+            move || {
+                order::taker::Actor::new(
+                    n_payouts,
+                    oracle_pk,
+                    &oracle,
+                    (db.clone(), process_manager.clone()),
+                    (&wallet, &wallet),
+                    projection.clone(),
+                    endpoint.clone(),
+                )
+            }
+        });
+        let order_supervisor = order_supervisor.create(None).spawn(&mut tasks);
+
         let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
             supervisor::Actor::new({
                 let endpoint_addr = endpoint_addr.clone();
@@ -183,15 +205,9 @@ where
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
             db.clone(),
-            wallet_actor_addr.clone(),
-            oracle_pk,
             projection_actor,
-            process_manager_addr,
-            connection_actor_addr.clone(),
-            oracle_addr.clone(),
             libp2p_collab_settlement_addr,
-            n_payouts,
-            maker_identity,
+            order,
             PeerId::from(
                 maker_multiaddr
                     .clone()
@@ -205,6 +221,7 @@ where
         let (rollover_supervisor, libp2p_rollover_addr) = supervisor::Actor::new({
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
+            let oracle_addr = oracle_addr.clone();
             move || {
                 rollover::taker::Actor::new(
                     endpoint_addr.clone(),
@@ -306,10 +323,12 @@ where
             cfd_actor: cfd_actor_addr,
             connection_actor: connection_actor_addr,
             wallet_actor: wallet_actor_addr,
+            _oracle_actor: oracle_addr,
             auto_rollover_actor: auto_rollover_addr,
             price_feed_actor,
             executor,
             _price_feed_supervisor: price_feed_supervisor,
+            _order_supervisor: order_supervisor,
             _rollover_supervisor: rollover_supervisor,
             _collab_settlement_supervisor: collab_settlement_supervisor,
             _dialer_supervisor: dialer_supervisor,
@@ -323,20 +342,22 @@ where
         })
     }
 
-    pub async fn take_offer(
+    pub async fn place_order(
         &self,
-        order_id: OrderId,
-        quantity: Usd,
+        offer_id: OrderId,
+        contracts: Contracts,
         leverage: Leverage,
-    ) -> Result<()> {
-        self.cfd_actor
-            .send(taker_cfd::TakeOffer {
-                order_id,
-                quantity,
+    ) -> Result<OrderId> {
+        let order_id = self
+            .cfd_actor
+            .send(taker_cfd::PlaceOrder {
+                offer_id,
+                contracts,
                 leverage,
             })
             .await??;
-        Ok(())
+
+        Ok(order_id)
     }
 
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {

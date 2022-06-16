@@ -381,7 +381,6 @@ async fn main() -> Result<()> {
         HEARTBEAT_INTERVAL,
         Duration::from_secs(10),
         projection_actor.clone(),
-        Identity::new(maker_id),
         maker_multiaddr,
         environment,
     )?;

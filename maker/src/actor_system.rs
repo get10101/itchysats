@@ -11,6 +11,7 @@ use daemon::collab_settlement;
 use daemon::command;
 use daemon::monitor;
 use daemon::oracle;
+use daemon::order;
 use daemon::position_metrics;
 use daemon::process_manager;
 use daemon::projection;
@@ -55,6 +56,7 @@ pub struct ActorSystem<O, W> {
     _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
+    _order_supervisor: Address<supervisor::Actor<order::maker::Actor, supervisor::UnitReason>>,
     _collab_settlement_supervisor:
         Address<supervisor::Actor<collab_settlement::maker::Actor, supervisor::UnitReason>>,
     _rollover_supervisor:
@@ -123,6 +125,25 @@ where
             &oracle_addr,
         )));
 
+        let (order_supervisor, order) = supervisor::Actor::new({
+            let oracle = oracle_addr.clone();
+            let db = db.clone();
+            let process_manager = process_manager_addr.clone();
+            let wallet = wallet_addr.clone();
+            let projection = projection_actor.clone();
+            move || {
+                order::maker::Actor::new(
+                    n_payouts,
+                    oracle_pk,
+                    &oracle,
+                    (db.clone(), process_manager.clone()),
+                    (&wallet, &wallet),
+                    projection.clone(),
+                )
+            }
+        });
+        let order_supervisor = order_supervisor.create(None).spawn(&mut tasks);
+
         let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
             supervisor::Actor::new({
                 let executor = executor.clone();
@@ -167,6 +188,7 @@ where
             libp2p_rollover_addr.clone(),
             libp2p_collab_settlement_addr.clone(),
             maker_offer_address.clone(),
+            order.clone(),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -188,6 +210,10 @@ where
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
+                (
+                    daemon::order::PROTOCOL_NAME,
+                    xtra::message_channel::StrongMessageChannel::clone_channel(&order),
+                ),
                 (
                     daemon::rollover::PROTOCOL,
                     xtra::message_channel::StrongMessageChannel::clone_channel(
@@ -262,6 +288,7 @@ where
             _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _ping_supervisor: ping_supervisor,
+            _order_supervisor: order_supervisor,
             _rollover_supervisor: rollover_supervisor,
             _collab_settlement_supervisor: collab_settlement_supervisor,
             _maker_offer_supervisor,

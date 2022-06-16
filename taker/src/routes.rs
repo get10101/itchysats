@@ -12,6 +12,7 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::Contracts;
 use model::Leverage;
 use model::OrderId;
 use model::Price;
@@ -143,7 +144,7 @@ impl Heartbeat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CfdOrderRequest {
     pub order_id: OrderId,
-    pub quantity: Usd,
+    pub contracts: Contracts,
     pub leverage: Leverage,
 }
 
@@ -154,9 +155,9 @@ pub async fn post_order_request(
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
     taker
-        .take_offer(
+        .place_order(
             cfd_order_request.order_id,
-            cfd_order_request.quantity,
+            cfd_order_request.contracts,
             cfd_order_request.leverage,
         )
         .await

@@ -369,7 +369,6 @@ impl Taker {
             config.heartbeat_interval,
             Duration::from_secs(10),
             projection_actor,
-            maker_identity,
             maker_multiaddr.clone(),
             Environment::Test,
         )
@@ -459,8 +458,6 @@ macro_rules! wait_next_state {
             taker_cfd.order_id, maker_cfd.order_id,
             "order id mismatch between maker and taker"
         );
-        assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
-        assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
     };
     ($id:expr, $maker:expr, $taker:expr, $state:expr) => {
         wait_next_state!($id, $maker, $taker, $state, $state)
