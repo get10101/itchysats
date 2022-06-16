@@ -1,3 +1,5 @@
+extern crate core;
+
 use anyhow::Context;
 use anyhow::Result;
 use chashmap_async::CHashMap;

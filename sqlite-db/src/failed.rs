@@ -160,7 +160,7 @@ impl Connection {
                 counterparty_network_identity as "counterparty_network_identity: models::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: models::Role",
-                fees as "fees: model::Fees",
+                fees as "fees: models::Fees",
                 kind as "kind: Kind"
             FROM
                 failed_cfds
@@ -183,7 +183,7 @@ impl Connection {
             counterparty_network_identity: cfd.counterparty_network_identity.into(),
             counterparty_peer_id: cfd.counterparty_peer_id,
             role: cfd.role.into(),
-            fees: cfd.fees,
+            fees: cfd.fees.into(),
             kind: cfd.kind,
             creation_timestamp,
         };
@@ -249,7 +249,7 @@ async fn insert_failed_cfd(
             .add_opening_fee(cfd.opening_fee)
             .add_funding_fee(initial_funding_fee);
 
-        Fees::new(fee_account.balance())
+        models::Fees::from(fee_account.balance())
     };
 
     let counterparty_peer_id = match cfd.counterparty_peer_id {

@@ -918,6 +918,10 @@ impl Fees {
     pub fn new(fees: SignedAmount) -> Self {
         Self(fees)
     }
+
+    pub fn inner(self) -> SignedAmount {
+        self.0
+    }
 }
 
 impl From<Fees> for SignedAmount {
@@ -939,8 +943,6 @@ impl From<&Fees> for i64 {
         fees.0.as_sat() as i64
     }
 }
-
-impl_sqlx_type_integer!(Fees);
 
 /// The number of contracts per position.
 #[derive(Debug, Clone, Copy)]

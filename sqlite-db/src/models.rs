@@ -3,8 +3,10 @@ use bdk::bitcoin;
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::Amount;
+use bdk::bitcoin::SignedAmount;
 use maia_core::secp256k1_zkp;
 use model::impl_sqlx_type_display_from_str;
+use model::impl_sqlx_type_integer;
 use rust_decimal::Decimal;
 use serde::de::Error;
 use serde::Deserialize;
@@ -561,3 +563,46 @@ impl From<Vout> for model::Vout {
         model::Vout::new(vout.0)
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Fees(SignedAmount);
+
+impl From<Fees> for SignedAmount {
+    fn from(fees: Fees) -> Self {
+        fees.0
+    }
+}
+
+impl TryFrom<i64> for Fees {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        Ok(Self(SignedAmount::from_sat(value)))
+    }
+}
+
+impl From<SignedAmount> for Fees {
+    fn from(s: SignedAmount) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&Fees> for i64 {
+    fn from(fees: &Fees) -> Self {
+        fees.0.as_sat() as i64
+    }
+}
+
+impl From<model::Fees> for Fees {
+    fn from(fee: model::Fees) -> Self {
+        Self(fee.inner())
+    }
+}
+
+impl From<Fees> for model::Fees {
+    fn from(fee: Fees) -> Self {
+        model::Fees::new(fee.0)
+    }
+}
+
+impl_sqlx_type_integer!(Fees);
