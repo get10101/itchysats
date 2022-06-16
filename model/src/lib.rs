@@ -893,13 +893,15 @@ impl str::FromStr for TxFeeRate {
     }
 }
 
-#[derive(Debug, Clone, Copy, sqlx::Type, PartialEq)]
-#[sqlx(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vout(u32);
 
 impl Vout {
     pub fn new(vout: u32) -> Self {
         Self(vout)
+    }
+    pub fn inner(&self) -> u32 {
+        self.0
     }
 }
 

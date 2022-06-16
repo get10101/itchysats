@@ -533,3 +533,31 @@ impl From<bitcoin::Txid> for Txid {
 }
 
 impl_sqlx_type_display_from_str!(Txid);
+
+#[derive(Debug, Clone, Copy, sqlx::Type, PartialEq)]
+#[sqlx(transparent)]
+pub struct Vout(u32);
+
+impl Vout {
+    pub fn new(vout: u32) -> Vout {
+        Self(vout)
+    }
+}
+
+impl From<Vout> for u32 {
+    fn from(vout: Vout) -> Self {
+        vout.0
+    }
+}
+
+impl From<model::Vout> for Vout {
+    fn from(vout: model::Vout) -> Self {
+        Self(vout.inner())
+    }
+}
+
+impl From<Vout> for model::Vout {
+    fn from(vout: Vout) -> Self {
+        model::Vout::new(vout.0)
+    }
+}
