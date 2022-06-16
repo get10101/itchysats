@@ -35,6 +35,7 @@ use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 use xtras::supervisor::always_restart;
+use xtras::supervisor::always_restart_after;
 
 pub use bdk;
 pub use maia;
@@ -69,6 +70,10 @@ pub mod wire;
 /// Duration between the heartbeats sent by the maker, used by the taker to
 /// determine whether the maker is online.
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Duration between the restart attempts after a supervised actor has quit with
+/// a failure.
+pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 pub const PING_INTERVAL: Duration = Duration::from_secs(5);
@@ -242,8 +247,10 @@ where
             let endpoint_addr = endpoint_addr.clone();
             move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone())
         };
-        let (dialer_supervisor, dialer_actor) =
-            supervisor::Actor::with_policy(dialer_constructor, always_restart());
+        let (dialer_supervisor, dialer_actor) = supervisor::Actor::with_policy(
+            dialer_constructor,
+            always_restart_after(RESTART_INTERVAL),
+        );
 
         let (offers_supervisor, libp2p_offer_addr) = supervisor::Actor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
