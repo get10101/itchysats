@@ -19,6 +19,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::supervisor;
+use xtras::supervisor::always_restart;
 
 // Listen on TCP
 
@@ -71,10 +72,8 @@ async fn main() -> Result<()> {
         let endpoint_addr = endpoint_addr.clone();
         listener::Actor::new(endpoint_addr, endpoint_listen)
     };
-    let (supervisor, _listener_actor) = supervisor::Actor::with_policy(
-        listener_constructor,
-        |_: &listener::Error| true, // always restart listener actor
-    );
+    let (supervisor, _listener_actor) =
+        supervisor::Actor::with_policy(listener_constructor, always_restart::<listener::Error>());
     let _listener_supervisor = supervisor.create(None).spawn_global();
 
     sleep(Duration::from_secs(opts.duration_secs)).await;

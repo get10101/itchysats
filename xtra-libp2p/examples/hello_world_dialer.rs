@@ -17,6 +17,7 @@ use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtras::supervisor;
+use xtras::supervisor::always_restart;
 
 #[derive(Parser)]
 struct Opts {
@@ -51,10 +52,8 @@ async fn main() -> Result<()> {
         move || dialer::Actor::new(endpoint_addr.clone(), connect_addr.clone())
     };
 
-    let (supervisor, _dialer_actor) = supervisor::Actor::with_policy(
-        dialer_constructor,
-        |_: &dialer::Error| true, // always restart dialer actor
-    );
+    let (supervisor, _dialer_actor) =
+        supervisor::Actor::with_policy(dialer_constructor, always_restart::<dialer::Error>());
     let _dialer_supervisor = supervisor.create(None).spawn_global();
 
     sleep(Duration::from_secs(1)).await;

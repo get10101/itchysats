@@ -34,6 +34,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
+use xtras::supervisor::always_restart;
 
 pub use bdk;
 pub use maia;
@@ -241,10 +242,8 @@ where
             let endpoint_addr = endpoint_addr.clone();
             move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone())
         };
-        let (dialer_supervisor, dialer_actor) = supervisor::Actor::with_policy(
-            dialer_constructor,
-            |_: &dialer::Error| true, // always restart dialer actor
-        );
+        let (dialer_supervisor, dialer_actor) =
+            supervisor::Actor::with_policy(dialer_constructor, always_restart());
 
         let (offers_supervisor, libp2p_offer_addr) = supervisor::Actor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
@@ -286,10 +285,8 @@ where
         let dialer_supervisor = dialer_supervisor.create(None).spawn(&mut tasks);
         let offers_supervisor = offers_supervisor.create(None).spawn(&mut tasks);
 
-        let (supervisor, price_feed_actor) = supervisor::Actor::with_policy(
-            price_feed_constructor,
-            |_| true, // always restart price feed actor
-        );
+        let (supervisor, price_feed_actor) =
+            supervisor::Actor::with_policy(price_feed_constructor, always_restart());
 
         let price_feed_supervisor = supervisor.create(None).spawn(&mut tasks);
 

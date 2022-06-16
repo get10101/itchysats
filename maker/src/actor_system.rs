@@ -42,6 +42,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
+use xtras::supervisor::always_restart;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
@@ -178,7 +179,7 @@ where
 
         let (listener_supervisor, listener_actor) = supervisor::Actor::with_policy(
             move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone()),
-            |_: &listener::Error| true, // always restart listener actor
+            always_restart(),
         );
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
