@@ -156,7 +156,7 @@ impl Connection {
                 position as "position: models::Position",
                 initial_price as "initial_price: models::Price",
                 taker_leverage as "taker_leverage: models::Leverage",
-                n_contracts as "n_contracts: model::Contracts",
+                n_contracts as "n_contracts: models::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: models::Identity",
                 counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
                 role as "role: models::Role",
@@ -179,7 +179,7 @@ impl Connection {
             position: cfd.position.into(),
             initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage.into(),
-            n_contracts: cfd.n_contracts,
+            n_contracts: cfd.n_contracts.into(),
             counterparty_network_identity: cfd.counterparty_network_identity.into(),
             counterparty_peer_id: cfd.counterparty_peer_id,
             role: cfd.role.into(),
@@ -229,7 +229,7 @@ async fn insert_failed_cfd(
         .quantity_usd
         .try_into_u64()
         .expect("number of contracts to fit into a u64");
-    let n_contracts = Contracts::new(n_contracts);
+    let n_contracts = models::Contracts::from(n_contracts);
 
     let fees = {
         let (long_leverage, short_leverage) =

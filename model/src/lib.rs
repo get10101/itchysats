@@ -976,8 +976,6 @@ impl From<&Contracts> for i64 {
     }
 }
 
-impl_sqlx_type_integer!(Contracts);
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Payout(Amount);
 

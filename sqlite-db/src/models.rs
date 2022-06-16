@@ -606,3 +606,48 @@ impl From<Fees> for model::Fees {
 }
 
 impl_sqlx_type_integer!(Fees);
+
+#[derive(Debug, Clone, Copy)]
+pub struct Contracts(u64);
+
+impl From<Contracts> for u64 {
+    fn from(contracts: Contracts) -> Self {
+        contracts.0
+    }
+}
+
+impl From<u64> for Contracts {
+    fn from(contracts: u64) -> Self {
+        Self(contracts)
+    }
+}
+
+impl TryFrom<i64> for Contracts {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        let contracts = u64::try_from(value)?;
+
+        Ok(Self(contracts))
+    }
+}
+
+impl From<&Contracts> for i64 {
+    fn from(contracts: &Contracts) -> Self {
+        contracts.0 as i64
+    }
+}
+
+impl_sqlx_type_integer!(Contracts);
+
+impl From<model::Contracts> for Contracts {
+    fn from(contracts: model::Contracts) -> Self {
+        Self(contracts.into())
+    }
+}
+
+impl From<Contracts> for model::Contracts {
+    fn from(contracts: Contracts) -> Self {
+        model::Contracts::new(contracts.0)
+    }
+}
