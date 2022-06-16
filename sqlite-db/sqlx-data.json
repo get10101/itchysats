@@ -104,96 +104,6 @@
       "nullable": []
     }
   },
-  "4f227d1659a2485bb1557677e3de8946468bf0436c03c830443a234e1369d35f": {
-    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: models::OrderId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: models::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: model::libp2p::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: model::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "uuid: models::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "position: models::Position",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "initial_price: models::Price",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "leverage: models::Leverage",
-          "ordinal": 4,
-          "type_info": "Int64"
-        },
-        {
-          "name": "settlement_time_interval_hours",
-          "ordinal": 5,
-          "type_info": "Int64"
-        },
-        {
-          "name": "quantity_usd: models::Usd",
-          "ordinal": 6,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_network_identity: models::Identity",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_peer_id: model::libp2p::PeerId",
-          "ordinal": 8,
-          "type_info": "Text"
-        },
-        {
-          "name": "role: models::Role",
-          "ordinal": 9,
-          "type_info": "Text"
-        },
-        {
-          "name": "opening_fee: models::OpeningFee",
-          "ordinal": 10,
-          "type_info": "Null"
-        },
-        {
-          "name": "initial_funding_rate: models::FundingRate",
-          "ordinal": 11,
-          "type_info": "Null"
-        },
-        {
-          "name": "initial_tx_fee_rate: model::TxFeeRate",
-          "ordinal": 12,
-          "type_info": "Null"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "51dfaedacea8acc8fde5353d67061df2537941a992ca436bb908d9237414e23c": {
     "query": "\n            SELECT\n                uuid as \"uuid: models::OrderId\"\n            FROM\n                cfds\n            ",
     "describe": {
@@ -463,6 +373,96 @@
         "Right": 1
       },
       "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "78a804328379044aca5fe9aa595c2dafbf7efee42ed3e5f1b8af0a26ddd8708e": {
+    "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: models::OrderId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: models::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: model::libp2p::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: models::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "uuid: models::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "position: models::Position",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price: models::Price",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage: models::Leverage",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "settlement_time_interval_hours",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "quantity_usd: models::Usd",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_network_identity: models::Identity",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_peer_id: model::libp2p::PeerId",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "role: models::Role",
+          "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "opening_fee: models::OpeningFee",
+          "ordinal": 10,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_funding_rate: models::FundingRate",
+          "ordinal": 11,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_tx_fee_rate: models::TxFeeRate",
+          "ordinal": 12,
+          "type_info": "Null"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false,
         false,
         false,
         false,

@@ -860,6 +860,10 @@ impl TxFeeRate {
     pub fn to_u32(self) -> u32 {
         self.0.into()
     }
+
+    pub fn inner(&self) -> NonZeroU32 {
+        self.0
+    }
 }
 
 impl From<TxFeeRate> for bdk::FeeRate {
@@ -888,8 +892,6 @@ impl str::FromStr for TxFeeRate {
         Ok(TxFeeRate(fee_sat))
     }
 }
-
-impl_sqlx_type_display_from_str!(TxFeeRate);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Txid(bdk::bitcoin::Txid);

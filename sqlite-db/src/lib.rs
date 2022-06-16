@@ -154,6 +154,7 @@ impl Connection {
             models::Identity::from(cfd.counterparty_network_identity());
         let initial_funding_rate = models::FundingRate::from(cfd.initial_funding_rate());
         let opening_fee = models::OpeningFee::from(cfd.opening_fee());
+        let tx_fee_rate = models::TxFeeRate::from(cfd.initial_tx_fee_rate());
 
         let query_result = sqlx::query(
             r#"
@@ -190,7 +191,7 @@ impl Connection {
         .bind(&role)
         .bind(&opening_fee)
         .bind(&initial_funding_rate)
-        .bind(&cfd.initial_tx_fee_rate())
+        .bind(&tx_fee_rate)
         .execute(&mut conn)
         .await?;
 
@@ -536,7 +537,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 role as "role: models::Role",
                 opening_fee as "opening_fee: models::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: models::FundingRate",
-                initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
+                initial_tx_fee_rate as "initial_tx_fee_rate: models::TxFeeRate"
             from
                 cfds
             where
@@ -568,7 +569,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
         role,
         opening_fee: cfd_row.opening_fee.into(),
         initial_funding_rate: cfd_row.initial_funding_rate.into(),
-        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
+        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate.into(),
     })
 }
 

@@ -12,6 +12,7 @@ use serde::Serialize;
 use sqlx::types::uuid::adapter::Hyphenated;
 use sqlx::types::Uuid;
 use std::fmt;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
@@ -456,3 +457,41 @@ impl From<model::OpeningFee> for OpeningFee {
 }
 
 impl_sqlx_type_display_from_str!(OpeningFee);
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TxFeeRate(NonZeroU32);
+
+impl TxFeeRate {
+    pub fn new(fee_rate: NonZeroU32) -> Self {
+        Self(fee_rate)
+    }
+}
+
+impl fmt::Display for TxFeeRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for TxFeeRate {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let fee_sat = s.parse()?;
+        Ok(TxFeeRate(fee_sat))
+    }
+}
+
+impl From<TxFeeRate> for model::TxFeeRate {
+    fn from(fee: TxFeeRate) -> Self {
+        model::TxFeeRate::new(fee.0)
+    }
+}
+
+impl From<model::TxFeeRate> for TxFeeRate {
+    fn from(fee: model::TxFeeRate) -> Self {
+        Self(fee.inner())
+    }
+}
+
+impl_sqlx_type_display_from_str!(TxFeeRate);
