@@ -157,6 +157,7 @@ impl Connection {
         let initial_funding_rate = models::FundingRate::from(cfd.initial_funding_rate());
         let opening_fee = models::OpeningFee::from(cfd.opening_fee());
         let tx_fee_rate = models::TxFeeRate::from(cfd.initial_tx_fee_rate());
+        let counterparty_peer_id = cfd.counterparty_peer_id().map(models::PeerId::from);
 
         let query_result = sqlx::query(
             r#"
@@ -182,13 +183,13 @@ impl Connection {
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
         .bind(&quantity)
         .bind(&counterparty_network_identity)
-        .bind(&cfd.counterparty_peer_id().unwrap_or_else(|| {
+        .bind(&counterparty_peer_id.unwrap_or_else(|| {
             tracing::debug!(
                 order_id=%cfd.id(),
                 counterparty_identity=%cfd.counterparty_network_identity(),
                 "Inserting deprecated CFD with placeholder peer-id"
             );
-            PeerId::placeholder()
+            models::PeerId::from(model::libp2p::PeerId::placeholder())
         }))
         .bind(&role)
         .bind(&opening_fee)
@@ -535,7 +536,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 settlement_time_interval_hours,
                 quantity_usd as "quantity_usd: models::Usd",
                 counterparty_network_identity as "counterparty_network_identity: models::Identity",
-                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
+                counterparty_peer_id as "counterparty_peer_id: models::PeerId",
                 role as "role: models::Role",
                 opening_fee as "opening_fee: models::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: models::FundingRate",
@@ -553,10 +554,12 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
 
     let role = cfd_row.role.into();
     let counterparty_network_identity = cfd_row.counterparty_network_identity.into();
-    let counterparty_peer_id = if cfd_row.counterparty_peer_id == PeerId::placeholder() {
+    let counterparty_peer_id = if cfd_row.counterparty_peer_id
+        == models::PeerId::from(model::libp2p::PeerId::placeholder())
+    {
         derive_known_peer_id(counterparty_network_identity, role)
     } else {
-        Some(cfd_row.counterparty_peer_id)
+        Some(cfd_row.counterparty_peer_id.into())
     };
 
     Ok(Cfd {

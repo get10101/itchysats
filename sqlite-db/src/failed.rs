@@ -158,7 +158,7 @@ impl Connection {
                 taker_leverage as "taker_leverage: models::Leverage",
                 n_contracts as "n_contracts: models::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: models::Identity",
-                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
+                counterparty_peer_id as "counterparty_peer_id: models::PeerId",
                 role as "role: models::Role",
                 fees as "fees: models::Fees",
                 kind as "kind: Kind"
@@ -181,7 +181,7 @@ impl Connection {
             taker_leverage: cfd.taker_leverage.into(),
             n_contracts: cfd.n_contracts.into(),
             counterparty_network_identity: cfd.counterparty_network_identity.into(),
-            counterparty_peer_id: cfd.counterparty_peer_id,
+            counterparty_peer_id: cfd.counterparty_peer_id.into(),
             role: cfd.role.into(),
             fees: cfd.fees.into(),
             kind: cfd.kind,
@@ -264,6 +264,7 @@ async fn insert_failed_cfd(
     let taker_leverage = models::Leverage::from(cfd.taker_leverage);
     let position = models::Position::from(cfd.position);
     let counterparty_network_identity = models::Identity::from(cfd.counterparty_network_identity);
+    let counterparty_peer_id = models::PeerId::from(counterparty_peer_id);
 
     let query_result = sqlx::query!(
         r#"

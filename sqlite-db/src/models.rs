@@ -696,3 +696,41 @@ impl From<Payout> for model::Payout {
 }
 
 impl_sqlx_type_integer!(Payout);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct PeerId(libp2p_core::PeerId);
+
+impl From<libp2p_core::PeerId> for PeerId {
+    fn from(peer_id: libp2p_core::PeerId) -> Self {
+        Self(peer_id)
+    }
+}
+
+impl fmt::Display for PeerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for PeerId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let peer_id = libp2p_core::PeerId::from_str(s)?;
+        Ok(Self(peer_id))
+    }
+}
+
+impl From<model::libp2p::PeerId> for PeerId {
+    fn from(id: model::libp2p::PeerId) -> Self {
+        Self(id.inner())
+    }
+}
+
+impl From<PeerId> for model::libp2p::PeerId {
+    fn from(peerid: PeerId) -> Self {
+        model::libp2p::PeerId::from(peerid.0)
+    }
+}
+
+impl_sqlx_type_display_from_str!(PeerId);

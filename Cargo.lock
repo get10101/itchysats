@@ -3996,6 +3996,7 @@ dependencies = [
  "chashmap-async",
  "futures",
  "hex",
+ "libp2p-core",
  "maia 0.2.0",
  "maia-core",
  "model",
