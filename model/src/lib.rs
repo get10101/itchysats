@@ -983,6 +983,10 @@ impl Payout {
     pub fn new(payout: Amount) -> Self {
         Self(payout)
     }
+
+    pub fn inner(&self) -> Amount {
+        self.0
+    }
 }
 
 impl From<Payout> for SignedAmount {
@@ -1006,8 +1010,6 @@ impl From<&Payout> for i64 {
         payout.0.as_sat() as i64
     }
 }
-
-impl_sqlx_type_integer!(Payout);
 
 #[cfg(test)]
 mod tests {

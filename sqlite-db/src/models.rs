@@ -651,3 +651,48 @@ impl From<Contracts> for model::Contracts {
         model::Contracts::new(contracts.0)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Payout(Amount);
+
+impl Payout {
+    pub fn new(amount: Amount) -> Self {
+        Self(amount)
+    }
+}
+
+impl From<Payout> for SignedAmount {
+    fn from(payout: Payout) -> Self {
+        payout.0.to_signed().expect("Amount to fit in SignedAmount")
+    }
+}
+
+impl TryFrom<i64> for Payout {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        let sats = u64::try_from(value)?;
+
+        Ok(Self(Amount::from_sat(sats)))
+    }
+}
+
+impl From<&Payout> for i64 {
+    fn from(payout: &Payout) -> Self {
+        payout.0.as_sat() as i64
+    }
+}
+
+impl From<model::Payout> for Payout {
+    fn from(payout: model::Payout) -> Self {
+        Self(payout.inner())
+    }
+}
+
+impl From<Payout> for model::Payout {
+    fn from(payout: Payout) -> Self {
+        model::Payout::new(payout.0)
+    }
+}
+
+impl_sqlx_type_integer!(Payout);

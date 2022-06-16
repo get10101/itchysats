@@ -38,12 +38,12 @@ use model::FundingFee;
 use model::Identity;
 use model::Leverage;
 use model::OrderId;
-use model::Payout;
 use model::Position;
 use model::Price;
 use model::Role;
 use model::Timestamp;
 use model::SETTLEMENT_INTERVAL;
+use models::Payout;
 use models::Vout;
 use sqlx::pool::PoolConnection;
 use sqlx::Connection as _;
@@ -842,7 +842,7 @@ async fn load_collaborative_settlement(
         SELECT
             collaborative_settlement_txs.txid as "txid: models::Txid",
             collaborative_settlement_txs.vout as "vout: models::Vout",
-            collaborative_settlement_txs.payout as "payout: model::Payout",
+            collaborative_settlement_txs.payout as "payout: models::Payout",
             collaborative_settlement_txs.price as "price: models::Price"
         FROM
             collaborative_settlement_txs
@@ -872,7 +872,7 @@ async fn load_cet_settlement(
             closed_commit_txs.txid as "commit_txid: models::Txid",
             closed_cets.txid as "txid: models::Txid",
             closed_cets.vout as "vout: models::Vout",
-            closed_cets.payout as "payout: model::Payout",
+            closed_cets.payout as "payout: models::Payout",
             closed_cets.price as "price: models::Price"
         FROM
             closed_cets
@@ -904,7 +904,7 @@ async fn load_refund_settlement(
             closed_commit_txs.txid as "commit_txid: models::Txid",
             closed_refund_txs.txid as "txid: models::Txid",
             closed_refund_txs.vout as "vout: models::Vout",
-            closed_refund_txs.payout as "payout: model::Payout"
+            closed_refund_txs.payout as "payout: models::Payout"
         FROM
             closed_refund_txs
         JOIN
