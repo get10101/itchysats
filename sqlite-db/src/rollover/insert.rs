@@ -1,13 +1,13 @@
 use crate::models;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
-use model::olivia::BitMexPriceEventId;
 use model::Cet;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
 use model::FundingFee;
 use model::RevokedCommit;
+use models::BitMexPriceEventId;
 use sqlx::pool::PoolConnection;
 use sqlx::Connection as SqlxConnection;
 use sqlx::Sqlite;
@@ -44,7 +44,13 @@ pub async fn insert(
 
             for (event_id, cets) in dlc.cets {
                 for cet in cets {
-                    insert_cet(&mut inner_transaction, event_id, event.id.into(), cet).await?;
+                    insert_cet(
+                        &mut inner_transaction,
+                        event_id.into(),
+                        event.id.into(),
+                        cet,
+                    )
+                    .await?;
                 }
             }
 
@@ -101,6 +107,7 @@ async fn insert_rollover_completed_event_data(
     let publish_pk_counterparty = models::PublicKey::from(dlc.publish_pk_counterparty);
     let revocation_pk_counterparty = models::PublicKey::from(dlc.revocation_pk_counterparty);
     let rate = models::FundingRate::from(funding_fee.rate);
+    let settlement_event_id = models::BitMexPriceEventId::from(dlc.settlement_event_id);
 
     let query_result = sqlx::query!(
         r#"
@@ -135,7 +142,7 @@ async fn insert_rollover_completed_event_data(
         "#,
         offer_id,
         event_id,
-        dlc.settlement_event_id,
+        settlement_event_id,
         dlc.refund_timelock,
         funding_fee_as_sat,
         rate,

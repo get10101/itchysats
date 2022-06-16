@@ -32,7 +32,7 @@ pub async fn load(
     let row = sqlx::query!(
         r#"
             SELECT
-                settlement_event_id as "settlement_event_id: model::olivia::BitMexPriceEventId",
+                settlement_event_id as "settlement_event_id: models::BitMexPriceEventId",
                 refund_timelock as "refund_timelock: i64",
                 funding_fee as "funding_fee: i64",
                 rate as "rate: models::FundingRate",
@@ -96,7 +96,7 @@ pub async fn load(
         maker_lock_amount: Amount::from_sat(row.maker_lock_amount as u64),
         taker_lock_amount: Amount::from_sat(row.taker_lock_amount as u64),
         revoked_commit,
-        settlement_event_id: row.settlement_event_id,
+        settlement_event_id: row.settlement_event_id.into(),
         refund_timelock: row.refund_timelock as u32,
     };
     let funding_fee = FundingFee {
@@ -149,7 +149,7 @@ async fn load_cets(
     let revoked_commit_per_event: Vec<(BitMexPriceEventId, Cet)> = sqlx::query!(
         r#"
             SELECT
-                oracle_event_id as "oracle_event_id: model::olivia::BitMexPriceEventId",
+                oracle_event_id as "oracle_event_id: models::BitMexPriceEventId",
                 adaptor_sig as "adaptor_sig: models::AdaptorSignature",
                 maker_amount as "maker_amount: i64",
                 taker_amount as "taker_amount: i64",
@@ -169,7 +169,7 @@ async fn load_cets(
     .into_iter()
     .map(|row| {
         (
-            row.oracle_event_id,
+            row.oracle_event_id.into(),
             Cet {
                 maker_amount: Amount::from_sat(row.maker_amount as u64),
                 taker_amount: Amount::from_sat(row.taker_amount as u64),

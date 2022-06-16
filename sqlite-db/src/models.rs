@@ -1,3 +1,4 @@
+use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::hashes::hex::FromHex;
@@ -7,6 +8,7 @@ use bdk::bitcoin::SignedAmount;
 use maia_core::secp256k1_zkp;
 use model::impl_sqlx_type_display_from_str;
 use model::impl_sqlx_type_integer;
+use model::olivia::EVENT_TIME_FORMAT;
 use rust_decimal::Decimal;
 use serde::de::Error;
 use serde::Deserialize;
@@ -16,6 +18,8 @@ use sqlx::types::Uuid;
 use std::fmt;
 use std::num::NonZeroU32;
 use std::str::FromStr;
+use time::OffsetDateTime;
+use time::PrimitiveDateTime;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
@@ -734,3 +738,57 @@ impl From<PeerId> for model::libp2p::PeerId {
 }
 
 impl_sqlx_type_display_from_str!(PeerId);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BitMexPriceEventId {
+    /// The timestamp this price event refers to.
+    timestamp: OffsetDateTime,
+    digits: usize,
+}
+
+impl fmt::Display for BitMexPriceEventId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "/x/BitMEX/BXBT/{}.price?n={}",
+            self.timestamp
+                .format(&EVENT_TIME_FORMAT)
+                .expect("should always format and we can't return an error here"),
+            self.digits
+        )
+    }
+}
+
+impl FromStr for BitMexPriceEventId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let remaining = s.trim_start_matches("/x/BitMEX/BXBT/");
+        let (timestamp, rest) = remaining.split_at(19);
+        let digits = rest.trim_start_matches(".price?n=");
+
+        Ok(Self {
+            timestamp: PrimitiveDateTime::parse(timestamp, &EVENT_TIME_FORMAT)
+                .with_context(|| format!("Failed to parse {timestamp} as timestamp"))?
+                .assume_utc(),
+            digits: digits.parse()?,
+        })
+    }
+}
+
+impl From<model::olivia::BitMexPriceEventId> for BitMexPriceEventId {
+    fn from(id: model::olivia::BitMexPriceEventId) -> Self {
+        Self {
+            timestamp: id.timestamp(),
+            digits: id.digits(),
+        }
+    }
+}
+
+impl From<BitMexPriceEventId> for model::olivia::BitMexPriceEventId {
+    fn from(id: BitMexPriceEventId) -> Self {
+        model::olivia::BitMexPriceEventId::new(id.timestamp, id.digits)
+    }
+}
+
+impl_sqlx_type_display_from_str!(BitMexPriceEventId);
