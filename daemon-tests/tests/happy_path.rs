@@ -414,20 +414,42 @@ async fn rollover_an_open_cfd(maker_position: Position) {
         .set_offer_params(dummy_offer_params(maker_position))
         .await;
 
-    taker.trigger_rollover(order_id).await;
+    let mut maker_fees_before_rollover = maker.first_cfd().accumulated_fees;
+    let mut taker_fees_before_rollover = taker.first_cfd().accumulated_fees;
 
-    wait_next_state!(
-        order_id,
-        maker,
-        taker,
-        CfdState::IncomingRolloverProposal,
-        CfdState::OutgoingRolloverProposal
-    );
+    for _ in 0..nr_rollovers {
+        taker.trigger_rollover(order_id).await;
 
-    maker.system.accept_rollover(order_id).await.unwrap();
+        wait_next_state!(
+            order_id,
+            maker,
+            taker,
+            CfdState::IncomingRolloverProposal,
+            CfdState::OutgoingRolloverProposal
+        );
 
-    wait_next_state!(order_id, maker, taker, CfdState::RolloverSetup);
-    wait_next_state!(order_id, maker, taker, CfdState::Open);
+        maker.system.accept_rollover(order_id).await.unwrap();
+
+        wait_next_state!(order_id, maker, taker, CfdState::RolloverSetup);
+        wait_next_state!(order_id, maker, taker, CfdState::Open);
+
+        let maker_fees_after_rollover = maker.first_cfd().accumulated_fees;
+        let taker_fees_after_rollover = taker.first_cfd().accumulated_fees;
+
+        match maker_position {
+            Position::Long => {
+                assert!(maker_fees_after_rollover > maker_fees_before_rollover, "The long maker's fees have to be more after a successful rollover where long pays short. before: {}, after: {}", maker_fees_before_rollover, maker_fees_after_rollover);
+                assert!(taker_fees_after_rollover < taker_fees_before_rollover, "The short taker's fees have to be less after a successful rollover where long pays short. before: {}, after: {}", taker_fees_before_rollover, taker_fees_after_rollover);
+            }
+            Position::Short => {
+                assert!(maker_fees_after_rollover < maker_fees_before_rollover, "The short maker's fees have to be less after a successful rollover where long pays short. before: {}, after: {}", maker_fees_before_rollover, maker_fees_after_rollover);
+                assert!(taker_fees_after_rollover > taker_fees_before_rollover, "The long taker's fees have to be more after a successful rollover where long pays short. before: {}, after: {}", taker_fees_before_rollover, taker_fees_after_rollover);
+            }
+        }
+
+        maker_fees_before_rollover = maker_fees_after_rollover;
+        taker_fees_before_rollover = taker_fees_after_rollover;
+    }
 }
 
 #[tokio::test]
