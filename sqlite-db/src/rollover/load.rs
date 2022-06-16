@@ -118,7 +118,7 @@ async fn load_revoked_commit_transactions(
                 publication_pk_theirs as "publication_pk_theirs: models::PublicKey",
                 revocation_sk_theirs as "revocation_sk_theirs: models::SecretKey",
                 script_pubkey,
-                txid as "txid: model::Txid"
+                txid as "txid: models::Txid"
             FROM
                 revoked_commit_transactions
             WHERE
@@ -135,7 +135,7 @@ async fn load_revoked_commit_transactions(
             revocation_sk_theirs: row.revocation_sk_theirs.into(),
             publication_pk_theirs: row.publication_pk_theirs.into(),
             script_pubkey: Script::from_hex(row.script_pubkey.as_str())?,
-            txid: row.txid,
+            txid: row.txid.into(),
         })
     })
     .collect::<Result<Vec<_>>>()?;
@@ -156,7 +156,7 @@ async fn load_cets(
                 n_bits as "n_bits: i64",
                 range_end as "range_end: i64",
                 range_start as "range_start: i64",
-                txid as "txid: model::Txid"
+                txid as "txid: models::Txid"
             FROM
                 open_cets
             WHERE
@@ -176,7 +176,7 @@ async fn load_cets(
                 adaptor_sig: row.adaptor_sig.into(),
                 range: RangeInclusive::new(row.range_start as u64, row.range_end as u64),
                 n_bits: row.n_bits as usize,
-                txid: row.txid,
+                txid: row.txid.into(),
             },
         )
     })

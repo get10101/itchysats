@@ -893,38 +893,6 @@ impl str::FromStr for TxFeeRate {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Txid(bdk::bitcoin::Txid);
-
-impl Txid {
-    pub fn new(txid: bdk::bitcoin::Txid) -> Self {
-        Self(txid)
-    }
-}
-
-impl fmt::Display for Txid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl str::FromStr for Txid {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let txid = bdk::bitcoin::Txid::from_str(s)?;
-        Ok(Self(txid))
-    }
-}
-
-impl From<Txid> for bdk::bitcoin::Txid {
-    fn from(txid: Txid) -> Self {
-        txid.0
-    }
-}
-
-impl_sqlx_type_display_from_str!(Txid);
-
 #[derive(Debug, Clone, Copy, sqlx::Type, PartialEq)]
 #[sqlx(transparent)]
 pub struct Vout(u32);

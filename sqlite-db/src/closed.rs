@@ -15,6 +15,7 @@ use crate::event_log::EventLogEntry;
 use crate::load_cfd_events;
 use crate::load_cfd_row;
 use crate::models;
+use crate::models::Txid;
 use crate::Cfd;
 use crate::CfdAggregate;
 use crate::Connection;
@@ -42,7 +43,6 @@ use model::Position;
 use model::Price;
 use model::Role;
 use model::Timestamp;
-use model::Txid;
 use model::Vout;
 use model::SETTLEMENT_INTERVAL;
 use sqlx::pool::PoolConnection;
@@ -178,7 +178,7 @@ impl Connection {
                 role as "role: models::Role",
                 fees as "fees: model::Fees",
                 expiry_timestamp,
-                lock_txid as "lock_txid: model::Txid",
+                lock_txid as "lock_txid: models::Txid",
                 lock_dlc_vout as "lock_dlc_vout: model::Vout"
             FROM
                 closed_cfds
@@ -422,10 +422,12 @@ impl ClosedCfdInputAggregate {
             .outpoint(&script_pubkey)
             .context("Missing DLC in lock TX")?;
 
-        let txid = Txid::new(txid);
         let dlc_vout = Vout::new(vout);
 
-        Ok(Lock { txid, dlc_vout })
+        Ok(Lock {
+            txid: txid.into(),
+            dlc_vout,
+        })
     }
 
     fn collaborative_settlement(&self) -> Result<Settlement> {
@@ -444,11 +446,10 @@ impl ClosedCfdInputAggregate {
             .with_context(|| format!("No output at vout {vout}"))?;
         let payout = Payout::new(Amount::from_sat(payout.value));
 
-        let txid = Txid::new(txid);
         let vout = Vout::new(vout);
 
         Ok(Settlement::Collaborative {
-            txid,
+            txid: txid.into(),
             vout,
             payout,
             price: models::Price::from(*price),
@@ -459,7 +460,7 @@ impl ClosedCfdInputAggregate {
         let (cet, price) = self.cet.as_ref().context("Cet not set")?;
 
         let transaction = self.latest_dlc()?.commit.0.clone();
-        let commit_txid = Txid::new(transaction.txid());
+        let commit_txid = transaction.txid().into();
 
         let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
 
@@ -473,12 +474,11 @@ impl ClosedCfdInputAggregate {
             .with_context(|| format!("No output at vout {vout}"))?;
         let payout = Payout::new(Amount::from_sat(payout.value));
 
-        let txid = Txid::new(txid);
         let vout = Vout::new(vout);
 
         Ok(Settlement::Cet {
             commit_txid,
-            txid,
+            txid: txid.into(),
             vout,
             payout,
             price: models::Price::from(*price),
@@ -502,13 +502,11 @@ impl ClosedCfdInputAggregate {
         let payout = Payout::new(Amount::from_sat(payout.value));
 
         let transaction = dlc.commit.0.clone();
-        let commit_txid = Txid::new(transaction.txid());
-        let txid = Txid::new(txid);
         let vout = Vout::new(vout);
 
         Ok(Settlement::Refund {
-            commit_txid,
-            txid,
+            commit_txid: transaction.txid().into(),
+            txid: txid.into(),
             vout,
             payout,
         })
@@ -840,7 +838,7 @@ async fn load_collaborative_settlement(
         Settlement::Collaborative,
         r#"
         SELECT
-            collaborative_settlement_txs.txid as "txid: model::Txid",
+            collaborative_settlement_txs.txid as "txid: models::Txid",
             collaborative_settlement_txs.vout as "vout: model::Vout",
             collaborative_settlement_txs.payout as "payout: model::Payout",
             collaborative_settlement_txs.price as "price: models::Price"
@@ -869,8 +867,8 @@ async fn load_cet_settlement(
         Settlement::Cet,
         r#"
         SELECT
-            closed_commit_txs.txid as "commit_txid: model::Txid",
-            closed_cets.txid as "txid: model::Txid",
+            closed_commit_txs.txid as "commit_txid: models::Txid",
+            closed_cets.txid as "txid: models::Txid",
             closed_cets.vout as "vout: model::Vout",
             closed_cets.payout as "payout: model::Payout",
             closed_cets.price as "price: models::Price"
@@ -901,8 +899,8 @@ async fn load_refund_settlement(
         Settlement::Refund,
         r#"
         SELECT
-            closed_commit_txs.txid as "commit_txid: model::Txid",
-            closed_refund_txs.txid as "txid: model::Txid",
+            closed_commit_txs.txid as "commit_txid: models::Txid",
+            closed_refund_txs.txid as "txid: models::Txid",
             closed_refund_txs.vout as "vout: model::Vout",
             closed_refund_txs.payout as "payout: model::Payout"
         FROM

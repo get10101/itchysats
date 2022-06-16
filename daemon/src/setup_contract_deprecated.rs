@@ -48,7 +48,6 @@ use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
 use model::SetupParams;
-use model::Txid;
 use model::CET_TIMELOCK;
 use std::collections::HashMap;
 use std::iter::FromIterator;
@@ -309,7 +308,7 @@ pub async fn new(
                             adaptor_sig: *other_encsig,
                             range: digits.range(),
                             n_bits: digits.len(),
-                            txid: Txid::new(tx.txid()),
+                            txid: tx.txid(),
                         };
 
                         debug_assert_eq!(
@@ -592,7 +591,7 @@ pub async fn roll_over(
                         adaptor_sig: *other_encsig,
                         range: digits.range(),
                         n_bits: digits.len(),
-                        txid: Txid::new(tx.txid()),
+                        txid: tx.txid(),
                     };
 
                     debug_assert_eq!(
@@ -640,7 +639,7 @@ pub async fn roll_over(
         encsig_ours: own_cfd_txs.commit.1,
         revocation_sk_theirs,
         publication_pk_theirs: dlc.publish_pk_counterparty,
-        txid: Txid::new(transaction.txid()),
+        txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
     });
 

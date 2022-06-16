@@ -175,6 +175,7 @@ async fn insert_revoked_commit_transaction(
     let revocation_secret = models::SecretKey::from(revoked.revocation_sk_theirs);
     let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
     let encsig_ours = models::AdaptorSignature::from(revoked.encsig_ours);
+    let txid = models::Txid::from(revoked.txid);
     let query_result = sqlx::query!(
         r#"
                 insert into revoked_commit_transactions (
@@ -191,7 +192,7 @@ async fn insert_revoked_commit_transaction(
         publication_pk_theirs,
         revocation_secret,
         revoked_tx_script_pubkey,
-        revoked.txid
+        txid
     )
     .execute(&mut *inner_transaction)
     .await?;

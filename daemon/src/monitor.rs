@@ -540,7 +540,7 @@ impl MonitorParams {
             revoked_commits: dlc
                 .revoked_commit
                 .iter()
-                .map(|rev_commit| (rev_commit.txid.into(), rev_commit.script_pubkey.clone()))
+                .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
                 .collect(),
         }
     }
