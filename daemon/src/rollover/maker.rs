@@ -1,8 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use asynchronous_codec::Framed;
-use asynchronous_codec::JsonCodec;
 use futures::future;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -16,6 +14,7 @@ use model::RolloverVersion;
 use model::TxFeeRate;
 use std::collections::HashMap;
 use tokio_tasks::Tasks;
+use tokio_util::codec::Framed;
 use xtra::message_channel::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
-use asynchronous_codec::Bytes;
+use bytes::Bytes;
 use clap::Parser;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
 }
 
 async fn hello_world_dialer(stream: xtra_libp2p::Substream, name: String) -> Result<String> {
-    let mut stream = asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec);
+    let mut stream = tokio_util::codec::Framed::new(stream, tokio_util::codec::BytesCodec::new());
 
     stream.send(Bytes::from(name)).await?;
     let bytes = stream.next().await.context("Expected message")??;

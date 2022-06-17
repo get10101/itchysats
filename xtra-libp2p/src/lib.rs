@@ -20,6 +20,7 @@ use libp2p_core::PeerId;
 
 pub mod dialer;
 pub mod endpoint;
+pub mod json_codec;
 pub mod listener;
 pub mod multiaddress_ext;
 mod substream;

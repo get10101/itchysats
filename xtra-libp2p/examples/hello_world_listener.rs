@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use asynchronous_codec::Bytes;
+use bytes::Bytes;
 use clap::Parser;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -108,7 +108,7 @@ impl Actor for HelloWorld {
 
 pub async fn hello_world_listener(stream: xtra_libp2p::Substream) -> Result<()> {
     let mut stream =
-        asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec).fuse();
+        tokio_util::codec::Framed::new(stream, tokio_util::codec::BytesCodec::new()).fuse();
 
     let bytes = stream.select_next_some().await?;
     let name = String::from_utf8(bytes.to_vec())?;

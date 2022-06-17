@@ -1,7 +1,7 @@
 use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
-use asynchronous_codec::Bytes;
+use bytes::Bytes;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::multiaddr::Protocol;
@@ -473,7 +473,7 @@ impl Actor for HelloWorld {
 }
 
 async fn hello_world_dialer(stream: xtra_libp2p::Substream, name: &'static str) -> Result<String> {
-    let mut stream = asynchronous_codec::Framed::new(stream, asynchronous_codec::LengthCodec);
+    let mut stream = tokio_util::codec::Framed::new(stream, tokio_util::codec::BytesCodec::new());
 
     stream.send(Bytes::from(name)).await?;
     let bytes = stream.next().await.context("Expected message")??;

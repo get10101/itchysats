@@ -9,6 +9,7 @@ description = "Networking with xtra made easy. Backed by libp2p-core."
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+bytes = "1.1.0"
 conquer-once = "0.3"
 futures = "0.3"
 libp2p-core = { version = "0.33", default-features = false }
@@ -16,9 +17,12 @@ libp2p-noise = "0.36"
 multistream-select = "0.11"
 pin-project = "1"
 prometheus = { version = "0.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["time"] }
 tokio-tasks = { path = "../tokio-tasks" }
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 void = "1"
 xtra = { version = "0.6", features = ["with-tokio-1"] }
@@ -27,7 +31,6 @@ xtras = { path = "../xtras" }
 yamux = "0.10"
 
 [dev-dependencies]
-asynchronous-codec = "0.6"
 clap = { version = "3.1", features = ["derive"] }
 libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] }
 rand = "0.8"
