@@ -22,6 +22,7 @@ use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::market_closing_price;
 use model::CfdEvent;
+use model::ClosedCfd;
 use model::Dlc;
 use model::EventKind;
 use model::FailedCfd;
@@ -846,8 +847,8 @@ impl sqlite_db::CfdAggregate for Cfd {
 }
 
 impl sqlite_db::ClosedCfdAggregate for Cfd {
-    fn new_closed(network: Self::CtorArgs, closed_cfd: sqlite_db::ClosedCfd) -> Self {
-        let sqlite_db::ClosedCfd {
+    fn new_closed(network: Self::CtorArgs, closed_cfd: ClosedCfd) -> Self {
+        let ClosedCfd {
             id,
             position,
             initial_price,
@@ -883,7 +884,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             let mut tx_url_list = HashSet::default();
 
             tx_url_list.insert(
-                TxUrl::new(lock.txid.into(), network, TxLabel::Lock)
+                TxUrl::new(lock.txid, network, TxLabel::Lock)
                     .with_output_index(lock.dlc_vout.into()),
             );
 

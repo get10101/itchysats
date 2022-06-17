@@ -23,6 +23,7 @@ use std::ops::Sub;
 use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use time::OffsetDateTime;
 
 mod cfd;
 mod contract_setup;
@@ -1059,6 +1060,32 @@ pub enum Settlement {
         vout: Vout,
         payout: Payout,
     },
+}
+
+/// Data loaded from the database about a closed CFD.
+#[derive(Debug, Clone, Copy)]
+pub struct ClosedCfd {
+    pub id: OrderId,
+    pub position: Position,
+    pub initial_price: Price,
+    pub taker_leverage: Leverage,
+    pub n_contracts: Contracts,
+    pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: PeerId,
+    pub role: Role,
+    pub fees: Fees,
+    pub expiry_timestamp: OffsetDateTime,
+    pub lock: Lock,
+    pub settlement: Settlement,
+    pub creation_timestamp: Timestamp,
+}
+
+/// Data loaded from the database about the lock transaction of a
+/// closed CFD.
+#[derive(Debug, Clone, Copy)]
+pub struct Lock {
+    pub txid: Txid,
+    pub dlc_vout: Vout,
 }
 
 #[cfg(test)]

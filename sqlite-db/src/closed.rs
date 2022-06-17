@@ -30,6 +30,7 @@ use maia_core::TransactionExt;
 use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::CfdEvent;
+use model::ClosedCfd;
 use model::Contracts;
 use model::Dlc;
 use model::FeeAccount;
@@ -37,6 +38,7 @@ use model::Fees;
 use model::FundingFee;
 use model::Identity;
 use model::Leverage;
+use model::Lock;
 use model::OrderId;
 use model::Position;
 use model::Price;
@@ -55,32 +57,6 @@ use time::OffsetDateTime;
 /// A trait for building an aggregate based on a `ClosedCfd`.
 pub trait ClosedCfdAggregate: CfdAggregate {
     fn new_closed(args: Self::CtorArgs, cfd: ClosedCfd) -> Self;
-}
-
-/// Data loaded from the database about a closed CFD.
-#[derive(Debug, Clone, Copy)]
-pub struct ClosedCfd {
-    pub id: OrderId,
-    pub position: Position,
-    pub initial_price: Price,
-    pub taker_leverage: Leverage,
-    pub n_contracts: Contracts,
-    pub counterparty_network_identity: Identity,
-    pub counterparty_peer_id: PeerId,
-    pub role: Role,
-    pub fees: Fees,
-    pub expiry_timestamp: OffsetDateTime,
-    pub lock: Lock,
-    pub settlement: Settlement,
-    pub creation_timestamp: Timestamp,
-}
-
-/// Data loaded from the database about the lock transaction of a
-/// closed CFD.
-#[derive(Debug, Clone, Copy)]
-pub struct Lock {
-    pub txid: Txid,
-    pub dlc_vout: Vout,
 }
 
 impl Connection {
@@ -196,8 +172,8 @@ impl Connection {
             fees: cfd.fees.into(),
             expiry_timestamp,
             lock: Lock {
-                txid: cfd.lock_txid,
-                dlc_vout: cfd.lock_dlc_vout,
+                txid: cfd.lock_txid.into(),
+                dlc_vout: cfd.lock_dlc_vout.into(),
             },
             settlement,
             creation_timestamp,
@@ -394,12 +370,9 @@ impl ClosedCfdInputAggregate {
             .outpoint(&script_pubkey)
             .context("Missing DLC in lock TX")?;
 
-        let dlc_vout = Vout::new(vout);
+        let dlc_vout = model::Vout::new(vout);
 
-        Ok(Lock {
-            txid: txid.into(),
-            dlc_vout,
-        })
+        Ok(Lock { txid, dlc_vout })
     }
 
     fn collaborative_settlement(&self) -> Result<Settlement> {
@@ -568,6 +541,8 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
     let fees = models::Fees::from(cfd.fees);
     let contracts = models::Contracts::from(cfd.n_contracts);
     let counterparty_peer_id = models::PeerId::from(counterparty_peer_id);
+    let lock_txid = models::Txid::from(cfd.lock.txid);
+    let dlc_vout = models::Vout::from(cfd.lock.dlc_vout);
 
     let query_result = sqlx::query!(
         r#"
@@ -598,8 +573,8 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         role,
         fees,
         expiry_timestamp,
-        cfd.lock.txid,
-        cfd.lock.dlc_vout,
+        lock_txid,
+        dlc_vout,
     )
     .execute(&mut *conn)
     .await?;
@@ -1303,13 +1278,13 @@ mod tests {
             fees: Fees::new(SignedAmount::ONE_BTC),
             expiry_timestamp: OffsetDateTime::now_utc(),
             lock: Lock {
-                txid: Txid::new(bdk::bitcoin::Txid::default()),
-                dlc_vout: Vout::new(0).into(),
+                txid: bdk::bitcoin::Txid::default(),
+                dlc_vout: Vout::new(0),
             },
             settlement: Settlement::Collaborative {
                 txid: bdk::bitcoin::Txid::default(),
-                vout: model::Vout::new(0),
-                payout: model::Payout::new(Amount::ONE_BTC),
+                vout: Vout::new(0),
+                payout: Payout::new(Amount::ONE_BTC),
                 price: Price::new(Decimal::ONE_HUNDRED).expect("To be valid price"),
             },
         };

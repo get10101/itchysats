@@ -3,6 +3,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use model::CfdEvent;
+use model::ClosedCfd;
 use model::EventKind;
 use model::FailedCfd;
 use model::FailedKind;
@@ -249,8 +250,8 @@ impl Cfd {
 }
 
 impl sqlite_db::ClosedCfdAggregate for Cfd {
-    fn new_closed(_: Self::CtorArgs, closed_cfd: sqlite_db::ClosedCfd) -> Self {
-        let sqlite_db::ClosedCfd {
+    fn new_closed(_: Self::CtorArgs, closed_cfd: ClosedCfd) -> Self {
+        let ClosedCfd {
             id,
             position,
             n_contracts,
