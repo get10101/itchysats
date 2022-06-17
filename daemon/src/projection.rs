@@ -1004,8 +1004,8 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         } = failed_cfd;
 
         let state = match kind {
-            sqlite_db::Kind::OfferRejected => CfdState::Rejected,
-            sqlite_db::Kind::ContractSetupFailed => CfdState::SetupFailed,
+            sqlite_db::models::FailedKind::OfferRejected => CfdState::Rejected,
+            sqlite_db::models::FailedKind::ContractSetupFailed => CfdState::SetupFailed,
         };
 
         let quantity_usd =

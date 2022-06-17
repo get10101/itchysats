@@ -322,78 +322,6 @@
       ]
     }
   },
-  "4044ec2f612f577e9ca7f72df03f841e82c8f09bc7f5f120a74bff834fb9035e": {
-    "query": "\n            SELECT\n                uuid as \"id: models::OrderId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                taker_leverage as \"taker_leverage: models::Leverage\",\n                n_contracts as \"n_contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                fees as \"fees: models::Fees\",\n                kind as \"kind: Kind\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.uuid = $1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "id: models::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "position: models::Position",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "initial_price: models::Price",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "taker_leverage: models::Leverage",
-          "ordinal": 3,
-          "type_info": "Int64"
-        },
-        {
-          "name": "n_contracts: models::Contracts",
-          "ordinal": 4,
-          "type_info": "Int64"
-        },
-        {
-          "name": "counterparty_network_identity: models::Identity",
-          "ordinal": 5,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_peer_id: models::PeerId",
-          "ordinal": 6,
-          "type_info": "Text"
-        },
-        {
-          "name": "role: models::Role",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "fees: models::Fees",
-          "ordinal": 8,
-          "type_info": "Int64"
-        },
-        {
-          "name": "kind: Kind",
-          "ordinal": 9,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "450bfcea8dcac5288b69187eb4ae5aec72012d7320e1d4d2602c448671512295": {
     "query": "\n            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
     "describe": {
@@ -726,6 +654,78 @@
         "Right": 2
       },
       "nullable": []
+    }
+  },
+  "bfccb1d1578875f599f2553fc4902b4344edecf08ea954dd6810e4a9c53e76af": {
+    "query": "\n            SELECT\n                uuid as \"id: models::OrderId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                taker_leverage as \"taker_leverage: models::Leverage\",\n                n_contracts as \"n_contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                fees as \"fees: models::Fees\",\n                kind as \"kind: models::FailedKind\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.uuid = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "id: models::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "position: models::Position",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price: models::Price",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "taker_leverage: models::Leverage",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "n_contracts: models::Contracts",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "counterparty_network_identity: models::Identity",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_peer_id: models::PeerId",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "role: models::Role",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "fees: models::Fees",
+          "ordinal": 8,
+          "type_info": "Int64"
+        },
+        {
+          "name": "kind: models::FailedKind",
+          "ordinal": 9,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
     }
   },
   "cd5327482f9f36bba240a2c75dcf05fa2747615843d916debd2ec993d098b0c1": {

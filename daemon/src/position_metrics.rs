@@ -287,8 +287,8 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match kind {
-            sqlite_db::Kind::OfferRejected => AggregatedState::Rejected,
-            sqlite_db::Kind::ContractSetupFailed => AggregatedState::Failed,
+            sqlite_db::models::FailedKind::OfferRejected => AggregatedState::Rejected,
+            sqlite_db::models::FailedKind::ContractSetupFailed => AggregatedState::Failed,
         };
 
         Self {

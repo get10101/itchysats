@@ -39,12 +39,11 @@ use model::Position;
 use model::Price;
 use model::Role;
 use model::Timestamp;
+use models::FailedKind;
 use sqlx::pool::PoolConnection;
 use sqlx::Connection as _;
 use sqlx::Sqlite;
 use sqlx::Transaction;
-use std::fmt;
-use std::str;
 
 /// A trait for building an aggregate based on a `FailedCfd`.
 pub trait FailedCfdAggregate: CfdAggregate {
@@ -63,43 +62,9 @@ pub struct FailedCfd {
     pub counterparty_peer_id: PeerId,
     pub role: Role,
     pub fees: Fees,
-    pub kind: Kind,
+    pub kind: FailedKind,
     pub creation_timestamp: Timestamp,
 }
-
-/// The type of failed CFD.
-#[derive(Debug, Clone, Copy)]
-pub enum Kind {
-    OfferRejected,
-    ContractSetupFailed,
-}
-
-impl fmt::Display for Kind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Kind::OfferRejected => "OfferRejected",
-            Kind::ContractSetupFailed => "ContractSetupFailed",
-        };
-
-        s.fmt(f)
-    }
-}
-
-impl str::FromStr for Kind {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let kind = match s {
-            "OfferRejected" => Kind::OfferRejected,
-            "ContractSetupFailed" => Kind::ContractSetupFailed,
-            other => bail!("Not a failed CFD Kind: {other}"),
-        };
-
-        Ok(kind)
-    }
-}
-
-impl_sqlx_type_display_from_str!(Kind);
 
 impl Connection {
     pub async fn move_to_failed_cfds(&self) -> Result<()> {
@@ -161,7 +126,7 @@ impl Connection {
                 counterparty_peer_id as "counterparty_peer_id: models::PeerId",
                 role as "role: models::Role",
                 fees as "fees: models::Fees",
-                kind as "kind: Kind"
+                kind as "kind: models::FailedKind"
             FROM
                 failed_cfds
             WHERE
@@ -218,9 +183,9 @@ async fn insert_failed_cfd(
     event_log: &EventLog,
 ) -> Result<()> {
     let kind = if event_log.contains(&EventKind::OfferRejected) {
-        Kind::OfferRejected
+        FailedKind::OfferRejected
     } else if event_log.contains(&EventKind::ContractSetupFailed) {
-        Kind::ContractSetupFailed
+        FailedKind::ContractSetupFailed
     } else {
         bail!("Failed CFD does not have expected event")
     };

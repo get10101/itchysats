@@ -1,3 +1,6 @@
+use crate::impl_sqlx_type_display_from_str;
+use crate::impl_sqlx_type_integer;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -792,3 +795,37 @@ impl From<BitMexPriceEventId> for model::olivia::BitMexPriceEventId {
 }
 
 impl_sqlx_type_display_from_str!(BitMexPriceEventId);
+
+/// The type of failed CFD.
+#[derive(Debug, Clone, Copy)]
+pub enum FailedKind {
+    OfferRejected,
+    ContractSetupFailed,
+}
+
+impl fmt::Display for FailedKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            FailedKind::OfferRejected => "OfferRejected",
+            FailedKind::ContractSetupFailed => "ContractSetupFailed",
+        };
+
+        s.fmt(f)
+    }
+}
+
+impl FromStr for FailedKind {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let kind = match s {
+            "OfferRejected" => FailedKind::OfferRejected,
+            "ContractSetupFailed" => FailedKind::ContractSetupFailed,
+            other => bail!("Not a failed CFD Kind: {other}"),
+        };
+
+        Ok(kind)
+    }
+}
+
+impl_sqlx_type_display_from_str!(FailedKind);
