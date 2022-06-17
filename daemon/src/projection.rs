@@ -24,6 +24,8 @@ use model::market_closing_price;
 use model::CfdEvent;
 use model::Dlc;
 use model::EventKind;
+use model::FailedCfd;
+use model::FailedKind;
 use model::FeeAccount;
 use model::FundingFee;
 use model::FundingRate;
@@ -988,8 +990,8 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 }
 
 impl sqlite_db::FailedCfdAggregate for Cfd {
-    fn new_failed(network: Self::CtorArgs, failed_cfd: sqlite_db::FailedCfd) -> Self {
-        let sqlite_db::FailedCfd {
+    fn new_failed(network: Self::CtorArgs, failed_cfd: FailedCfd) -> Self {
+        let FailedCfd {
             id,
             position,
             initial_price,
@@ -1004,8 +1006,8 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         } = failed_cfd;
 
         let state = match kind {
-            sqlite_db::models::FailedKind::OfferRejected => CfdState::Rejected,
-            sqlite_db::models::FailedKind::ContractSetupFailed => CfdState::SetupFailed,
+            FailedKind::OfferRejected => CfdState::Rejected,
+            FailedKind::ContractSetupFailed => CfdState::SetupFailed,
         };
 
         let quantity_usd =

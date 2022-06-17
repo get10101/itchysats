@@ -826,4 +826,13 @@ impl FromStr for FailedKind {
     }
 }
 
+impl From<FailedKind> for model::FailedKind {
+    fn from(kind: FailedKind) -> Self {
+        match kind {
+            FailedKind::OfferRejected => model::FailedKind::OfferRejected,
+            FailedKind::ContractSetupFailed => model::FailedKind::ContractSetupFailed,
+        }
+    }
+}
+
 impl_sqlx_type_display_from_str!(FailedKind);

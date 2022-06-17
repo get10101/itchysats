@@ -1,3 +1,4 @@
+use crate::libp2p::PeerId;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
@@ -1007,6 +1008,28 @@ impl From<&Payout> for i64 {
     fn from(payout: &Payout) -> Self {
         payout.0.as_sat() as i64
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FailedCfd {
+    pub id: OrderId,
+    pub position: Position,
+    pub initial_price: Price,
+    pub taker_leverage: Leverage,
+    pub n_contracts: Contracts,
+    pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: PeerId,
+    pub role: Role,
+    pub fees: Fees,
+    pub kind: FailedKind,
+    pub creation_timestamp: Timestamp,
+}
+
+/// The type of failed CFD.
+#[derive(Debug, Clone, Copy)]
+pub enum FailedKind {
+    OfferRejected,
+    ContractSetupFailed,
 }
 
 #[cfg(test)]

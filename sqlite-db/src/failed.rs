@@ -26,17 +26,11 @@ use anyhow::bail;
 use anyhow::Result;
 use model::libp2p::PeerId;
 use model::long_and_short_leverage;
-use model::Contracts;
 use model::EventKind;
+use model::FailedCfd;
 use model::FeeAccount;
-use model::Fees;
 use model::FundingFee;
-use model::Identity;
-use model::Leverage;
 use model::OrderId;
-use model::Position;
-use model::Price;
-use model::Role;
 use model::Timestamp;
 use models::FailedKind;
 use sqlx::pool::PoolConnection;
@@ -47,22 +41,6 @@ use sqlx::Transaction;
 /// A trait for building an aggregate based on a `FailedCfd`.
 pub trait FailedCfdAggregate: CfdAggregate {
     fn new_failed(args: Self::CtorArgs, cfd: FailedCfd) -> Self;
-}
-
-/// Data loaded from the database about a failed CFD.
-#[derive(Debug, Clone, Copy)]
-pub struct FailedCfd {
-    pub id: OrderId,
-    pub position: Position,
-    pub initial_price: Price,
-    pub taker_leverage: Leverage,
-    pub n_contracts: Contracts,
-    pub counterparty_network_identity: Identity,
-    pub counterparty_peer_id: PeerId,
-    pub role: Role,
-    pub fees: Fees,
-    pub kind: FailedKind,
-    pub creation_timestamp: Timestamp,
 }
 
 impl Connection {
@@ -148,7 +126,7 @@ impl Connection {
             counterparty_peer_id: cfd.counterparty_peer_id.into(),
             role: cfd.role.into(),
             fees: cfd.fees.into(),
-            kind: cfd.kind,
+            kind: cfd.kind.into(),
             creation_timestamp,
         };
 

@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use model::CfdEvent;
 use model::EventKind;
+use model::FailedCfd;
+use model::FailedKind;
 use model::OrderId;
 use model::Position;
 use model::Usd;
@@ -275,8 +277,8 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 }
 
 impl sqlite_db::FailedCfdAggregate for Cfd {
-    fn new_failed(_: Self::CtorArgs, cfd: sqlite_db::FailedCfd) -> Self {
-        let sqlite_db::FailedCfd {
+    fn new_failed(_: Self::CtorArgs, cfd: FailedCfd) -> Self {
+        let FailedCfd {
             id,
             position,
             n_contracts,
@@ -287,8 +289,8 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match kind {
-            sqlite_db::models::FailedKind::OfferRejected => AggregatedState::Rejected,
-            sqlite_db::models::FailedKind::ContractSetupFailed => AggregatedState::Failed,
+            FailedKind::OfferRejected => AggregatedState::Rejected,
+            FailedKind::ContractSetupFailed => AggregatedState::Failed,
         };
 
         Self {
