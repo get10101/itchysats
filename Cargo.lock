@@ -2076,7 +2076,6 @@ dependencies = [
  "serde_json",
  "serde_test",
  "serde_with",
- "sqlx",
  "thiserror",
  "time 0.3.9",
  "tracing",

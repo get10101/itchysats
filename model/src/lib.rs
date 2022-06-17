@@ -22,8 +22,6 @@ use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-mod sqlx_ext; // Must come first because it is a macro.
-
 mod cfd;
 mod contract_setup;
 pub mod hex_transaction;

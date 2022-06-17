@@ -24,7 +24,6 @@ use crate::CfdAggregate;
 use crate::Connection;
 use anyhow::bail;
 use anyhow::Result;
-use model::impl_sqlx_type_display_from_str;
 use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::Contracts;

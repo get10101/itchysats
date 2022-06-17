@@ -1,5 +1,4 @@
 use crate::models;
-use crate::Sqlite;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1;
@@ -12,6 +11,7 @@ use model::Cet;
 use model::Dlc;
 use model::FundingFee;
 use model::RevokedCommit;
+use sqlx::Sqlite;
 use sqlx::Transaction;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;

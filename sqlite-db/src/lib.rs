@@ -1,5 +1,7 @@
 extern crate core;
 
+mod sqlx_ext; // Must come first because it is a macro.
+
 use anyhow::Context;
 use anyhow::Result;
 use chashmap_async::CHashMap;

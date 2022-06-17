@@ -9,8 +9,6 @@ use bdk::bitcoin::hashes::hex::ToHex;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::SignedAmount;
 use maia_core::secp256k1_zkp;
-use model::impl_sqlx_type_display_from_str;
-use model::impl_sqlx_type_integer;
 use model::olivia::EVENT_TIME_FORMAT;
 use rust_decimal::Decimal;
 use serde::de::Error;
