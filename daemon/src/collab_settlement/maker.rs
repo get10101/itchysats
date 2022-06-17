@@ -88,7 +88,9 @@ impl Actor {
 
                 anyhow::Ok(())
             },
-            |e| async move { tracing::warn!("Failed to handle incoming collab settlement: {e:#}") },
+            move |e| async move {
+                tracing::warn!(%peer, "Failed to handle incoming collab settlement: {e:#}")
+            },
         );
     }
 }
