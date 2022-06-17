@@ -5,6 +5,7 @@ use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
+use bdk::bitcoin::Txid;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
@@ -1030,6 +1031,34 @@ pub struct FailedCfd {
 pub enum FailedKind {
     OfferRejected,
     ContractSetupFailed,
+}
+
+/// Representation of how a closed CFD was settled.
+///
+/// It is represented using an `enum` rather than a series of optional
+/// fields so that only sane combinations of transactions can be
+/// loaded from the database.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Settlement {
+    Collaborative {
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Cet {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Refund {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+    },
 }
 
 #[cfg(test)]

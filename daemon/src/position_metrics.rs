@@ -8,6 +8,7 @@ use model::FailedCfd;
 use model::FailedKind;
 use model::OrderId;
 use model::Position;
+use model::Settlement;
 use model::Usd;
 use rust_decimal::Decimal;
 use sqlite_db;
@@ -260,10 +261,8 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match settlement {
-            sqlite_db::Settlement::Collaborative { .. } | sqlite_db::Settlement::Cet { .. } => {
-                AggregatedState::Closed
-            }
-            sqlite_db::Settlement::Refund { .. } => AggregatedState::Refunded,
+            Settlement::Collaborative { .. } | Settlement::Cet { .. } => AggregatedState::Closed,
+            Settlement::Refund { .. } => AggregatedState::Refunded,
         };
 
         Self {

@@ -41,6 +41,7 @@ use model::OrderId;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::Settlement;
 use model::Timestamp;
 use model::SETTLEMENT_INTERVAL;
 use models::Payout;
@@ -80,35 +81,6 @@ pub struct ClosedCfd {
 pub struct Lock {
     pub txid: Txid,
     pub dlc_vout: Vout,
-}
-
-/// Representation of how a closed CFD was settled.
-///
-/// It is represented using an `enum` rather than a series of optional
-/// fields so that only sane combinations of transactions can be
-/// loaded from the database.
-#[derive(Debug, Clone, Copy, PartialEq)]
-// TODO: this type should not live here
-pub enum Settlement {
-    Collaborative {
-        txid: Txid,
-        vout: Vout,
-        payout: Payout,
-        price: models::Price,
-    },
-    Cet {
-        commit_txid: Txid,
-        txid: Txid,
-        vout: Vout,
-        payout: Payout,
-        price: models::Price,
-    },
-    Refund {
-        commit_txid: Txid,
-        txid: Txid,
-        vout: Vout,
-        payout: Payout,
-    },
 }
 
 impl Connection {
@@ -444,15 +416,15 @@ impl ClosedCfdInputAggregate {
             .output
             .get(vout as usize)
             .with_context(|| format!("No output at vout {vout}"))?;
-        let payout = Payout::new(Amount::from_sat(payout.value));
+        let payout = model::Payout::new(Amount::from_sat(payout.value));
 
-        let vout = Vout::new(vout);
+        let vout = model::Vout::new(vout);
 
         Ok(Settlement::Collaborative {
-            txid: txid.into(),
+            txid,
             vout,
             payout,
-            price: models::Price::from(*price),
+            price: *price,
         })
     }
 
@@ -460,7 +432,7 @@ impl ClosedCfdInputAggregate {
         let (cet, price) = self.cet.as_ref().context("Cet not set")?;
 
         let transaction = self.latest_dlc()?.commit.0.clone();
-        let commit_txid = transaction.txid().into();
+        let commit_txid = transaction.txid();
 
         let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
 
@@ -472,16 +444,16 @@ impl ClosedCfdInputAggregate {
             .output
             .get(vout as usize)
             .with_context(|| format!("No output at vout {vout}"))?;
-        let payout = Payout::new(Amount::from_sat(payout.value));
+        let payout = model::Payout::new(Amount::from_sat(payout.value));
 
-        let vout = Vout::new(vout);
+        let vout = model::Vout::new(vout);
 
         Ok(Settlement::Cet {
             commit_txid,
-            txid: txid.into(),
+            txid,
             vout,
             payout,
-            price: models::Price::from(*price),
+            price: *price,
         })
     }
 
@@ -499,14 +471,14 @@ impl ClosedCfdInputAggregate {
             .output
             .get(vout as usize)
             .with_context(|| format!("No output at vout {vout}"))?;
-        let payout = Payout::new(Amount::from_sat(payout.value));
+        let payout = model::Payout::new(Amount::from_sat(payout.value));
 
         let transaction = dlc.commit.0.clone();
-        let vout = Vout::new(vout);
+        let vout = model::Vout::new(vout);
 
         Ok(Settlement::Refund {
-            commit_txid: transaction.txid().into(),
-            txid: txid.into(),
+            commit_txid: transaction.txid(),
+            txid,
             vout,
             payout,
         })
@@ -650,20 +622,51 @@ async fn insert_settlement(
             vout,
             payout,
             price,
-        } => insert_collaborative_settlement(conn, id, txid, vout, payout, price).await?,
+        } => {
+            insert_collaborative_settlement(
+                conn,
+                id,
+                txid.into(),
+                vout.into(),
+                payout.into(),
+                price.into(),
+            )
+            .await?
+        }
         Settlement::Cet {
             commit_txid,
             txid,
             vout,
             payout,
             price,
-        } => insert_cet_settlement(conn, id, commit_txid, txid, vout, payout, price).await?,
+        } => {
+            insert_cet_settlement(
+                conn,
+                id,
+                commit_txid.into(),
+                txid.into(),
+                vout.into(),
+                payout.into(),
+                price.into(),
+            )
+            .await?
+        }
         Settlement::Refund {
             commit_txid,
             txid,
             vout,
             payout,
-        } => insert_refund_settlement(conn, id, commit_txid, txid, vout, payout).await?,
+        } => {
+            insert_refund_settlement(
+                conn,
+                id,
+                commit_txid.into(),
+                txid.into(),
+                vout.into(),
+                payout.into(),
+            )
+            .await?
+        }
     };
 
     Ok(())
@@ -838,7 +841,7 @@ async fn load_collaborative_settlement(
     let id = models::OrderId::from(id);
 
     let row = sqlx::query_as!(
-        Settlement::Collaborative,
+        models::Settlement::Collaborative,
         r#"
         SELECT
             collaborative_settlement_txs.txid as "txid: models::Txid",
@@ -857,7 +860,7 @@ async fn load_collaborative_settlement(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row)
+    Ok(row.map(|settlement| settlement.into()))
 }
 
 async fn load_cet_settlement(
@@ -867,7 +870,7 @@ async fn load_cet_settlement(
     let id = models::OrderId::from(id);
 
     let row = sqlx::query_as!(
-        Settlement::Cet,
+        models::Settlement::Cet,
         r#"
         SELECT
             closed_commit_txs.txid as "commit_txid: models::Txid",
@@ -889,7 +892,7 @@ async fn load_cet_settlement(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row)
+    Ok(row.map(|settlement| settlement.into()))
 }
 
 async fn load_refund_settlement(
@@ -899,7 +902,7 @@ async fn load_refund_settlement(
     let id = models::OrderId::from(id);
 
     let row = sqlx::query_as!(
-        Settlement::Refund,
+        models::Settlement::Refund,
         r#"
         SELECT
             closed_commit_txs.txid as "commit_txid: models::Txid",
@@ -920,7 +923,7 @@ async fn load_refund_settlement(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row)
+    Ok(row.map(|settlement| settlement.into()))
 }
 
 async fn insert_event_log(
@@ -1001,9 +1004,12 @@ mod tests {
     use model::EventKind;
     use model::FundingRate;
     use model::OpeningFee;
+    use model::Payout;
+    use model::Price;
     use model::Timestamp;
     use model::TxFeeRate;
     use model::Usd;
+    use model::Vout;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use std::str::FromStr;
@@ -1092,11 +1098,11 @@ mod tests {
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
         let inserted = Settlement::Cet {
-            commit_txid: Txid::new(bdk::bitcoin::Txid::default()),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: bdk::bitcoin::Txid::default(),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: models::Price::from(dec!(40_000)),
+            price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
         insert_settlement(&mut db_tx, id, inserted).await.unwrap();
@@ -1127,23 +1133,23 @@ mod tests {
         .unwrap();
 
         let inserted_cet = Settlement::Cet {
-            commit_txid: Txid::new(commit_txid_cet),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: commit_txid_cet,
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: models::Price::from(dec!(40_000)),
+            price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
         let inserted_collab_settlement = Settlement::Collaborative {
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: models::Price::from(Decimal::ONE_HUNDRED),
+            price: Price::new(Decimal::ONE_HUNDRED).expect("To be valid price"),
         };
 
         let inserted_refund_settlement = Settlement::Refund {
-            commit_txid: Txid::new(commit_txid_refund),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: commit_txid_refund,
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
         };
@@ -1203,10 +1209,10 @@ mod tests {
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
         let inserted = Settlement::Collaborative {
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: models::Price::from(dec!(40_000)),
+            price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
         insert_settlement(&mut db_tx, id, inserted).await.unwrap();
@@ -1232,8 +1238,8 @@ mod tests {
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
         let inserted = Settlement::Refund {
-            commit_txid: Txid::new(bdk::bitcoin::Txid::default()),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: bdk::bitcoin::Txid::default(),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
         };
@@ -1298,13 +1304,13 @@ mod tests {
             expiry_timestamp: OffsetDateTime::now_utc(),
             lock: Lock {
                 txid: Txid::new(bdk::bitcoin::Txid::default()),
-                dlc_vout: Vout::new(0),
+                dlc_vout: Vout::new(0).into(),
             },
             settlement: Settlement::Collaborative {
-                txid: Txid::new(bdk::bitcoin::Txid::default()),
-                vout: Vout::new(0),
-                payout: Payout::new(Amount::ONE_BTC),
-                price: models::Price::from(Decimal::ONE_HUNDRED),
+                txid: bdk::bitcoin::Txid::default(),
+                vout: model::Vout::new(0),
+                payout: model::Payout::new(Amount::ONE_BTC),
+                price: Price::new(Decimal::ONE_HUNDRED).expect("To be valid price"),
             },
         };
 

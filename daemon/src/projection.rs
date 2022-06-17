@@ -35,6 +35,7 @@ use model::Origin;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::Settlement;
 use model::Timestamp;
 use model::TradingPair;
 use model::Usd;
@@ -47,7 +48,6 @@ use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlite_db;
-use sqlite_db::Settlement;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -895,10 +895,10 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                     price,
                 } => {
                     tx_url_list.insert(
-                        TxUrl::new(txid.into(), network, TxLabel::Collaborative)
+                        TxUrl::new(txid, network, TxLabel::Collaborative)
                             .with_output_index(vout.into()),
                     );
-                    (Some(price.into()), payout, CfdState::Closed)
+                    (Some(price), payout, CfdState::Closed)
                 }
                 Settlement::Cet {
                     commit_txid,
@@ -908,15 +908,13 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                     price,
                 } => {
                     tx_url_list.insert(
-                        TxUrl::new(commit_txid.into(), network, TxLabel::Commit)
-                            .with_output_index(0),
+                        TxUrl::new(commit_txid, network, TxLabel::Commit).with_output_index(0),
                     );
 
                     tx_url_list.insert(
-                        TxUrl::new(txid.into(), network, TxLabel::Cet)
-                            .with_output_index(vout.into()),
+                        TxUrl::new(txid, network, TxLabel::Cet).with_output_index(vout.into()),
                     );
-                    (Some(price.into()), payout, CfdState::Closed)
+                    (Some(price), payout, CfdState::Closed)
                 }
                 Settlement::Refund {
                     commit_txid,
@@ -925,13 +923,11 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                     payout,
                 } => {
                     tx_url_list.insert(
-                        TxUrl::new(commit_txid.into(), network, TxLabel::Commit)
-                            .with_output_index(0),
+                        TxUrl::new(commit_txid, network, TxLabel::Commit).with_output_index(0),
                     );
 
                     tx_url_list.insert(
-                        TxUrl::new(txid.into(), network, TxLabel::Refund)
-                            .with_output_index(vout.into()),
+                        TxUrl::new(txid, network, TxLabel::Refund).with_output_index(vout.into()),
                     );
                     (None, payout, CfdState::Refunded)
                 }

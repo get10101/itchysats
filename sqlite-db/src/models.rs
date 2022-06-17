@@ -836,3 +836,68 @@ impl From<FailedKind> for model::FailedKind {
 }
 
 impl_sqlx_type_display_from_str!(FailedKind);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Settlement {
+    Collaborative {
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Cet {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Refund {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+    },
+}
+
+impl From<Settlement> for model::Settlement {
+    fn from(settlement: Settlement) -> Self {
+        match settlement {
+            Settlement::Collaborative {
+                txid,
+                vout,
+                payout,
+                price,
+            } => model::Settlement::Collaborative {
+                txid: txid.into(),
+                vout: vout.into(),
+                payout: payout.into(),
+                price: price.into(),
+            },
+            Settlement::Cet {
+                commit_txid,
+                txid,
+                vout,
+                payout,
+                price,
+            } => model::Settlement::Cet {
+                commit_txid: commit_txid.into(),
+                txid: txid.into(),
+                vout: vout.into(),
+                payout: payout.into(),
+                price: price.into(),
+            },
+            Settlement::Refund {
+                commit_txid,
+                txid,
+                vout,
+                payout,
+            } => model::Settlement::Refund {
+                commit_txid: commit_txid.into(),
+                txid: txid.into(),
+                vout: vout.into(),
+                payout: payout.into(),
+            },
+        }
+    }
+}
