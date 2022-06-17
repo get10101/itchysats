@@ -44,7 +44,7 @@ pub mod closed;
 pub mod event_log;
 pub mod failed;
 mod impls;
-pub mod models;
+mod models;
 mod rollover;
 pub mod time_to_first_position;
 
