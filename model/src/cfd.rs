@@ -2216,6 +2216,7 @@ pub struct RevokedCommit {
     // To monitor revoked commit transaction
     pub txid: Txid,
     pub script_pubkey: Script,
+    pub settlement_event_id: Option<BitMexPriceEventId>,
 }
 
 /// Used when transactions (e.g. collaborative close) are recorded as a part of

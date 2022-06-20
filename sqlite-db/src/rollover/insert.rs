@@ -183,6 +183,9 @@ async fn insert_revoked_commit_transaction(
     let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
     let encsig_ours = models::AdaptorSignature::from(revoked.encsig_ours);
     let txid = models::Txid::from(revoked.txid);
+    let settlement_event_id = revoked
+        .settlement_event_id
+        .map(models::BitMexPriceEventId::from);
     let query_result = sqlx::query!(
         r#"
                 insert into revoked_commit_transactions (
@@ -191,15 +194,17 @@ async fn insert_revoked_commit_transaction(
                     publication_pk_theirs,
                     revocation_sk_theirs,
                     script_pubkey,
-                    txid
-                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6 )
+                    txid,
+                    settlement_event_id
+                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7 )
             "#,
         offer_id,
         encsig_ours,
         publication_pk_theirs,
         revocation_secret,
         revoked_tx_script_pubkey,
-        txid
+        txid,
+        settlement_event_id
     )
     .execute(&mut *inner_transaction)
     .await?;

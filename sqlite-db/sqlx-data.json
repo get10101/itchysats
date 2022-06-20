@@ -1,5 +1,53 @@
 {
   "db": "SQLite",
+  "030ed8e5bcfb9b96de7d38135cd35ffd4ecbec84ed06aefe86660f4991808510": {
+    "query": "\n            SELECT\n                encsig_ours as \"encsig_ours: models::AdaptorSignature\",\n                publication_pk_theirs as \"publication_pk_theirs: models::PublicKey\",\n                revocation_sk_theirs as \"revocation_sk_theirs: models::SecretKey\",\n                script_pubkey,\n                settlement_event_id as \"settlement_event_id: models::BitMexPriceEventId\",\n                txid as \"txid: models::Txid\"\n            FROM\n                revoked_commit_transactions\n            WHERE\n                cfd_id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "encsig_ours: models::AdaptorSignature",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "publication_pk_theirs: models::PublicKey",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "revocation_sk_theirs: models::SecretKey",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "script_pubkey",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "settlement_event_id: models::BitMexPriceEventId",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: models::Txid",
+          "ordinal": 5,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    }
+  },
   "060f5ccae5e675d3118ae357eb225c7fa37d54802a24e328db1dc84e547d4d9d": {
     "query": "\n            delete from open_cets where cfd_id = (select id from cfds where cfds.uuid = $1)\n        ",
     "describe": {
@@ -388,48 +436,6 @@
         "Right": 1
       },
       "nullable": []
-    }
-  },
-  "6792c293c2931ae9575cfc840b32d212729a409630ff1a3d452d54ee5072267d": {
-    "query": "\n            SELECT\n                encsig_ours as \"encsig_ours: models::AdaptorSignature\",\n                publication_pk_theirs as \"publication_pk_theirs: models::PublicKey\",\n                revocation_sk_theirs as \"revocation_sk_theirs: models::SecretKey\",\n                script_pubkey,\n                txid as \"txid: models::Txid\"\n            FROM\n                revoked_commit_transactions\n            WHERE\n                cfd_id = $1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "encsig_ours: models::AdaptorSignature",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "publication_pk_theirs: models::PublicKey",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "revocation_sk_theirs: models::SecretKey",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "script_pubkey",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: models::Txid",
-          "ordinal": 4,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
     }
   },
   "7a2f760e4af1661f6df85ba6ce17ea746723f6b2d28f933aa8692c63e9c904be": {
@@ -874,16 +880,6 @@
       "nullable": []
     }
   },
-  "d8d9d380f3847552a7060c0cdde8f1ade3ed0d4a260bc07137a6c274d556a927": {
-    "query": "\n                insert into revoked_commit_transactions (\n                    cfd_id,\n                    encsig_ours,\n                    publication_pk_theirs,\n                    revocation_sk_theirs,\n                    script_pubkey,\n                    txid\n                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6 )\n            ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Right": 6
-      },
-      "nullable": []
-    }
-  },
   "dff18431c5abb3a65efde6fda9e48658f4533c9726bbc993f4b99e0d1924dac5": {
     "query": "\n        SELECT\n            collaborative_settlement_txs.txid as \"txid: models::Txid\",\n            collaborative_settlement_txs.vout as \"vout: models::Vout\",\n            collaborative_settlement_txs.payout as \"payout: models::Payout\",\n            collaborative_settlement_txs.price as \"price: models::Price\"\n        FROM\n            collaborative_settlement_txs\n        JOIN\n            closed_cfds on closed_cfds.id = collaborative_settlement_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
     "describe": {
@@ -1032,6 +1028,16 @@
       "nullable": [
         false
       ]
+    }
+  },
+  "f7b758f27f6bc3ae68ce5b42d1b5ac093691f1a8bcf90712a69a78426f5c2c77": {
+    "query": "\n                insert into revoked_commit_transactions (\n                    cfd_id,\n                    encsig_ours,\n                    publication_pk_theirs,\n                    revocation_sk_theirs,\n                    script_pubkey,\n                    txid,\n                    settlement_event_id\n                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7 )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 7
+      },
+      "nullable": []
     }
   },
   "fc7e8992943cd5c64d307272eb1951e4c7c645308b20245d5f2818aaaf3b265b": {

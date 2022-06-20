@@ -595,7 +595,7 @@ pub(crate) fn finalize_revoked_commits(
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
-        event_id: dlc.settlement_event_id,
+        settlement_event_id: Some(dlc.settlement_event_id),
     });
 
     Ok(revoked_commit)

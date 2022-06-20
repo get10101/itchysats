@@ -118,6 +118,7 @@ async fn load_revoked_commit_transactions(
                 publication_pk_theirs as "publication_pk_theirs: models::PublicKey",
                 revocation_sk_theirs as "revocation_sk_theirs: models::SecretKey",
                 script_pubkey,
+                settlement_event_id as "settlement_event_id: models::BitMexPriceEventId",
                 txid as "txid: models::Txid"
             FROM
                 revoked_commit_transactions
@@ -136,6 +137,9 @@ async fn load_revoked_commit_transactions(
             publication_pk_theirs: row.publication_pk_theirs.into(),
             script_pubkey: Script::from_hex(row.script_pubkey.as_str())?,
             txid: row.txid.into(),
+            settlement_event_id: row
+                .settlement_event_id
+                .map(|settlement_event_id| settlement_event_id.into()),
         })
     })
     .collect::<Result<Vec<_>>>()?;

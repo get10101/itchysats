@@ -647,6 +647,8 @@ pub async fn roll_over(
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
+        // We don't allow the taker to rollover from a specific commit-tx in the deprecated version because we cannot be sure this works side effect free.
+        settlement_event_id: None,
     });
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
