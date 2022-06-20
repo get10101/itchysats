@@ -269,6 +269,12 @@ where
         });
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
+
+        let (supervisor, ping_actor) = supervisor::Actor::new({
+            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        });
+        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         let endpoint = Endpoint::new(
             Box::new(TokioTcpConfig::new),
             identity.libp2p,
@@ -284,11 +290,13 @@ where
                 ),
             ],
             endpoint::Subscribers::new(
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &online_status_actor,
-                )],
+                vec![
+                    xtra::message_channel::MessageChannel::clone_channel(&online_status_actor),
+                    xtra::message_channel::MessageChannel::clone_channel(&ping_actor),
+                ],
                 vec![
                     xtra::message_channel::MessageChannel::clone_channel(&dialer_actor),
+                    xtra::message_channel::MessageChannel::clone_channel(&ping_actor),
                     xtra::message_channel::MessageChannel::clone_channel(&online_status_actor),
                 ],
                 vec![],
@@ -297,11 +305,6 @@ where
         );
 
         tasks.add(endpoint_context.run(endpoint));
-
-        let (supervisor, _ping_address) = supervisor::Actor::new({
-            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
-        });
-        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         let dialer_supervisor = dialer_supervisor.create(None).spawn(&mut tasks);
         let offers_supervisor = offers_supervisor.create(None).spawn(&mut tasks);
