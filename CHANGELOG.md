@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow maker to provide extended private key as argument when starting. This key will be used to derive the internal wallet according to (Bip84)[https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki]
 - Added new HTTP endpoint to manually trigger a wallet sync under `/api/sync`
 - Added new endpoint to maker and taker to get the daemon version under `/api/version`
+- Added an info box in taker-ui to show if a new version is available
 
 ### Changed
 
