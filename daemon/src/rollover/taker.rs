@@ -269,24 +269,6 @@ impl Actor {
                             let revoked_commit =
                                 finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2)?;
 
-                            framed
-                                .send(DialerMessage::RolloverMsg(Box::new(RolloverMsg::Msg3(
-                                    RolloverMsg3,
-                                ))))
-                                .await
-                                .context("Failed to send Msg3")?;
-                            let _msg3 = framed
-                                .next()
-                                .timeout(ROLLOVER_MSG_TIMEOUT)
-                                .await
-                                .with_context(|| {
-                                    format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT)
-                                })?
-                                .context("Empty stream instead of Msg3")?
-                                .context("Unable to decode listener Msg3")?
-                                .into_rollover_msg()?
-                                .try_into_msg3()?;
-
                             let dlc = Dlc {
                                 identity: dlc.identity,
                                 identity_counterparty: dlc.identity_counterparty,

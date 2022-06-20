@@ -147,7 +147,6 @@ pub(crate) enum RolloverMsg {
     Msg0(RolloverMsg0),
     Msg1(RolloverMsg1),
     Msg2(RolloverMsg2),
-    Msg3(RolloverMsg3),
 }
 
 impl RolloverMsg {
@@ -172,14 +171,6 @@ impl RolloverMsg {
             Ok(v)
         } else {
             bail!("Not Msg2")
-        }
-    }
-
-    pub fn try_into_msg3(self) -> Result<RolloverMsg3> {
-        if let Self::Msg3(v) = self {
-            Ok(v)
-        } else {
-            bail!("Not Msg3")
         }
     }
 }
@@ -604,6 +595,7 @@ pub(crate) fn finalize_revoked_commits(
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
+        event_id: dlc.settlement_event_id,
     });
 
     Ok(revoked_commit)
