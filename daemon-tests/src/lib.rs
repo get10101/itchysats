@@ -164,6 +164,16 @@ impl Maker {
         &mut self.feeds.cfds
     }
 
+    pub fn first_cfd(&mut self) -> Cfd {
+        self.cfd_feed()
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .first()
+            .unwrap()
+            .clone()
+    }
+
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
         &mut self.feeds.offers
     }
@@ -310,6 +320,16 @@ pub struct Taker {
 impl Taker {
     pub fn cfd_feed(&mut self) -> &mut watch::Receiver<Option<Vec<Cfd>>> {
         &mut self.feeds.cfds
+    }
+
+    pub fn first_cfd(&mut self) -> Cfd {
+        self.cfd_feed()
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .first()
+            .unwrap()
+            .clone()
     }
 
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
