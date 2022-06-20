@@ -305,6 +305,18 @@ pub async fn put_sync_wallet(
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthCheck {
+    daemon_version: String,
+}
+
+#[rocket::get("/version")]
+pub async fn get_version() -> Json<HealthCheck> {
+    Json(HealthCheck {
+        daemon_version: daemon::version::version().to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
