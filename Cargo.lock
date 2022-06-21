@@ -839,7 +839,7 @@ dependencies = [
  "statrs",
  "test-case",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
  "tokio-util 0.7.2",
@@ -873,7 +873,7 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "sqlite-db",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
  "tracing",
@@ -1923,7 +1923,7 @@ dependencies = [
  "shared-bin",
  "sqlite-db",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
  "tokio-util 0.7.2",
@@ -2077,7 +2077,7 @@ dependencies = [
  "serde_test",
  "serde_with",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
  "tracing",
  "url",
  "uuid",
@@ -3819,7 +3819,7 @@ dependencies = [
  "rocket",
  "rocket-basicauth",
  "serde",
- "time 0.3.10",
+ "time 0.3.9",
  "tracing",
  "tracing-subscriber",
 ]
@@ -4007,7 +4007,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tracing",
  "x25519-dalek",
@@ -4307,7 +4307,7 @@ dependencies = [
  "serde_test",
  "shared-bin",
  "sqlite-db",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
  "tracing",
@@ -4422,9 +4422,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.10"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82501a4c1c0330d640a6e176a3d6a204f5ec5237aca029029d21864a902e27b0"
+checksum = "c2702e08a7a860f005826c6815dcac101b19b5eb330c27fe4a5928fec1d20ddd"
 dependencies = [
  "itoa 1.0.1",
  "libc",
@@ -4679,7 +4679,7 @@ dependencies = [
  "sharded-slab",
  "smallvec",
  "thread_local",
- "time 0.3.10",
+ "time 0.3.9",
  "tracing",
  "tracing-core",
  "tracing-log",
@@ -4871,7 +4871,7 @@ dependencies = [
  "rustversion",
  "sysinfo",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
 ]
 
 [[package]]
@@ -5234,7 +5234,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
  "tracing",
@@ -5284,7 +5284,7 @@ dependencies = [
  "rust_decimal_macros",
  "sluice",
  "thiserror",
- "time 0.3.10",
+ "time 0.3.9",
  "tokio",
  "tokio-tasks",
  "tracing",
