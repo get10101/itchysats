@@ -3,9 +3,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use model::CfdEvent;
+use model::ClosedCfd;
 use model::EventKind;
+use model::FailedCfd;
+use model::FailedKind;
 use model::OrderId;
 use model::Position;
+use model::Settlement;
 use model::Usd;
 use rust_decimal::Decimal;
 use sqlite_db;
@@ -246,8 +250,8 @@ impl Cfd {
 }
 
 impl sqlite_db::ClosedCfdAggregate for Cfd {
-    fn new_closed(_: Self::CtorArgs, closed_cfd: sqlite_db::ClosedCfd) -> Self {
-        let sqlite_db::ClosedCfd {
+    fn new_closed(_: Self::CtorArgs, closed_cfd: ClosedCfd) -> Self {
+        let ClosedCfd {
             id,
             position,
             n_contracts,
@@ -258,10 +262,8 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match settlement {
-            sqlite_db::Settlement::Collaborative { .. } | sqlite_db::Settlement::Cet { .. } => {
-                AggregatedState::Closed
-            }
-            sqlite_db::Settlement::Refund { .. } => AggregatedState::Refunded,
+            Settlement::Collaborative { .. } | Settlement::Cet { .. } => AggregatedState::Closed,
+            Settlement::Refund { .. } => AggregatedState::Refunded,
         };
 
         Self {
@@ -275,8 +277,8 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 }
 
 impl sqlite_db::FailedCfdAggregate for Cfd {
-    fn new_failed(_: Self::CtorArgs, cfd: sqlite_db::FailedCfd) -> Self {
-        let sqlite_db::FailedCfd {
+    fn new_failed(_: Self::CtorArgs, cfd: FailedCfd) -> Self {
+        let FailedCfd {
             id,
             position,
             n_contracts,
@@ -287,8 +289,8 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match kind {
-            sqlite_db::Kind::OfferRejected => AggregatedState::Rejected,
-            sqlite_db::Kind::ContractSetupFailed => AggregatedState::Failed,
+            FailedKind::OfferRejected => AggregatedState::Rejected,
+            FailedKind::ContractSetupFailed => AggregatedState::Failed,
         };
 
         Self {

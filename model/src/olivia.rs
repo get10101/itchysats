@@ -1,4 +1,3 @@
-use crate::impl_sqlx_type_display_from_str;
 use anyhow::Context;
 use conquer_once::Lazy;
 use maia_core::secp256k1_zkp::schnorrsig;
@@ -93,6 +92,10 @@ impl BitMexPriceEventId {
     pub fn timestamp(&self) -> OffsetDateTime {
         self.timestamp
     }
+
+    pub fn digits(&self) -> usize {
+        self.digits
+    }
 }
 
 impl fmt::Display for BitMexPriceEventId {
@@ -133,8 +136,6 @@ impl From<Announcement> for maia_core::Announcement {
         }
     }
 }
-
-impl_sqlx_type_display_from_str!(BitMexPriceEventId);
 
 pub fn next_announcement_after(timestamp: OffsetDateTime) -> BitMexPriceEventId {
     let adjusted = ceil_to_next_hour(timestamp);

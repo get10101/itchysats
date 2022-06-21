@@ -14,6 +14,8 @@ use crate::event_log::EventLog;
 use crate::event_log::EventLogEntry;
 use crate::load_cfd_events;
 use crate::load_cfd_row;
+use crate::models;
+use crate::models::Txid;
 use crate::Cfd;
 use crate::CfdAggregate;
 use crate::Connection;
@@ -28,6 +30,7 @@ use maia_core::TransactionExt;
 use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::CfdEvent;
+use model::ClosedCfd;
 use model::Contracts;
 use model::Dlc;
 use model::FeeAccount;
@@ -35,15 +38,16 @@ use model::Fees;
 use model::FundingFee;
 use model::Identity;
 use model::Leverage;
+use model::Lock;
 use model::OrderId;
-use model::Payout;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::Settlement;
 use model::Timestamp;
-use model::Txid;
-use model::Vout;
 use model::SETTLEMENT_INTERVAL;
+use models::Payout;
+use models::Vout;
 use sqlx::pool::PoolConnection;
 use sqlx::Connection as _;
 use sqlx::Sqlite;
@@ -53,60 +57,6 @@ use time::OffsetDateTime;
 /// A trait for building an aggregate based on a `ClosedCfd`.
 pub trait ClosedCfdAggregate: CfdAggregate {
     fn new_closed(args: Self::CtorArgs, cfd: ClosedCfd) -> Self;
-}
-
-/// Data loaded from the database about a closed CFD.
-#[derive(Debug, Clone, Copy)]
-pub struct ClosedCfd {
-    pub id: OrderId,
-    pub position: Position,
-    pub initial_price: Price,
-    pub taker_leverage: Leverage,
-    pub n_contracts: Contracts,
-    pub counterparty_network_identity: Identity,
-    pub counterparty_peer_id: PeerId,
-    pub role: Role,
-    pub fees: Fees,
-    pub expiry_timestamp: OffsetDateTime,
-    pub lock: Lock,
-    pub settlement: Settlement,
-    pub creation_timestamp: Timestamp,
-}
-
-/// Data loaded from the database about the lock transaction of a
-/// closed CFD.
-#[derive(Debug, Clone, Copy)]
-pub struct Lock {
-    pub txid: Txid,
-    pub dlc_vout: Vout,
-}
-
-/// Representation of how a closed CFD was settled.
-///
-/// It is represented using an `enum` rather than a series of optional
-/// fields so that only sane combinations of transactions can be
-/// loaded from the database.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Settlement {
-    Collaborative {
-        txid: Txid,
-        vout: Vout,
-        payout: Payout,
-        price: Price,
-    },
-    Cet {
-        commit_txid: Txid,
-        txid: Txid,
-        vout: Vout,
-        payout: Payout,
-        price: Price,
-    },
-    Refund {
-        commit_txid: Txid,
-        txid: Txid,
-        vout: Vout,
-        payout: Payout,
-    },
 }
 
 impl Connection {
@@ -162,27 +112,28 @@ impl Connection {
     {
         let mut conn = self.inner.acquire().await?;
 
+        let inner_id = models::OrderId::from(id);
         let cfd = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId",
-                position as "position: model::Position",
-                initial_price as "initial_price: model::Price",
-                taker_leverage as "taker_leverage: model::Leverage",
-                n_contracts as "n_contracts: model::Contracts",
-                counterparty_network_identity as "counterparty_network_identity: model::Identity",
-                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
-                role as "role: model::Role",
-                fees as "fees: model::Fees",
+                uuid as "uuid: models::OrderId",
+                position as "position: models::Position",
+                initial_price as "initial_price: models::Price",
+                taker_leverage as "taker_leverage: models::Leverage",
+                n_contracts as "n_contracts: models::Contracts",
+                counterparty_network_identity as "counterparty_network_identity: models::Identity",
+                counterparty_peer_id as "counterparty_peer_id: models::PeerId",
+                role as "role: models::Role",
+                fees as "fees: models::Fees",
                 expiry_timestamp,
-                lock_txid as "lock_txid: model::Txid",
-                lock_dlc_vout as "lock_dlc_vout: model::Vout"
+                lock_txid as "lock_txid: models::Txid",
+                lock_dlc_vout as "lock_dlc_vout: models::Vout"
             FROM
                 closed_cfds
             WHERE
                 closed_cfds.uuid = $1
             "#,
-            id
+            inner_id
         )
         .fetch_one(&mut conn)
         .await?;
@@ -211,18 +162,18 @@ impl Connection {
 
         let cfd = ClosedCfd {
             id,
-            position: cfd.position,
-            initial_price: cfd.initial_price,
-            taker_leverage: cfd.taker_leverage,
-            n_contracts: cfd.n_contracts,
-            counterparty_network_identity: cfd.counterparty_network_identity,
-            counterparty_peer_id: cfd.counterparty_peer_id,
-            role: cfd.role,
-            fees: cfd.fees,
+            position: cfd.position.into(),
+            initial_price: cfd.initial_price.into(),
+            taker_leverage: cfd.taker_leverage.into(),
+            n_contracts: cfd.n_contracts.into(),
+            counterparty_network_identity: cfd.counterparty_network_identity.into(),
+            counterparty_peer_id: cfd.counterparty_peer_id.into(),
+            role: cfd.role.into(),
+            fees: cfd.fees.into(),
             expiry_timestamp,
             lock: Lock {
-                txid: cfd.lock_txid,
-                dlc_vout: cfd.lock_dlc_vout,
+                txid: cfd.lock_txid.into(),
+                dlc_vout: cfd.lock_dlc_vout.into(),
             },
             settlement,
             creation_timestamp,
@@ -237,7 +188,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             FROM
                 closed_cfds
             "#
@@ -245,7 +196,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -415,12 +366,11 @@ impl ClosedCfdInputAggregate {
         let latest_dlc = self.latest_dlc()?;
         let (lock_transaction, script) = latest_dlc.lock.clone();
         let script_pubkey = script.script_pubkey();
-        let OutPoint { txid, vout } = bdk::bitcoin::Transaction::from(lock_transaction)
+        let OutPoint { txid, vout } = lock_transaction
             .outpoint(&script_pubkey)
             .context("Missing DLC in lock TX")?;
 
-        let txid = Txid::new(txid);
-        let dlc_vout = Vout::new(vout);
+        let dlc_vout = model::Vout::new(vout);
 
         Ok(Lock { txid, dlc_vout })
     }
@@ -439,10 +389,9 @@ impl ClosedCfdInputAggregate {
             .output
             .get(vout as usize)
             .with_context(|| format!("No output at vout {vout}"))?;
-        let payout = Payout::new(Amount::from_sat(payout.value));
+        let payout = model::Payout::new(Amount::from_sat(payout.value));
 
-        let txid = Txid::new(txid);
-        let vout = Vout::new(vout);
+        let vout = model::Vout::new(vout);
 
         Ok(Settlement::Collaborative {
             txid,
@@ -455,8 +404,8 @@ impl ClosedCfdInputAggregate {
     fn cet(&self) -> Result<Settlement> {
         let (cet, price) = self.cet.as_ref().context("Cet not set")?;
 
-        let transaction = bdk::bitcoin::Transaction::from(self.latest_dlc()?.commit.0.clone());
-        let commit_txid = Txid::new(transaction.txid());
+        let transaction = self.latest_dlc()?.commit.0.clone();
+        let commit_txid = transaction.txid();
 
         let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
 
@@ -468,10 +417,9 @@ impl ClosedCfdInputAggregate {
             .output
             .get(vout as usize)
             .with_context(|| format!("No output at vout {vout}"))?;
-        let payout = Payout::new(Amount::from_sat(payout.value));
+        let payout = model::Payout::new(Amount::from_sat(payout.value));
 
-        let txid = Txid::new(txid);
-        let vout = Vout::new(vout);
+        let vout = model::Vout::new(vout);
 
         Ok(Settlement::Cet {
             commit_txid,
@@ -486,7 +434,7 @@ impl ClosedCfdInputAggregate {
         let dlc = self.latest_dlc()?;
 
         let own_script_pubkey = dlc.script_pubkey_for(self.role);
-        let refund_tx = bdk::bitcoin::Transaction::from(dlc.refund.0.clone());
+        let refund_tx = dlc.refund.0.clone();
 
         let OutPoint { txid, vout } = refund_tx
             .outpoint(&own_script_pubkey)
@@ -496,15 +444,13 @@ impl ClosedCfdInputAggregate {
             .output
             .get(vout as usize)
             .with_context(|| format!("No output at vout {vout}"))?;
-        let payout = Payout::new(Amount::from_sat(payout.value));
+        let payout = model::Payout::new(Amount::from_sat(payout.value));
 
-        let transaction = bdk::bitcoin::Transaction::from(dlc.commit.0.clone());
-        let commit_txid = Txid::new(transaction.txid());
-        let txid = Txid::new(txid);
-        let vout = Vout::new(vout);
+        let transaction = dlc.commit.0.clone();
+        let vout = model::Vout::new(vout);
 
         Ok(Settlement::Refund {
-            commit_txid,
+            commit_txid: transaction.txid(),
             txid,
             vout,
             payout,
@@ -547,7 +493,7 @@ impl ClosedCfdInputAggregate {
         Ok(ClosedCfdInput {
             id,
             position,
-            initial_price,
+            initial_price: models::Price::from(initial_price),
             taker_leverage,
             n_contracts,
             counterparty_network_identity,
@@ -567,7 +513,7 @@ impl ClosedCfdInputAggregate {
 struct ClosedCfdInput {
     id: OrderId,
     position: Position,
-    initial_price: Price,
+    initial_price: models::Price,
     taker_leverage: Leverage,
     n_contracts: Contracts,
     counterparty_network_identity: Identity,
@@ -587,6 +533,16 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
             .unwrap_or_else(PeerId::placeholder),
         Some(peer_id) => peer_id,
     };
+    let id = models::OrderId::from(cfd.id);
+    let role = models::Role::from(cfd.role);
+    let taker_leverage = models::Leverage::from(cfd.taker_leverage);
+    let position = models::Position::from(cfd.position);
+    let counterparty_network_identity = models::Identity::from(cfd.counterparty_network_identity);
+    let fees = models::Fees::from(cfd.fees);
+    let contracts = models::Contracts::from(cfd.n_contracts);
+    let counterparty_peer_id = models::PeerId::from(counterparty_peer_id);
+    let lock_txid = models::Txid::from(cfd.lock.txid);
+    let dlc_vout = models::Vout::from(cfd.lock.dlc_vout);
 
     let query_result = sqlx::query!(
         r#"
@@ -607,18 +563,18 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
-        cfd.id,
-        cfd.position,
+        id,
+        position,
         cfd.initial_price,
-        cfd.taker_leverage,
-        cfd.n_contracts,
-        cfd.counterparty_network_identity,
+        taker_leverage,
+        contracts,
+        counterparty_network_identity,
         counterparty_peer_id,
-        cfd.role,
-        cfd.fees,
+        role,
+        fees,
         expiry_timestamp,
-        cfd.lock.txid,
-        cfd.lock.dlc_vout,
+        lock_txid,
+        dlc_vout,
     )
     .execute(&mut *conn)
     .await?;
@@ -641,20 +597,51 @@ async fn insert_settlement(
             vout,
             payout,
             price,
-        } => insert_collaborative_settlement(conn, id, txid, vout, payout, price).await?,
+        } => {
+            insert_collaborative_settlement(
+                conn,
+                id,
+                txid.into(),
+                vout.into(),
+                payout.into(),
+                price.into(),
+            )
+            .await?
+        }
         Settlement::Cet {
             commit_txid,
             txid,
             vout,
             payout,
             price,
-        } => insert_cet_settlement(conn, id, commit_txid, txid, vout, payout, price).await?,
+        } => {
+            insert_cet_settlement(
+                conn,
+                id,
+                commit_txid.into(),
+                txid.into(),
+                vout.into(),
+                payout.into(),
+                price.into(),
+            )
+            .await?
+        }
         Settlement::Refund {
             commit_txid,
             txid,
             vout,
             payout,
-        } => insert_refund_settlement(conn, id, commit_txid, txid, vout, payout).await?,
+        } => {
+            insert_refund_settlement(
+                conn,
+                id,
+                commit_txid.into(),
+                txid.into(),
+                vout.into(),
+                payout.into(),
+            )
+            .await?
+        }
     };
 
     Ok(())
@@ -666,8 +653,10 @@ async fn insert_collaborative_settlement(
     txid: Txid,
     vout: Vout,
     payout: Payout,
-    price: Price,
+    price: models::Price,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO collaborative_settlement_txs
@@ -707,9 +696,11 @@ async fn insert_cet_settlement(
     txid: Txid,
     vout: Vout,
     payout: Payout,
-    price: Price,
+    price: models::Price,
 ) -> Result<()> {
     insert_commit_tx(conn, id, commit_txid).await?;
+
+    let id = models::OrderId::from(id);
 
     let query_result = sqlx::query!(
         r#"
@@ -753,6 +744,8 @@ async fn insert_refund_settlement(
 ) -> Result<()> {
     insert_commit_tx(conn, id, commit_txid).await?;
 
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO closed_refund_txs
@@ -788,6 +781,8 @@ async fn insert_commit_tx(
     id: OrderId,
     txid: Txid,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         INSERT INTO closed_commit_txs
@@ -818,14 +813,16 @@ async fn load_collaborative_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query_as!(
-        Settlement::Collaborative,
+        models::Settlement::Collaborative,
         r#"
         SELECT
-            collaborative_settlement_txs.txid as "txid: model::Txid",
-            collaborative_settlement_txs.vout as "vout: model::Vout",
-            collaborative_settlement_txs.payout as "payout: model::Payout",
-            collaborative_settlement_txs.price as "price: model::Price"
+            collaborative_settlement_txs.txid as "txid: models::Txid",
+            collaborative_settlement_txs.vout as "vout: models::Vout",
+            collaborative_settlement_txs.payout as "payout: models::Payout",
+            collaborative_settlement_txs.price as "price: models::Price"
         FROM
             collaborative_settlement_txs
         JOIN
@@ -838,22 +835,24 @@ async fn load_collaborative_settlement(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row)
+    Ok(row.map(|settlement| settlement.into()))
 }
 
 async fn load_cet_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query_as!(
-        Settlement::Cet,
+        models::Settlement::Cet,
         r#"
         SELECT
-            closed_commit_txs.txid as "commit_txid: model::Txid",
-            closed_cets.txid as "txid: model::Txid",
-            closed_cets.vout as "vout: model::Vout",
-            closed_cets.payout as "payout: model::Payout",
-            closed_cets.price as "price: model::Price"
+            closed_commit_txs.txid as "commit_txid: models::Txid",
+            closed_cets.txid as "txid: models::Txid",
+            closed_cets.vout as "vout: models::Vout",
+            closed_cets.payout as "payout: models::Payout",
+            closed_cets.price as "price: models::Price"
         FROM
             closed_cets
         JOIN
@@ -868,21 +867,23 @@ async fn load_cet_settlement(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row)
+    Ok(row.map(|settlement| settlement.into()))
 }
 
 async fn load_refund_settlement(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query_as!(
-        Settlement::Refund,
+        models::Settlement::Refund,
         r#"
         SELECT
-            closed_commit_txs.txid as "commit_txid: model::Txid",
-            closed_refund_txs.txid as "txid: model::Txid",
-            closed_refund_txs.vout as "vout: model::Vout",
-            closed_refund_txs.payout as "payout: model::Payout"
+            closed_commit_txs.txid as "commit_txid: models::Txid",
+            closed_refund_txs.txid as "txid: models::Txid",
+            closed_refund_txs.vout as "vout: models::Vout",
+            closed_refund_txs.payout as "payout: models::Payout"
         FROM
             closed_refund_txs
         JOIN
@@ -897,7 +898,7 @@ async fn load_refund_settlement(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row)
+    Ok(row.map(|settlement| settlement.into()))
 }
 
 async fn insert_event_log(
@@ -905,6 +906,8 @@ async fn insert_event_log(
     id: OrderId,
     event_log: EventLog,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     for EventLogEntry { name, created_at } in event_log.0.iter() {
         let query_result = sqlx::query!(
             r#"
@@ -943,6 +946,8 @@ async fn load_creation_timestamp(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Timestamp> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query!(
         r#"
         SELECT
@@ -974,9 +979,12 @@ mod tests {
     use model::EventKind;
     use model::FundingRate;
     use model::OpeningFee;
+    use model::Payout;
+    use model::Price;
     use model::Timestamp;
     use model::TxFeeRate;
     use model::Usd;
+    use model::Vout;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use std::str::FromStr;
@@ -1065,11 +1073,11 @@ mod tests {
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
         let inserted = Settlement::Cet {
-            commit_txid: Txid::new(bdk::bitcoin::Txid::default()),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: bdk::bitcoin::Txid::default(),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(dec!(40_000)).unwrap(),
+            price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
         insert_settlement(&mut db_tx, id, inserted).await.unwrap();
@@ -1100,23 +1108,23 @@ mod tests {
         .unwrap();
 
         let inserted_cet = Settlement::Cet {
-            commit_txid: Txid::new(commit_txid_cet),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: commit_txid_cet,
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(dec!(40_000)).unwrap(),
+            price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
         let inserted_collab_settlement = Settlement::Collaborative {
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(Decimal::ONE_HUNDRED).unwrap(),
+            price: Price::new(Decimal::ONE_HUNDRED).expect("To be valid price"),
         };
 
         let inserted_refund_settlement = Settlement::Refund {
-            commit_txid: Txid::new(commit_txid_refund),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: commit_txid_refund,
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
         };
@@ -1176,10 +1184,10 @@ mod tests {
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
         let inserted = Settlement::Collaborative {
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
-            price: Price::new(dec!(40_000)).unwrap(),
+            price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
         insert_settlement(&mut db_tx, id, inserted).await.unwrap();
@@ -1205,8 +1213,8 @@ mod tests {
         insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
 
         let inserted = Settlement::Refund {
-            commit_txid: Txid::new(bdk::bitcoin::Txid::default()),
-            txid: Txid::new(bdk::bitcoin::Txid::default()),
+            commit_txid: bdk::bitcoin::Txid::default(),
+            txid: bdk::bitcoin::Txid::default(),
             vout: Vout::new(0),
             payout: Payout::new(Amount::ONE_BTC),
         };
@@ -1261,7 +1269,7 @@ mod tests {
         let cfd = ClosedCfdInput {
             id,
             position: Position::Long,
-            initial_price: Price::new(Decimal::ONE).unwrap(),
+            initial_price: models::Price::from(Decimal::ONE),
             taker_leverage: Leverage::TWO,
             n_contracts: Contracts::new(100),
             counterparty_network_identity: dummy_identity(),
@@ -1270,14 +1278,14 @@ mod tests {
             fees: Fees::new(SignedAmount::ONE_BTC),
             expiry_timestamp: OffsetDateTime::now_utc(),
             lock: Lock {
-                txid: Txid::new(bdk::bitcoin::Txid::default()),
+                txid: bdk::bitcoin::Txid::default(),
                 dlc_vout: Vout::new(0),
             },
             settlement: Settlement::Collaborative {
-                txid: Txid::new(bdk::bitcoin::Txid::default()),
+                txid: bdk::bitcoin::Txid::default(),
                 vout: Vout::new(0),
                 payout: Payout::new(Amount::ONE_BTC),
-                price: Price::new(Decimal::ONE_HUNDRED).unwrap(),
+                price: Price::new(Decimal::ONE_HUNDRED).expect("To be valid price"),
             },
         };
 

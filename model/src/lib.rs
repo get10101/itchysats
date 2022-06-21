@@ -1,9 +1,11 @@
+use crate::libp2p::PeerId;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
 use bdk::bitcoin::SignedAmount;
+use bdk::bitcoin::Txid;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
@@ -21,8 +23,7 @@ use std::ops::Sub;
 use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-
-mod sqlx_ext; // Must come first because it is a macro.
+use time::OffsetDateTime;
 
 mod cfd;
 mod contract_setup;
@@ -88,12 +89,8 @@ impl str::FromStr for Usd {
     }
 }
 
-impl_sqlx_type_display_from_str!(Usd);
-
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
-
-impl_sqlx_type_display_from_str!(Price);
 
 impl Price {
     const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
@@ -160,8 +157,7 @@ impl InversePrice {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
-#[sqlx(transparent)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Leverage(u8);
 
 impl Leverage {
@@ -451,12 +447,12 @@ impl From<Decimal> for Percent {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum TradingPair {
     BtcUsd,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum Position {
     Long,
     Short,
@@ -528,8 +524,6 @@ impl str::FromStr for Identity {
     }
 }
 
-impl_sqlx_type_display_from_str!(Identity);
-
 #[derive(Debug, Clone)]
 pub struct WalletInfo {
     pub balance: Amount,
@@ -537,10 +531,7 @@ pub struct WalletInfo {
     pub last_updated_at: Timestamp,
 }
 
-#[derive(
-    Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, sqlx::Type,
-)]
-#[sqlx(transparent)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(i64);
 
 impl Timestamp {
@@ -597,8 +588,6 @@ impl Default for FundingRate {
         Self::new(Decimal::ZERO).expect("hard-coded values to be valid")
     }
 }
-
-impl_sqlx_type_display_from_str!(FundingRate);
 
 impl fmt::Display for FundingRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -659,8 +648,6 @@ impl str::FromStr for OpeningFee {
         })
     }
 }
-
-impl_sqlx_type_display_from_str!(OpeningFee);
 
 impl Default for OpeningFee {
     fn default() -> Self {
@@ -874,6 +861,10 @@ impl TxFeeRate {
     pub fn to_u32(self) -> u32 {
         self.0.into()
     }
+
+    pub fn inner(&self) -> NonZeroU32 {
+        self.0
+    }
 }
 
 impl From<TxFeeRate> for bdk::FeeRate {
@@ -903,47 +894,15 @@ impl str::FromStr for TxFeeRate {
     }
 }
 
-impl_sqlx_type_display_from_str!(TxFeeRate);
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Txid(bdk::bitcoin::Txid);
-
-impl Txid {
-    pub fn new(txid: bdk::bitcoin::Txid) -> Self {
-        Self(txid)
-    }
-}
-
-impl fmt::Display for Txid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl str::FromStr for Txid {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let txid = bdk::bitcoin::Txid::from_str(s)?;
-        Ok(Self(txid))
-    }
-}
-
-impl From<Txid> for bdk::bitcoin::Txid {
-    fn from(txid: Txid) -> Self {
-        txid.0
-    }
-}
-
-impl_sqlx_type_display_from_str!(Txid);
-
-#[derive(Debug, Clone, Copy, sqlx::Type, PartialEq)]
-#[sqlx(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vout(u32);
 
 impl Vout {
     pub fn new(vout: u32) -> Self {
         Self(vout)
+    }
+    pub fn inner(&self) -> u32 {
+        self.0
     }
 }
 
@@ -959,6 +918,10 @@ pub struct Fees(SignedAmount);
 impl Fees {
     pub fn new(fees: SignedAmount) -> Self {
         Self(fees)
+    }
+
+    pub fn inner(self) -> SignedAmount {
+        self.0
     }
 }
 
@@ -981,8 +944,6 @@ impl From<&Fees> for i64 {
         fees.0.as_sat() as i64
     }
 }
-
-impl_sqlx_type_integer!(Fees);
 
 /// The number of contracts per position.
 #[derive(Debug, Clone, Copy)]
@@ -1016,14 +977,16 @@ impl From<&Contracts> for i64 {
     }
 }
 
-impl_sqlx_type_integer!(Contracts);
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Payout(Amount);
 
 impl Payout {
     pub fn new(payout: Amount) -> Self {
         Self(payout)
+    }
+
+    pub fn inner(&self) -> Amount {
+        self.0
     }
 }
 
@@ -1049,7 +1012,81 @@ impl From<&Payout> for i64 {
     }
 }
 
-impl_sqlx_type_integer!(Payout);
+#[derive(Debug, Clone, Copy)]
+pub struct FailedCfd {
+    pub id: OrderId,
+    pub position: Position,
+    pub initial_price: Price,
+    pub taker_leverage: Leverage,
+    pub n_contracts: Contracts,
+    pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: PeerId,
+    pub role: Role,
+    pub fees: Fees,
+    pub kind: FailedKind,
+    pub creation_timestamp: Timestamp,
+}
+
+/// The type of failed CFD.
+#[derive(Debug, Clone, Copy)]
+pub enum FailedKind {
+    OfferRejected,
+    ContractSetupFailed,
+}
+
+/// Representation of how a closed CFD was settled.
+///
+/// It is represented using an `enum` rather than a series of optional
+/// fields so that only sane combinations of transactions can be
+/// loaded from the database.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Settlement {
+    Collaborative {
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Cet {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+        price: Price,
+    },
+    Refund {
+        commit_txid: Txid,
+        txid: Txid,
+        vout: Vout,
+        payout: Payout,
+    },
+}
+
+/// Data loaded from the database about a closed CFD.
+#[derive(Debug, Clone, Copy)]
+pub struct ClosedCfd {
+    pub id: OrderId,
+    pub position: Position,
+    pub initial_price: Price,
+    pub taker_leverage: Leverage,
+    pub n_contracts: Contracts,
+    pub counterparty_network_identity: Identity,
+    pub counterparty_peer_id: PeerId,
+    pub role: Role,
+    pub fees: Fees,
+    pub expiry_timestamp: OffsetDateTime,
+    pub lock: Lock,
+    pub settlement: Settlement,
+    pub creation_timestamp: Timestamp,
+}
+
+/// Data loaded from the database about the lock transaction of a
+/// closed CFD.
+#[derive(Debug, Clone, Copy)]
+pub struct Lock {
+    pub txid: Txid,
+    pub dlc_vout: Vout,
+}
 
 #[cfg(test)]
 mod tests {

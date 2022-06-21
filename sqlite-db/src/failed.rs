@@ -18,87 +18,30 @@ use crate::event_log::EventLog;
 use crate::event_log::EventLogEntry;
 use crate::load_cfd_events;
 use crate::load_cfd_row;
+use crate::models;
 use crate::Cfd;
 use crate::CfdAggregate;
 use crate::Connection;
 use anyhow::bail;
 use anyhow::Result;
-use model::impl_sqlx_type_display_from_str;
 use model::libp2p::PeerId;
 use model::long_and_short_leverage;
-use model::Contracts;
 use model::EventKind;
+use model::FailedCfd;
 use model::FeeAccount;
-use model::Fees;
 use model::FundingFee;
-use model::Identity;
-use model::Leverage;
 use model::OrderId;
-use model::Position;
-use model::Price;
-use model::Role;
 use model::Timestamp;
+use models::FailedKind;
 use sqlx::pool::PoolConnection;
 use sqlx::Connection as _;
 use sqlx::Sqlite;
 use sqlx::Transaction;
-use std::fmt;
-use std::str;
 
 /// A trait for building an aggregate based on a `FailedCfd`.
 pub trait FailedCfdAggregate: CfdAggregate {
     fn new_failed(args: Self::CtorArgs, cfd: FailedCfd) -> Self;
 }
-
-/// Data loaded from the database about a failed CFD.
-#[derive(Debug, Clone, Copy)]
-pub struct FailedCfd {
-    pub id: OrderId,
-    pub position: Position,
-    pub initial_price: Price,
-    pub taker_leverage: Leverage,
-    pub n_contracts: Contracts,
-    pub counterparty_network_identity: Identity,
-    pub counterparty_peer_id: PeerId,
-    pub role: Role,
-    pub fees: Fees,
-    pub kind: Kind,
-    pub creation_timestamp: Timestamp,
-}
-
-/// The type of failed CFD.
-#[derive(Debug, Clone, Copy)]
-pub enum Kind {
-    OfferRejected,
-    ContractSetupFailed,
-}
-
-impl fmt::Display for Kind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Kind::OfferRejected => "OfferRejected",
-            Kind::ContractSetupFailed => "ContractSetupFailed",
-        };
-
-        s.fmt(f)
-    }
-}
-
-impl str::FromStr for Kind {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let kind = match s {
-            "OfferRejected" => Kind::OfferRejected,
-            "ContractSetupFailed" => Kind::ContractSetupFailed,
-            other => bail!("Not a failed CFD Kind: {other}"),
-        };
-
-        Ok(kind)
-    }
-}
-
-impl_sqlx_type_display_from_str!(Kind);
 
 impl Connection {
     pub async fn move_to_failed_cfds(&self) -> Result<()> {
@@ -147,25 +90,26 @@ impl Connection {
     {
         let mut conn = self.inner.acquire().await?;
 
+        let inner_id = models::OrderId::from(id);
         let cfd = sqlx::query!(
             r#"
             SELECT
-                uuid as "id: model::OrderId",
-                position as "position: model::Position",
-                initial_price as "initial_price: model::Price",
-                taker_leverage as "taker_leverage: model::Leverage",
-                n_contracts as "n_contracts: model::Contracts",
-                counterparty_network_identity as "counterparty_network_identity: model::Identity",
-                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
-                role as "role: model::Role",
-                fees as "fees: model::Fees",
-                kind as "kind: Kind"
+                uuid as "id: models::OrderId",
+                position as "position: models::Position",
+                initial_price as "initial_price: models::Price",
+                taker_leverage as "taker_leverage: models::Leverage",
+                n_contracts as "n_contracts: models::Contracts",
+                counterparty_network_identity as "counterparty_network_identity: models::Identity",
+                counterparty_peer_id as "counterparty_peer_id: models::PeerId",
+                role as "role: models::Role",
+                fees as "fees: models::Fees",
+                kind as "kind: models::FailedKind"
             FROM
                 failed_cfds
             WHERE
                 failed_cfds.uuid = $1
             "#,
-            id
+            inner_id
         )
         .fetch_one(&mut conn)
         .await?;
@@ -174,15 +118,15 @@ impl Connection {
 
         let cfd = FailedCfd {
             id,
-            position: cfd.position,
-            initial_price: cfd.initial_price,
-            taker_leverage: cfd.taker_leverage,
-            n_contracts: cfd.n_contracts,
-            counterparty_network_identity: cfd.counterparty_network_identity,
-            counterparty_peer_id: cfd.counterparty_peer_id,
-            role: cfd.role,
-            fees: cfd.fees,
-            kind: cfd.kind,
+            position: cfd.position.into(),
+            initial_price: cfd.initial_price.into(),
+            taker_leverage: cfd.taker_leverage.into(),
+            n_contracts: cfd.n_contracts.into(),
+            counterparty_network_identity: cfd.counterparty_network_identity.into(),
+            counterparty_peer_id: cfd.counterparty_peer_id.into(),
+            role: cfd.role.into(),
+            fees: cfd.fees.into(),
+            kind: cfd.kind.into(),
             creation_timestamp,
         };
 
@@ -195,7 +139,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             FROM
                 failed_cfds
             "#
@@ -203,7 +147,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -216,9 +160,9 @@ async fn insert_failed_cfd(
     event_log: &EventLog,
 ) -> Result<()> {
     let kind = if event_log.contains(&EventKind::OfferRejected) {
-        Kind::OfferRejected
+        FailedKind::OfferRejected
     } else if event_log.contains(&EventKind::ContractSetupFailed) {
-        Kind::ContractSetupFailed
+        FailedKind::ContractSetupFailed
     } else {
         bail!("Failed CFD does not have expected event")
     };
@@ -227,7 +171,7 @@ async fn insert_failed_cfd(
         .quantity_usd
         .try_into_u64()
         .expect("number of contracts to fit into a u64");
-    let n_contracts = Contracts::new(n_contracts);
+    let n_contracts = models::Contracts::from(n_contracts);
 
     let fees = {
         let (long_leverage, short_leverage) =
@@ -247,7 +191,7 @@ async fn insert_failed_cfd(
             .add_opening_fee(cfd.opening_fee)
             .add_funding_fee(initial_funding_fee);
 
-        Fees::new(fee_account.balance())
+        models::Fees::from(fee_account.balance())
     };
 
     let counterparty_peer_id = match cfd.counterparty_peer_id {
@@ -255,6 +199,14 @@ async fn insert_failed_cfd(
             .unwrap_or_else(PeerId::placeholder),
         Some(peer_id) => peer_id,
     };
+
+    let id = models::OrderId::from(cfd.id);
+    let role = models::Role::from(cfd.role);
+    let initial_price = models::Price::from(cfd.initial_price);
+    let taker_leverage = models::Leverage::from(cfd.taker_leverage);
+    let position = models::Position::from(cfd.position);
+    let counterparty_network_identity = models::Identity::from(cfd.counterparty_network_identity);
+    let counterparty_peer_id = models::PeerId::from(counterparty_peer_id);
 
     let query_result = sqlx::query!(
         r#"
@@ -273,14 +225,14 @@ async fn insert_failed_cfd(
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
-        cfd.id,
-        cfd.position,
-        cfd.initial_price,
-        cfd.taker_leverage,
+        id,
+        position,
+        initial_price,
+        taker_leverage,
         n_contracts,
-        cfd.counterparty_network_identity,
+        counterparty_network_identity,
         counterparty_peer_id,
-        cfd.role,
+        role,
         fees,
         kind,
     )
@@ -299,6 +251,8 @@ async fn insert_event_log(
     id: OrderId,
     event_log: EventLog,
 ) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     for EventLogEntry { name, created_at } in event_log.0.iter() {
         let query_result = sqlx::query!(
             r#"
@@ -337,6 +291,8 @@ async fn load_creation_timestamp(
     conn: &mut PoolConnection<Sqlite>,
     id: OrderId,
 ) -> Result<Timestamp> {
+    let id = models::OrderId::from(id);
+
     let row = sqlx::query!(
         r#"
         SELECT

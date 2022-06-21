@@ -22,8 +22,11 @@ use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::market_closing_price;
 use model::CfdEvent;
+use model::ClosedCfd;
 use model::Dlc;
 use model::EventKind;
+use model::FailedCfd;
+use model::FailedKind;
 use model::FeeAccount;
 use model::FundingFee;
 use model::FundingRate;
@@ -33,6 +36,7 @@ use model::Origin;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::Settlement;
 use model::Timestamp;
 use model::TradingPair;
 use model::Usd;
@@ -45,7 +49,6 @@ use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlite_db;
-use sqlite_db::Settlement;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -694,7 +697,7 @@ impl Cfd {
     fn lock_tx_url(&self, network: Network) -> Option<TxUrl> {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
         let url = TxUrl::from_transaction(
-            &dlc.lock.0.clone().into(),
+            &dlc.lock.0.clone(),
             &dlc.lock.1.script_pubkey(),
             network,
             TxLabel::Lock,
@@ -709,7 +712,7 @@ impl Cfd {
         }
 
         let dlc = self.aggregated.latest_dlc.as_ref()?;
-        let url = TxUrl::new(dlc.commit.0.txid().into(), network, TxLabel::Commit);
+        let url = TxUrl::new(dlc.commit.0.txid(), network, TxLabel::Commit);
 
         Some(url)
     }
@@ -729,7 +732,7 @@ impl Cfd {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
         let url = TxUrl::from_transaction(
-            &dlc.refund.0.clone().into(),
+            &dlc.refund.0.clone(),
             &dlc.script_pubkey_for(self.role),
             network,
             TxLabel::Refund,
@@ -844,8 +847,8 @@ impl sqlite_db::CfdAggregate for Cfd {
 }
 
 impl sqlite_db::ClosedCfdAggregate for Cfd {
-    fn new_closed(network: Self::CtorArgs, closed_cfd: sqlite_db::ClosedCfd) -> Self {
-        let sqlite_db::ClosedCfd {
+    fn new_closed(network: Self::CtorArgs, closed_cfd: ClosedCfd) -> Self {
+        let ClosedCfd {
             id,
             position,
             initial_price,
@@ -881,7 +884,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             let mut tx_url_list = HashSet::default();
 
             tx_url_list.insert(
-                TxUrl::new(lock.txid.into(), network, TxLabel::Lock)
+                TxUrl::new(lock.txid, network, TxLabel::Lock)
                     .with_output_index(lock.dlc_vout.into()),
             );
 
@@ -893,7 +896,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                     price,
                 } => {
                     tx_url_list.insert(
-                        TxUrl::new(txid.into(), network, TxLabel::Collaborative)
+                        TxUrl::new(txid, network, TxLabel::Collaborative)
                             .with_output_index(vout.into()),
                     );
                     (Some(price), payout, CfdState::Closed)
@@ -906,13 +909,11 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                     price,
                 } => {
                     tx_url_list.insert(
-                        TxUrl::new(commit_txid.into(), network, TxLabel::Commit)
-                            .with_output_index(0),
+                        TxUrl::new(commit_txid, network, TxLabel::Commit).with_output_index(0),
                     );
 
                     tx_url_list.insert(
-                        TxUrl::new(txid.into(), network, TxLabel::Cet)
-                            .with_output_index(vout.into()),
+                        TxUrl::new(txid, network, TxLabel::Cet).with_output_index(vout.into()),
                     );
                     (Some(price), payout, CfdState::Closed)
                 }
@@ -923,13 +924,11 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                     payout,
                 } => {
                     tx_url_list.insert(
-                        TxUrl::new(commit_txid.into(), network, TxLabel::Commit)
-                            .with_output_index(0),
+                        TxUrl::new(commit_txid, network, TxLabel::Commit).with_output_index(0),
                     );
 
                     tx_url_list.insert(
-                        TxUrl::new(txid.into(), network, TxLabel::Refund)
-                            .with_output_index(vout.into()),
+                        TxUrl::new(txid, network, TxLabel::Refund).with_output_index(vout.into()),
                     );
                     (None, payout, CfdState::Refunded)
                 }
@@ -988,8 +987,8 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 }
 
 impl sqlite_db::FailedCfdAggregate for Cfd {
-    fn new_failed(network: Self::CtorArgs, failed_cfd: sqlite_db::FailedCfd) -> Self {
-        let sqlite_db::FailedCfd {
+    fn new_failed(network: Self::CtorArgs, failed_cfd: FailedCfd) -> Self {
+        let FailedCfd {
             id,
             position,
             initial_price,
@@ -1004,8 +1003,8 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         } = failed_cfd;
 
         let state = match kind {
-            sqlite_db::Kind::OfferRejected => CfdState::Rejected,
-            sqlite_db::Kind::ContractSetupFailed => CfdState::SetupFailed,
+            FailedKind::OfferRejected => CfdState::Rejected,
+            FailedKind::ContractSetupFailed => CfdState::SetupFailed,
         };
 
         let quantity_usd =

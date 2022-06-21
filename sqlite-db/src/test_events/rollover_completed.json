@@ -1,7 +1,7 @@
 {
   "name": "RolloverCompleted",
   "data": {
-    "funding_fee": { "fee": 100, "rate": 1.5 },
+    "funding_fee": { "fee": 100, "rate": 0.015 },
     "dlc": {
       "cets": {
         "/x/BitMEX/BXBT/2022-04-15T02:00:00.price?n=20": [

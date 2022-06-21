@@ -1,3 +1,4 @@
+use crate::models;
 use crate::Connection;
 use anyhow::Result;
 use model::Identity;
@@ -15,6 +16,7 @@ impl Connection {
         timestamp: OffsetDateTime,
     ) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
+        let taker_id = models::Identity::from(taker_id);
 
         let timestamp = timestamp.unix_timestamp();
 
@@ -49,6 +51,7 @@ impl Connection {
         let mut conn = self.inner.acquire().await?;
 
         let timestamp = timestamp.unix_timestamp();
+        let taker_id = models::Identity::from(taker_id);
 
         sqlx::query!(
             r#"
@@ -78,6 +81,8 @@ mod sqlx_test_utils {
         conn: &mut PoolConnection<Sqlite>,
         taker_id: Identity,
     ) -> Result<Option<OffsetDateTime>> {
+        let taker_id = models::Identity::from(taker_id);
+
         let row = sqlx::query!(
             r#"
             SELECT
@@ -107,6 +112,8 @@ mod sqlx_test_utils {
         conn: &mut PoolConnection<Sqlite>,
         taker_id: Identity,
     ) -> Result<Option<OffsetDateTime>> {
+        let taker_id = models::Identity::from(taker_id);
+
         let row = sqlx::query!(
             r#"
             SELECT

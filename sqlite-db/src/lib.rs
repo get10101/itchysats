@@ -1,3 +1,7 @@
+extern crate core;
+
+mod sqlx_ext; // Must come first because it is a macro.
+
 use anyhow::Context;
 use anyhow::Result;
 use chashmap_async::CHashMap;
@@ -40,6 +44,7 @@ pub mod closed;
 pub mod event_log;
 pub mod failed;
 mod impls;
+mod models;
 mod rollover;
 pub mod time_to_first_position;
 
@@ -141,6 +146,21 @@ impl Connection {
     pub async fn insert_cfd(&self, cfd: &model::Cfd) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 
+        let id = models::OrderId::from(cfd.id());
+
+        let role = models::Role::from(cfd.role());
+        let quantity = models::Usd::from(cfd.quantity());
+        let initial_price = models::Price::from(cfd.initial_price());
+        let leverage = models::Leverage::from(cfd.taker_leverage());
+
+        let position = models::Position::from(cfd.position());
+        let counterparty_network_identity =
+            models::Identity::from(cfd.counterparty_network_identity());
+        let initial_funding_rate = models::FundingRate::from(cfd.initial_funding_rate());
+        let opening_fee = models::OpeningFee::from(cfd.opening_fee());
+        let tx_fee_rate = models::TxFeeRate::from(cfd.initial_tx_fee_rate());
+        let counterparty_peer_id = cfd.counterparty_peer_id().map(models::PeerId::from);
+
         let query_result = sqlx::query(
             r#"
         insert into cfds (
@@ -158,25 +178,25 @@ impl Connection {
             initial_tx_fee_rate
         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
         )
-        .bind(&cfd.id())
-        .bind(&cfd.position())
-        .bind(&cfd.initial_price())
-        .bind(&cfd.taker_leverage())
+        .bind(&id)
+        .bind(&position)
+        .bind(&initial_price)
+        .bind(&leverage)
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
-        .bind(&cfd.quantity())
-        .bind(&cfd.counterparty_network_identity())
-        .bind(&cfd.counterparty_peer_id().unwrap_or_else(|| {
+        .bind(&quantity)
+        .bind(&counterparty_network_identity)
+        .bind(&counterparty_peer_id.unwrap_or_else(|| {
             tracing::debug!(
                 order_id=%cfd.id(),
                 counterparty_identity=%cfd.counterparty_network_identity(),
                 "Inserting deprecated CFD with placeholder peer-id"
             );
-            PeerId::placeholder()
+            models::PeerId::from(model::libp2p::PeerId::placeholder())
         }))
-        .bind(&cfd.role())
-        .bind(&cfd.opening_fee())
-        .bind(&cfd.initial_funding_rate())
-        .bind(&cfd.initial_tx_fee_rate())
+        .bind(&role)
+        .bind(&opening_fee)
+        .bind(&initial_funding_rate)
+        .bind(&tx_fee_rate)
         .execute(&mut conn)
         .await?;
 
@@ -201,6 +221,8 @@ impl Connection {
 
         let (event_name, event_data) = event.event.to_json();
 
+        let order_id = models::OrderId::from(event.id);
+        let timestamp = models::Timestamp::from(event.timestamp);
         let query_result = sqlx::query(
             r##"
         insert into events (
@@ -213,24 +235,23 @@ impl Connection {
             $2, $3, $4
         )"##,
         )
-        .bind(&event.id)
+        .bind(&order_id)
         .bind(&event_name)
         .bind(&event_data)
-        .bind(&event.timestamp)
+        .bind(&timestamp)
         .execute(&mut conn)
         .await?;
 
         if query_result.rows_affected() != 1 {
             anyhow::bail!("failed to insert event");
         }
-        let event_id = event.id;
 
         // if we have a rollover completed event we store it additionally in its own table
         if let RolloverCompleted { .. } = event.event {
             rollover::insert(&mut conn, query_result.last_insert_rowid(), event).await?;
         }
 
-        tracing::info!(event = %event_name, order_id = %event_id, "Appended event to database");
+        tracing::info!(event = %event_name, %order_id, "Appended event to database");
 
         Ok(())
     }
@@ -371,7 +392,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             FROM
                 cfds
             "#
@@ -379,7 +400,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -392,7 +413,7 @@ impl Connection {
             r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             from
                 cfds
             where exists (
@@ -412,7 +433,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -425,7 +446,7 @@ impl Connection {
             r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::OrderId"
+                uuid as "uuid: models::OrderId"
             from
                 cfds
             where exists (
@@ -443,7 +464,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid)
+        .map(|r| r.uuid.into())
         .collect();
 
         Ok(ids)
@@ -504,22 +525,24 @@ pub trait CfdAggregate: Clone + Send + Sync + 'static {
 }
 
 async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<Cfd, Error> {
+    let id = models::OrderId::from(id);
+
     let cfd_row = sqlx::query!(
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: model::OrderId",
-                position as "position: model::Position",
-                initial_price as "initial_price: model::Price",
-                leverage as "leverage: model::Leverage",
+                uuid as "uuid: models::OrderId",
+                position as "position: models::Position",
+                initial_price as "initial_price: models::Price",
+                leverage as "leverage: models::Leverage",
                 settlement_time_interval_hours,
-                quantity_usd as "quantity_usd: model::Usd",
-                counterparty_network_identity as "counterparty_network_identity: model::Identity",
-                counterparty_peer_id as "counterparty_peer_id: model::libp2p::PeerId",
-                role as "role: model::Role",
-                opening_fee as "opening_fee: model::OpeningFee",
-                initial_funding_rate as "initial_funding_rate: model::FundingRate",
-                initial_tx_fee_rate as "initial_tx_fee_rate: model::TxFeeRate"
+                quantity_usd as "quantity_usd: models::Usd",
+                counterparty_network_identity as "counterparty_network_identity: models::Identity",
+                counterparty_peer_id as "counterparty_peer_id: models::PeerId",
+                role as "role: models::Role",
+                opening_fee as "opening_fee: models::OpeningFee",
+                initial_funding_rate as "initial_funding_rate: models::FundingRate",
+                initial_tx_fee_rate as "initial_tx_fee_rate: models::TxFeeRate"
             from
                 cfds
             where
@@ -531,27 +554,29 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
     .await?
     .ok_or(Error::OpenCfdNotFound)?;
 
-    let role = cfd_row.role;
-    let counterparty_network_identity = cfd_row.counterparty_network_identity;
-    let counterparty_peer_id = if cfd_row.counterparty_peer_id == PeerId::placeholder() {
+    let role = cfd_row.role.into();
+    let counterparty_network_identity = cfd_row.counterparty_network_identity.into();
+    let counterparty_peer_id = if cfd_row.counterparty_peer_id
+        == models::PeerId::from(model::libp2p::PeerId::placeholder())
+    {
         derive_known_peer_id(counterparty_network_identity, role)
     } else {
-        Some(cfd_row.counterparty_peer_id)
+        Some(cfd_row.counterparty_peer_id.into())
     };
 
     Ok(Cfd {
-        id: cfd_row.uuid,
-        position: cfd_row.position,
-        initial_price: cfd_row.initial_price,
-        taker_leverage: cfd_row.leverage,
+        id: cfd_row.uuid.into(),
+        position: cfd_row.position.into(),
+        initial_price: cfd_row.initial_price.into(),
+        taker_leverage: cfd_row.leverage.into(),
         settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
-        quantity_usd: cfd_row.quantity_usd,
+        quantity_usd: cfd_row.quantity_usd.into(),
         counterparty_network_identity,
         counterparty_peer_id,
         role,
-        opening_fee: cfd_row.opening_fee,
-        initial_funding_rate: cfd_row.initial_funding_rate,
-        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate,
+        opening_fee: cfd_row.opening_fee.into(),
+        initial_funding_rate: cfd_row.initial_funding_rate.into(),
+        initial_tx_fee_rate: cfd_row.initial_tx_fee_rate.into(),
     })
 }
 
@@ -593,6 +618,8 @@ async fn load_cfd_events(
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
+    let id = models::OrderId::from(id);
+
     let mut events = sqlx::query!(
         r#"
 
@@ -601,7 +628,7 @@ async fn load_cfd_events(
             events.id as event_row_id,
             name,
             data,
-            created_at as "created_at: model::Timestamp"
+            created_at as "created_at: models::Timestamp"
         from
             events
         join
@@ -621,8 +648,8 @@ async fn load_cfd_events(
             row.cfd_row_id.context("CFD with id not found {id}")?,
             row.event_row_id,
             CfdEvent {
-                timestamp: row.created_at,
-                id,
+                timestamp: row.created_at.into(),
+                id: id.into(),
                 event: EventKind::from_json(row.name, row.data)?,
             },
         ))
@@ -653,6 +680,7 @@ async fn load_cfd_events(
 }
 
 async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+    let id = models::OrderId::from(id);
     let query_result = sqlx::query!(
         r#"
         DELETE FROM
@@ -673,6 +701,8 @@ async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId)
 }
 
 async fn delete_from_events_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+    let id = models::OrderId::from(id);
+
     let query_result = sqlx::query!(
         r#"
         DELETE FROM

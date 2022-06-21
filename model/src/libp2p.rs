@@ -1,4 +1,3 @@
-use crate::impl_sqlx_type_display_from_str;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
@@ -49,8 +48,6 @@ impl FromStr for PeerId {
         Ok(Self(peer_id))
     }
 }
-
-impl_sqlx_type_display_from_str!(PeerId);
 
 #[cfg(test)]
 mod tests {
