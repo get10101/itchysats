@@ -29,7 +29,6 @@ use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::Cet;
 use model::Dlc;
-use model::FeeFlow;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
@@ -232,22 +231,22 @@ pub enum CompleteFee {
     Nein,
 }
 
-impl From<FeeFlow> for CompleteFee {
-    fn from(fee_flow: FeeFlow) -> Self {
-        match fee_flow {
-            FeeFlow::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
-            FeeFlow::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
-            FeeFlow::Nein => CompleteFee::Nein,
+impl From<model::CompleteFee> for CompleteFee {
+    fn from(complete_fee: model::CompleteFee) -> Self {
+        match complete_fee {
+            model::CompleteFee::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
+            model::CompleteFee::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
+            model::CompleteFee::None => CompleteFee::Nein,
         }
     }
 }
 
-impl From<CompleteFee> for FeeFlow {
-    fn from(fee_flow: CompleteFee) -> Self {
-        match fee_flow {
-            CompleteFee::LongPaysShort(a) => FeeFlow::LongPaysShort(a),
-            CompleteFee::ShortPaysLong(a) => FeeFlow::ShortPaysLong(a),
-            CompleteFee::Nein => FeeFlow::Nein,
+impl From<CompleteFee> for model::CompleteFee {
+    fn from(complete_fee: CompleteFee) -> Self {
+        match complete_fee {
+            CompleteFee::LongPaysShort(a) => model::CompleteFee::LongPaysShort(a),
+            CompleteFee::ShortPaysLong(a) => model::CompleteFee::ShortPaysLong(a),
+            CompleteFee::Nein => model::CompleteFee::None,
         }
     }
 }
@@ -256,10 +255,13 @@ pub(crate) async fn emit_completed(
     order_id: OrderId,
     dlc: Dlc,
     funding_fee: FundingFee,
+    complete_fee: model::CompleteFee,
     executor: &command::Executor,
 ) {
     if let Err(e) = executor
-        .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
+        .execute(order_id, |cfd| {
+            Ok(cfd.complete_rollover(dlc, funding_fee, Some(complete_fee)))
+        })
         .await
     {
         tracing::error!(%order_id, "Failed to execute rollover completed: {e:#}")
@@ -360,7 +362,7 @@ pub(crate) async fn build_own_cfd_transactions(
     oracle_pk: schnorrsig::PublicKey,
     our_position: Position,
     n_payouts: usize,
-    complete_fee: FeeFlow,
+    complete_fee: model::CompleteFee,
     punish_params: PunishParams,
 ) -> Result<CfdTransactions> {
     let sk = dlc.identity;
@@ -573,6 +575,7 @@ pub(crate) fn finalize_revoked_commits(
     dlc: &Dlc,
     commit_tx_adaptor_sig: EcdsaAdaptorSignature,
     msg2: RolloverMsg2,
+    complete_fee_before_rollover: model::CompleteFee,
 ) -> Result<Vec<RevokedCommit>> {
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -596,6 +599,7 @@ pub(crate) fn finalize_revoked_commits(
         txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
         settlement_event_id: Some(dlc.settlement_event_id),
+        complete_fee: Some(complete_fee_before_rollover),
     });
 
     Ok(revoked_commit)

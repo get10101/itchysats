@@ -297,8 +297,15 @@ impl ClosedCfdInputAggregate {
             RolloverStarted => {}
             RolloverAccepted => {}
             RolloverRejected => {}
-            RolloverCompleted { dlc, funding_fee } => {
-                self.fee_account = self.fee_account.add_funding_fee(funding_fee);
+            RolloverCompleted {
+                dlc,
+                funding_fee,
+                complete_fee,
+            } => {
+                self.fee_account = match complete_fee {
+                    None => self.fee_account.add_funding_fee(funding_fee),
+                    Some(complete_fee) => self.fee_account.from_complete_fee(complete_fee),
+                };
                 self.latest_dlc = dlc;
             }
             RolloverFailed => {}

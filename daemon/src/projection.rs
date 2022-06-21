@@ -426,12 +426,22 @@ impl Cfd {
             OfferRejected => {
                 self.aggregated.state = CfdState::Rejected;
             }
-            RolloverCompleted { dlc, funding_fee } => {
+            RolloverCompleted {
+                dlc,
+                funding_fee,
+                complete_fee,
+            } => {
                 self.aggregated.rollover_state = None;
                 self.expiry_timestamp = dlc.as_ref().map(|dlc| dlc.settlement_event_id.timestamp());
                 self.aggregated.latest_dlc = dlc;
-                self.aggregated.fee_account =
-                    self.aggregated.fee_account.add_funding_fee(funding_fee);
+
+                self.aggregated.fee_account = match complete_fee {
+                    None => self.aggregated.fee_account.add_funding_fee(funding_fee),
+                    Some(complete_fee) => {
+                        self.aggregated.fee_account.from_complete_fee(complete_fee)
+                    }
+                };
+
                 self.accumulated_fees = self.aggregated.fee_account.balance();
 
                 self.aggregated.state = CfdState::Open;

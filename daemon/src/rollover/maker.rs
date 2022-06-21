@@ -303,8 +303,12 @@ impl Actor {
                         .await
                         .context("Failed to send Msg2")?;
 
-                    let revoked_commit =
-                        finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2)?;
+                    let revoked_commit = finalize_revoked_commits(
+                        &dlc,
+                        own_cfd_txs.commit.1,
+                        msg2,
+                        rollover_params.complete_fee_before_rollover(),
+                    )?;
 
                     let dlc = Dlc {
                         identity: dlc.identity,
@@ -328,7 +332,7 @@ impl Actor {
                         refund_timelock: rollover_params.refund_timelock,
                     };
 
-                    emit_completed(order_id, dlc, funding_fee, &executor).await;
+                    emit_completed(order_id, dlc, funding_fee, complete_fee, &executor).await;
 
                     Ok(())
                 }

@@ -38,8 +38,8 @@ use maia_core::PunishParams;
 use model::calculate_payouts;
 use model::olivia;
 use model::Cet;
+use model::CompleteFee;
 use model::Dlc;
-use model::FeeFlow;
 use model::Position;
 use model::Role;
 use model::RolloverParams;
@@ -375,7 +375,7 @@ pub async fn roll_over(
     our_position: Position,
     dlc: Dlc,
     n_payouts: usize,
-    complete_fee: FeeFlow,
+    complete_fee: CompleteFee,
 ) -> Result<Dlc> {
     let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
@@ -459,7 +459,12 @@ pub async fn roll_over(
         .context("Empty stream instead of Msg2")?
         .try_into_msg2()?;
 
-    let revoked_commit = finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2.into())?;
+    let revoked_commit = finalize_revoked_commits(
+        &dlc,
+        own_cfd_txs.commit.1,
+        msg2.into(),
+        rollover_params.complete_fee_before_rollover(),
+    )?;
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring

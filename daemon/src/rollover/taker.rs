@@ -163,6 +163,8 @@ impl Actor {
                             tracing::info!(%order_id, "Rollover proposal got accepted");
 
                             let funding_fee = *rollover_params.funding_fee();
+                            let complete_fee_before_rollover =
+                                rollover_params.complete_fee_before_rollover();
                             let our_role = Role::Taker;
                             let our_position = position;
 
@@ -266,8 +268,12 @@ impl Actor {
                                 .into_rollover_msg()?
                                 .try_into_msg2()?;
 
-                            let revoked_commit =
-                                finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2)?;
+                            let revoked_commit = finalize_revoked_commits(
+                                &dlc,
+                                own_cfd_txs.commit.1,
+                                msg2,
+                                complete_fee_before_rollover,
+                            )?;
 
                             let dlc = Dlc {
                                 identity: dlc.identity,
@@ -293,7 +299,14 @@ impl Actor {
                                 refund_timelock: rollover_params.refund_timelock,
                             };
 
-                            emit_completed(order_id, dlc, funding_fee, &executor).await;
+                            emit_completed(
+                                order_id,
+                                dlc,
+                                funding_fee,
+                                complete_fee.into(),
+                                &executor,
+                            )
+                            .await;
                         }
                         Decision::Reject(_) => {
                             emit_rejected(order_id, &executor).await;

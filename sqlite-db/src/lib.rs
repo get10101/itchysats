@@ -658,12 +658,13 @@ async fn load_cfd_events(
 
     for (cfd_row_id, event_row_id, event) in events.iter_mut() {
         if let RolloverCompleted { .. } = event.event {
-            if let Some((dlc, funding_fee)) =
+            if let Some((dlc, funding_fee, complete_fee)) =
                 rollover::load(conn, *cfd_row_id, *event_row_id).await?
             {
                 event.event = RolloverCompleted {
                     dlc: Some(dlc),
                     funding_fee,
+                    complete_fee,
                 }
             }
         }

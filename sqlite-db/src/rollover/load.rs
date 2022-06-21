@@ -1,4 +1,5 @@
 use crate::models;
+use crate::models::into_complete_fee;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::FromHex;
 use bdk::bitcoin::secp256k1;
@@ -8,6 +9,7 @@ use bdk::bitcoin::Script;
 use bdk::descriptor::Descriptor;
 use model::olivia::BitMexPriceEventId;
 use model::Cet;
+use model::CompleteFee;
 use model::Dlc;
 use model::FundingFee;
 use model::RevokedCommit;
@@ -25,7 +27,7 @@ pub async fn load(
     transaction: &mut Transaction<'_, Sqlite>,
     cfd_row_id: i64,
     event_row_id: i64,
-) -> Result<Option<(Dlc, FundingFee)>> {
+) -> Result<Option<(Dlc, FundingFee, Option<CompleteFee>)>> {
     let revoked_commit = load_revoked_commit_transactions(transaction, cfd_row_id).await?;
     let cets = load_cets(transaction, cfd_row_id).await?;
 
@@ -52,7 +54,9 @@ pub async fn load(
                 commit_adaptor_signature as "commit_adaptor_signature: models::AdaptorSignature",
                 commit_descriptor,
                 refund_tx as "refund_tx: models::Transaction",
-                refund_signature
+                refund_signature,
+                complete_fee as "complete_fee: i64",
+                complete_fee_flow as "complete_fee_flow: models::FeeFlow"
             FROM
                 rollover_completed_event_data
             WHERE 
@@ -104,7 +108,9 @@ pub async fn load(
         rate: row.rate.into(),
     };
 
-    Ok(Some((dlc, funding_fee)))
+    let complete_fee = into_complete_fee(row.complete_fee_flow, row.complete_fee);
+
+    Ok(Some((dlc, funding_fee, complete_fee)))
 }
 
 async fn load_revoked_commit_transactions(
@@ -119,7 +125,9 @@ async fn load_revoked_commit_transactions(
                 revocation_sk_theirs as "revocation_sk_theirs: models::SecretKey",
                 script_pubkey,
                 settlement_event_id as "settlement_event_id: models::BitMexPriceEventId",
-                txid as "txid: models::Txid"
+                txid as "txid: models::Txid",
+                complete_fee as "complete_fee: i64",
+                complete_fee_flow as "complete_fee_flow: models::FeeFlow"
             FROM
                 revoked_commit_transactions
             WHERE
@@ -140,6 +148,7 @@ async fn load_revoked_commit_transactions(
             settlement_event_id: row
                 .settlement_event_id
                 .map(|settlement_event_id| settlement_event_id.into()),
+            complete_fee: into_complete_fee(row.complete_fee_flow, row.complete_fee),
         })
     })
     .collect::<Result<Vec<_>>>()?;

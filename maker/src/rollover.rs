@@ -105,7 +105,7 @@ impl Actor {
         if let Err(e) = self
             .executor
             .execute(self.order_id, |cfd| {
-                Ok(cfd.complete_rollover(dlc, funding_fee))
+                Ok(cfd.complete_rollover(dlc, funding_fee, None))
             })
             .await
         {

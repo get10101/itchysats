@@ -6,8 +6,8 @@ use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
 use crate::rollover;
 use crate::rollover::RolloverParams;
+use crate::CompleteFee;
 use crate::FeeAccount;
-use crate::FeeFlow;
 use crate::FundingFee;
 use crate::FundingRate;
 use crate::Identity;
@@ -443,6 +443,10 @@ pub enum EventKind {
         #[serde(skip_serializing)]
         dlc: Option<Dlc>,
         funding_fee: FundingFee,
+
+        /// If the complete fee is available we can use it instead of accumulating fees from
+        /// `funding_fee`
+        complete_fee: Option<CompleteFee>,
     },
     RolloverFailed,
 
@@ -1217,7 +1221,12 @@ impl Cfd {
         self.event(EventKind::ContractSetupFailed)
     }
 
-    pub fn complete_rollover(self, dlc: Dlc, funding_fee: FundingFee) -> CfdEvent {
+    pub fn complete_rollover(
+        self,
+        dlc: Dlc,
+        funding_fee: FundingFee,
+        complete_fee: Option<CompleteFee>,
+    ) -> CfdEvent {
         match self.can_rollover() {
             Ok(_) => {
                 tracing::info!(order_id = %self.id, "Rollover was completed");
@@ -1225,6 +1234,7 @@ impl Cfd {
                 self.event(EventKind::RolloverCompleted {
                     dlc: Some(dlc),
                     funding_fee,
+                    complete_fee,
                 })
             }
             Err(e) => self.fail_rollover(e.into()),
@@ -1586,10 +1596,20 @@ impl Cfd {
                 self.during_rollover = true;
             }
             RolloverAccepted => {}
-            RolloverCompleted { dlc, funding_fee } => {
+            RolloverCompleted {
+                dlc,
+                funding_fee,
+                complete_fee,
+            } => {
                 self.dlc = dlc;
                 self.during_rollover = false;
-                self.fee_account = self.fee_account.add_funding_fee(funding_fee);
+
+                // If the complete fee is available then we just set it, otherwise we accumulate the
+                // fees
+                self.fee_account = match complete_fee {
+                    None => self.fee_account.add_funding_fee(funding_fee),
+                    Some(complete_fee) => self.fee_account.from_complete_fee(complete_fee),
+                };
             }
             RolloverFailed { .. } => {
                 self.during_rollover = false;
@@ -2216,7 +2236,14 @@ pub struct RevokedCommit {
     // To monitor revoked commit transaction
     pub txid: Txid,
     pub script_pubkey: Script,
+    // To enable the taker to rollover from a previous commit-tx
     pub settlement_event_id: Option<BitMexPriceEventId>,
+
+    /// The complete fee that was associated to this commit tx
+    ///
+    /// This represents the accumulated fees at the time when the commit was active.
+    /// This is used to enable triggering rollovers from `settlement_event_id` and `complete_fee`.
+    pub complete_fee: Option<CompleteFee>,
 }
 
 /// Used when transactions (e.g. collaborative close) are recorded as a part of
@@ -2275,7 +2302,7 @@ pub fn calculate_payouts(
     long_leverage: Leverage,
     short_leverage: Leverage,
     n_payouts: usize,
-    fee: FeeFlow,
+    fee: CompleteFee,
 ) -> Result<Vec<Payout>> {
     let payouts = payout_curve::calculate(
         price,
@@ -2687,6 +2714,7 @@ mod tests {
         let (rollover_event_name, _) = EventKind::RolloverCompleted {
             dlc: Some(Dlc::dummy(None)),
             funding_fee: FundingFee::new(Amount::ZERO, FundingRate::default()),
+            complete_fee: Some(CompleteFee::None),
         }
         .to_json();
 
@@ -2921,7 +2949,7 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price, maker_cfd);
 
-        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy(), None);
 
         assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
@@ -2938,7 +2966,7 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy(), None);
 
         assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
@@ -3808,6 +3836,7 @@ mod tests {
                             fee: Amount::from_sat(fee_sat),
                             rate: FundingRate::new(funding_rate).unwrap(),
                         },
+                        complete_fee: None,
                     },
                 },
             ]
