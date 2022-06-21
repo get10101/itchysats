@@ -97,7 +97,7 @@ impl Default for OrderId {
 
 impl fmt::Display for OrderId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.to_hyphenated().fmt(f)
+        self.0.hyphenated().fmt(f)
     }
 }
 

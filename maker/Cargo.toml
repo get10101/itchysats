@@ -19,7 +19,7 @@ maia = "0.2.0"
 maia-core = "0.1.0"
 model = { path = "../model" }
 prometheus = { version = "0.13", default-features = false }
-rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
+rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
 rust-embed = "6.4"
 rust-embed-rocket = { path = "../rust-embed-rocket" }
@@ -32,7 +32,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"]
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
-uuid = "0.8"
+uuid = "1.1"
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }

@@ -162,7 +162,7 @@ async fn main() -> Result<()> {
         projection::Actor::new(db.clone(), bitcoin_network, &price_feed);
     tasks.add(projection_context.run(proj_actor));
 
-    rocket::custom(figment)
+    let _ = rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(maker)

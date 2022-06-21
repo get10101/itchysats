@@ -24,6 +24,7 @@ use rocket::response::stream::Event;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
+use rocket::serde::uuid::Uuid;
 use rocket::State;
 use rocket_basicauth::Authenticated;
 use rust_embed::RustEmbed;
@@ -35,7 +36,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
-use uuid::Uuid;
 
 type Taker = TakerActorSystem<
     oracle::Actor,

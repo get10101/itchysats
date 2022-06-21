@@ -14,7 +14,7 @@ use rust_decimal::Decimal;
 use serde::de::Error;
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::types::uuid::adapter::Hyphenated;
+use sqlx::types::uuid::fmt::Hyphenated;
 use sqlx::types::Uuid;
 use std::fmt;
 use std::num::NonZeroU32;
@@ -43,13 +43,13 @@ impl<'de> Deserialize<'de> for OrderId {
         let uuid = String::deserialize(deserializer)?;
         let uuid = uuid.parse::<Uuid>().map_err(D::Error::custom)?;
 
-        Ok(Self(uuid.to_hyphenated()))
+        Ok(Self(uuid.hyphenated()))
     }
 }
 
 impl Default for OrderId {
     fn default() -> Self {
-        Self(Uuid::new_v4().to_hyphenated())
+        Self(Uuid::new_v4().hyphenated())
     }
 }
 
@@ -61,7 +61,7 @@ impl fmt::Display for OrderId {
 
 impl From<model::OrderId> for OrderId {
     fn from(id: model::OrderId) -> Self {
-        OrderId(Uuid::from(id).to_hyphenated())
+        OrderId(Uuid::from(id).hyphenated())
     }
 }
 

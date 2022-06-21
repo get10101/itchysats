@@ -397,7 +397,7 @@ async fn main() -> Result<()> {
         possible_addresses,
     ));
 
-    rocket::custom(figment)
+    let _ = rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(identity_info)
