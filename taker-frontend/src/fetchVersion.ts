@@ -10,6 +10,10 @@ export async function fetchGithubVersion(setGithubVersion: (version: SemVer | nu
     let githubVersion = await response.json() as GithubVersion;
     if (githubVersion?.tag_name) {
         let version = semver.parse(githubVersion?.tag_name);
+        if (!version) {
+            // needed because 0.4.20.1 is not a valid semver version
+            version = semver.coerce(githubVersion?.tag_name);
+        }
         setGithubVersion(version);
     }
 }
