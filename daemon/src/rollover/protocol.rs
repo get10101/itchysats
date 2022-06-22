@@ -15,6 +15,7 @@ use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Transaction;
+use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use maia::commit_descriptor;
@@ -124,6 +125,7 @@ impl ListenerMessage {
 pub struct Propose {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
+    pub from_commit_txid: Txid,
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
