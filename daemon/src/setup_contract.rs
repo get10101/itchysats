@@ -1,4 +1,14 @@
 use crate::future_ext::FutureExt;
+use crate::rollover;
+use crate::rollover::protocol::build_and_verify_cets_and_refund;
+use crate::rollover::protocol::build_commit_descriptor;
+use crate::rollover::protocol::build_own_cfd_transactions;
+use crate::rollover::protocol::build_punish_params;
+use crate::rollover::protocol::finalize_revoked_commits;
+use crate::shared_protocol::format_expect_msg_within;
+use crate::shared_protocol::verify_adaptor_signature;
+use crate::shared_protocol::verify_cets;
+use crate::shared_protocol::verify_signature;
 use crate::transaction_ext::TransactionExt;
 use crate::wallet;
 use crate::wire::Msg0;
@@ -14,29 +24,15 @@ use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::secp256k1::Signature;
-use bdk::bitcoin::secp256k1::SECP256K1;
-use bdk::bitcoin::util::key::PublicKey;
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
-use bdk::bitcoin::Transaction;
-use bdk::descriptor::Descriptor;
-use bdk::miniscript::DescriptorTrait;
 use bdk_ext::keypair;
 use futures::Sink;
 use futures::SinkExt;
 use futures::Stream;
 use futures::StreamExt;
 use maia::commit_descriptor;
-use maia::compute_adaptor_pk;
 use maia::create_cfd_transactions;
 use maia::lock_descriptor;
-use maia::renew_cfd_transactions;
-use maia::spending_tx_sighash;
-use maia_core::interval;
-use maia_core::secp256k1_zkp;
-use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
-use maia_core::Announcement;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
 use model::calculate_payouts;
@@ -45,14 +41,12 @@ use model::Cet;
 use model::Dlc;
 use model::FeeFlow;
 use model::Position;
-use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
 use model::SetupParams;
 use model::CET_TIMELOCK;
 use std::collections::HashMap;
 use std::iter::FromIterator;
-use std::ops::RangeInclusive;
 use std::time::Duration;
 use xtra::prelude::MessageChannel;
 
@@ -70,7 +64,7 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Given an initial set of parameters, sets up the CFD contract with
-/// the other party.
+/// the counterparty.
 #[allow(clippy::too_many_arguments)]
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
@@ -115,12 +109,18 @@ pub async fn new(
 
     tracing::info!("Exchanged setup parameters");
 
-    let (other, other_punish) = msg0.into();
+    let (counterparty, counterparty_punish) = msg0.into();
 
-    let params = AllParams::new(own_params, own_punish, other, other_punish, role);
+    let params = AllParams::new(
+        own_params,
+        own_punish,
+        counterparty,
+        counterparty_punish,
+        role,
+    );
 
     let expected_margin = setup_params.counterparty_margin;
-    let actual_margin = params.other.lock_amount;
+    let actual_margin = params.counterparty.lock_amount;
 
     if actual_margin != expected_margin {
         anyhow::bail!(
@@ -208,12 +208,12 @@ pub async fn new(
         lock_amount,
         &msg1.commit,
         &params.own_punish.publish_pk,
-        &params.other.identity_pk,
+        &params.counterparty.identity_pk,
     )
     .context("Commit adaptor signature does not verify")?;
 
     for own_grouped_cets in own_cets.clone() {
-        let other_cets = msg1
+        let counterparty_cets = msg1
             .cets
             .get(&own_grouped_cets.event.id)
             .cloned()
@@ -221,9 +221,9 @@ pub async fn new(
 
         verify_cets(
             (oracle_pk, own_grouped_cets.event.nonce_pks.clone()),
-            params.other.clone(),
+            params.counterparty.clone(),
             own_grouped_cets.cets,
-            other_cets,
+            counterparty_cets,
             commit_desc.clone(),
             commit_amount,
         )
@@ -239,7 +239,7 @@ pub async fn new(
         &commit_desc,
         commit_amount,
         &msg1.refund,
-        &params.other.identity_pk,
+        &params.counterparty.identity_pk,
     )
     .context("Refund signature does not verify")?;
 
@@ -268,9 +268,9 @@ pub async fn new(
 
     tracing::info!("Exchanged signed lock transaction");
 
-    // TODO: In case we sign+send but never receive (the signed lock_tx from the other party) we
-    // need some fallback handling (after x time) to spend the outputs in a different way so the
-    // other party cannot hold us hostage
+    // TODO: In case we sign+send but never receive (the signed lock_tx from the counterparty)
+    // we need some fallback handling (after x time) to spend the outputs in a different way so
+    // the counterparty cannot hold us hostage
 
     let cets = tokio::task::spawn_blocking({
         let maker_address = params.maker().address.clone();
@@ -282,7 +282,7 @@ pub async fn new(
             .into_iter()
             .map(|grouped_cets| {
                 let event_id = grouped_cets.event.id;
-                let other_cets = msg1
+                let counterparty_cets = msg1
                     .cets
                     .get(&event_id)
                     .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
@@ -290,10 +290,10 @@ pub async fn new(
                     .cets
                     .into_iter()
                     .map(|(tx, _, digits)| {
-                        let other_encsig = other_cets
+                        let counterparty_encsig = counterparty_cets
                             .iter()
-                            .find_map(|(other_range, other_encsig)| {
-                                (other_range == &digits.range()).then(|| other_encsig)
+                            .find_map(|(counterparty_range, counterparty_encsig)| {
+                                (counterparty_range == &digits.range()).then(|| counterparty_encsig)
                             })
                             .with_context(|| {
                                 let range = digits.range();
@@ -309,7 +309,7 @@ pub async fn new(
                         let cet = Cet {
                             maker_amount,
                             taker_amount,
-                            adaptor_sig: *other_encsig,
+                            adaptor_sig: *counterparty_encsig,
                             range: digits.range(),
                             n_bits: digits.len(),
                             txid: tx.txid(),
@@ -346,11 +346,11 @@ pub async fn new(
 
     Ok(Dlc {
         identity: sk,
-        identity_counterparty: params.other.identity_pk,
+        identity_counterparty: params.counterparty.identity_pk,
         revocation: rev_sk,
-        revocation_pk_counterparty: other_punish.revocation_pk,
+        revocation_pk_counterparty: counterparty_punish.revocation_pk,
         publish: publish_sk,
-        publish_pk_counterparty: other_punish.publish_pk,
+        publish_pk_counterparty: counterparty_punish.publish_pk,
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
         lock: (signed_lock_tx.extract_tx(), lock_desc),
@@ -377,17 +377,8 @@ pub async fn roll_over(
     n_payouts: usize,
     complete_fee: FeeFlow,
 ) -> Result<Dlc> {
-    let sk = dlc.identity;
-    let pk =
-        bdk::bitcoin::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &sk));
-
     let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
-
-    let own_punish = PunishParams {
-        revocation_pk: rev_pk,
-        publish_pk,
-    };
 
     sink.send(RolloverMsg::Msg0(RolloverMsg0 {
         revocation_pk: rev_pk,
@@ -395,6 +386,7 @@ pub async fn roll_over(
     }))
     .await
     .context("Failed to send Msg0")?;
+
     let msg0 = stream
         .next()
         .timeout(ROLLOVER_MSG_TIMEOUT)
@@ -403,78 +395,26 @@ pub async fn roll_over(
         .context("Empty stream instead of Msg0")?
         .try_into_msg0()?;
 
-    let maker_lock_amount = dlc.maker_lock_amount;
-    let taker_lock_amount = dlc.taker_lock_amount;
-    let payouts = HashMap::from_iter([(
-        Announcement {
-            id: announcement.id.to_string(),
-            nonce_pks: announcement.nonce_pks.clone(),
-        },
-        calculate_payouts(
-            our_position,
-            our_role,
-            rollover_params.price,
-            rollover_params.quantity,
-            rollover_params.long_leverage,
-            rollover_params.short_leverage,
-            n_payouts,
-            complete_fee,
-        )?,
-    )]);
+    let punish_params = build_punish_params(
+        our_role,
+        dlc.identity,
+        dlc.identity_counterparty,
+        msg0.into(),
+        rev_pk,
+        publish_pk,
+    );
 
-    // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
-    let mut unsigned_lock_tx = dlc.lock.0.clone();
-    unsigned_lock_tx
-        .input
-        .iter_mut()
-        .for_each(|input| input.witness.clear());
-
-    let lock_tx = PartiallySignedTransaction::from_unsigned_tx(unsigned_lock_tx)?;
-    let other_punish_params = PunishParams {
-        revocation_pk: msg0.revocation_pk,
-        publish_pk: msg0.publish_pk,
-    };
-    let ((maker_identity, maker_punish_params), (taker_identity, taker_punish_params)) =
-        match our_role {
-            Role::Maker => (
-                (pk, own_punish),
-                (dlc.identity_counterparty, other_punish_params),
-            ),
-            Role::Taker => (
-                (dlc.identity_counterparty, other_punish_params),
-                (pk, own_punish),
-            ),
-        };
-    let own_cfd_txs = tokio::task::spawn_blocking({
-        let maker_address = dlc.maker_address.clone();
-        let taker_address = dlc.taker_address.clone();
-        let lock_tx = lock_tx.clone();
-
-        move || {
-            renew_cfd_transactions(
-                lock_tx,
-                (
-                    maker_identity,
-                    maker_lock_amount,
-                    maker_address,
-                    maker_punish_params,
-                ),
-                (
-                    taker_identity,
-                    taker_lock_amount,
-                    taker_address,
-                    taker_punish_params,
-                ),
-                oracle_pk,
-                (CET_TIMELOCK, rollover_params.refund_timelock),
-                payouts,
-                sk,
-                rollover_params.fee_rate.to_u32(),
-            )
-        }
-    })
-    .await?
-    .context("Failed to create new CFD transactions")?;
+    let own_cfd_txs = build_own_cfd_transactions(
+        &dlc,
+        rollover_params,
+        &announcement,
+        oracle_pk,
+        our_position,
+        n_payouts,
+        complete_fee,
+        punish_params,
+    )
+    .await?;
 
     sink.send(RolloverMsg::Msg1(RolloverMsg1::from(own_cfd_txs.clone())))
         .await
@@ -488,134 +428,23 @@ pub async fn roll_over(
         .context("Empty stream instead of Msg1")?
         .try_into_msg1()?;
 
-    let lock_amount = taker_lock_amount + maker_lock_amount;
+    let commit = msg1.commit;
+    let refund = msg1.refund;
 
-    let commit_desc = commit_descriptor(
-        (
-            maker_identity,
-            maker_punish_params.revocation_pk,
-            maker_punish_params.publish_pk,
-        ),
-        (
-            taker_identity,
-            taker_punish_params.revocation_pk,
-            taker_punish_params.publish_pk,
-        ),
-    );
-
-    let own_cets = own_cfd_txs.cets;
-    let commit_tx = own_cfd_txs.commit.0.clone();
-
-    let commit_amount = Amount::from_sat(commit_tx.output[0].value);
-
-    verify_adaptor_signature(
-        &commit_tx,
-        &dlc.lock.1,
-        lock_amount,
-        &msg1.commit,
-        &publish_pk,
-        &dlc.identity_counterparty,
-    )
-    .context("Commit adaptor signature does not verify")?;
-
-    let other_address = match our_role {
-        Role::Maker => dlc.taker_address.clone(),
-        Role::Taker => dlc.maker_address.clone(),
-    };
-
-    for own_grouped_cets in own_cets.clone() {
-        let other_cets = msg1
-            .cets
-            .get(&own_grouped_cets.event.id)
-            .cloned()
-            .context("Expect event to exist in msg")?;
-
-        verify_cets(
-            (oracle_pk, announcement.nonce_pks.clone()),
-            PartyParams {
-                lock_psbt: lock_tx.clone(),
-                identity_pk: dlc.identity_counterparty,
-                lock_amount,
-                address: other_address.clone(),
-            },
-            own_grouped_cets.cets,
-            other_cets,
-            commit_desc.clone(),
-            commit_amount,
-        )
-        .await
-        .context("CET signatures don't verify")?;
-    }
-
-    let refund_tx = own_cfd_txs.refund.0;
-
-    verify_signature(
-        &refund_tx,
+    let commit_desc = build_commit_descriptor(punish_params);
+    let (cets, refund_tx) = build_and_verify_cets_and_refund(
+        &dlc,
+        &announcement,
+        oracle_pk,
+        publish_pk,
+        our_role,
+        &own_cfd_txs,
         &commit_desc,
-        commit_amount,
-        &msg1.refund,
-        &dlc.identity_counterparty,
+        &msg1.into(),
     )
-    .context("Refund signature does not verify")?;
+    .await?;
 
-    let maker_address = &dlc.maker_address;
-    let taker_address = &dlc.taker_address;
-    let cets = own_cets
-        .into_iter()
-        .map(|grouped_cets| {
-            let event_id = grouped_cets.event.id;
-            let other_cets = msg1
-                .cets
-                .get(&event_id)
-                .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
-            let cets = grouped_cets
-                .cets
-                .into_iter()
-                .map(|(tx, _, digits)| {
-                    let other_encsig = other_cets
-                        .iter()
-                        .find_map(|(other_range, other_encsig)| {
-                            (other_range == &digits.range()).then(|| other_encsig)
-                        })
-                        .with_context(|| {
-                            let range = digits.range();
-
-                            format!(
-                                "Missing counterparty adaptor signature for CET corresponding to
-                                 price range {range:?}"
-                            )
-                        })?;
-
-                    let maker_amount = tx
-                        .find_output_amount(&maker_address.script_pubkey())
-                        .unwrap_or_default();
-                    let taker_amount = tx
-                        .find_output_amount(&taker_address.script_pubkey())
-                        .unwrap_or_default();
-                    let cet = Cet {
-                        maker_amount,
-                        taker_amount,
-                        adaptor_sig: *other_encsig,
-                        range: digits.range(),
-                        n_bits: digits.len(),
-                        txid: tx.txid(),
-                    };
-
-                    debug_assert_eq!(
-                        cet.to_tx((&commit_tx, &commit_desc), maker_address, taker_address)
-                            .expect("can reconstruct CET")
-                            .txid(),
-                        tx.txid()
-                    );
-
-                    Ok(cet)
-                })
-                .collect::<Result<Vec<_>>>()?;
-            Ok((event_id.parse()?, cets))
-        })
-        .collect::<Result<HashMap<_, _>>>()?;
-
-    // reveal revocation secrets to the other party
+    // reveal revocation secrets to the counterparty
     sink.send(RolloverMsg::Msg2(RolloverMsg2 {
         revocation_sk: dlc.revocation,
     }))
@@ -629,27 +458,8 @@ pub async fn roll_over(
         .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
         .context("Empty stream instead of Msg2")?
         .try_into_msg2()?;
-    let revocation_sk_theirs = msg2.revocation_sk;
 
-    {
-        let derived_rev_pk = bdk::bitcoin::PublicKey::new(
-            secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_sk_theirs),
-        );
-
-        if derived_rev_pk != dlc.revocation_pk_counterparty {
-            anyhow::bail!("Counterparty sent invalid revocation sk");
-        }
-    }
-
-    let mut revoked_commit = dlc.revoked_commit;
-    let transaction = dlc.commit.0;
-    revoked_commit.push(RevokedCommit {
-        encsig_ours: own_cfd_txs.commit.1,
-        revocation_sk_theirs,
-        publication_pk_theirs: dlc.publish_pk_counterparty,
-        txid: transaction.txid(),
-        script_pubkey: dlc.commit.2.script_pubkey(),
-    });
+    let revoked_commit = finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2.into())?;
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
@@ -684,20 +494,20 @@ pub async fn roll_over(
     }
 
     Ok(Dlc {
-        identity: sk,
+        identity: dlc.identity,
         identity_counterparty: dlc.identity_counterparty,
         revocation: rev_sk,
-        revocation_pk_counterparty: other_punish_params.revocation_pk,
+        revocation_pk_counterparty: punish_params.counterparty_params().revocation_pk,
         publish: publish_sk,
-        publish_pk_counterparty: other_punish_params.publish_pk,
+        publish_pk_counterparty: punish_params.counterparty_params().publish_pk,
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,
         lock: dlc.lock.clone(),
-        commit: (commit_tx, msg1.commit, commit_desc),
+        commit: (own_cfd_txs.commit.0.clone(), commit, commit_desc),
         cets,
-        refund: (refund_tx, msg1.refund),
-        maker_lock_amount,
-        taker_lock_amount,
+        refund: (refund_tx, refund),
+        maker_lock_amount: dlc.maker_lock_amount,
+        taker_lock_amount: dlc.taker_lock_amount,
         revoked_commit,
         settlement_event_id: announcement.id,
         refund_timelock: rollover_params.refund_timelock,
@@ -709,8 +519,8 @@ pub async fn roll_over(
 struct AllParams {
     pub own: PartyParams,
     pub own_punish: PunishParams,
-    pub other: PartyParams,
-    pub other_punish: PunishParams,
+    pub counterparty: PartyParams,
+    pub counterparty_punish: PunishParams,
     pub own_role: Role,
 }
 
@@ -718,15 +528,15 @@ impl AllParams {
     fn new(
         own: PartyParams,
         own_punish: PunishParams,
-        other: PartyParams,
-        other_punish: PunishParams,
+        counterparty: PartyParams,
+        counterparty_punish: PunishParams,
         own_role: Role,
     ) -> Self {
         Self {
             own,
             own_punish,
-            other,
-            other_punish,
+            counterparty,
+            counterparty_punish,
             own_role,
         }
     }
@@ -734,13 +544,13 @@ impl AllParams {
     fn maker(&self) -> &PartyParams {
         match self.own_role {
             Role::Maker => &self.own,
-            Role::Taker => &self.other,
+            Role::Taker => &self.counterparty,
         }
     }
 
     fn taker(&self) -> &PartyParams {
         match self.own_role {
-            Role::Maker => &self.other,
+            Role::Maker => &self.counterparty,
             Role::Taker => &self.own,
         }
     }
@@ -748,111 +558,40 @@ impl AllParams {
     fn maker_punish(&self) -> &PunishParams {
         match self.own_role {
             Role::Maker => &self.own_punish,
-            Role::Taker => &self.other_punish,
+            Role::Taker => &self.counterparty_punish,
         }
     }
     fn taker_punish(&self) -> &PunishParams {
         match self.own_role {
-            Role::Maker => &self.other_punish,
+            Role::Maker => &self.counterparty_punish,
             Role::Taker => &self.own_punish,
         }
     }
 }
 
-async fn verify_cets(
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
-    other: PartyParams,
-    own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
-    cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
-    commit_desc: Descriptor<PublicKey>,
-    commit_amount: Amount,
-) -> Result<()> {
-    tokio::task::spawn_blocking(move || {
-        for (tx, _, digits) in own_cets.iter() {
-            let other_encsig = cets
-                .iter()
-                .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
-                .with_context(|| {
-                    let range = digits.range();
-
-                    format!("no enc sig from other party for price range {range:?}",)
-                })?;
-
-            verify_cet_encsig(
-                tx,
-                other_encsig,
-                digits,
-                &other.identity_pk,
-                (&oracle_pk, &nonce_pks),
-                &commit_desc,
-                commit_amount,
-            )
-            .context("enc sig on CET does not verify")?;
+impl From<RolloverMsg0> for rollover::protocol::RolloverMsg0 {
+    fn from(msg: RolloverMsg0) -> Self {
+        rollover::protocol::RolloverMsg0 {
+            revocation_pk: msg.revocation_pk,
+            publish_pk: msg.publish_pk,
         }
-
-        anyhow::Ok(())
-    })
-    .await??;
-
-    Ok(())
+    }
 }
 
-fn verify_adaptor_signature(
-    tx: &Transaction,
-    spent_descriptor: &Descriptor<PublicKey>,
-    spent_amount: Amount,
-    encsig: &EcdsaAdaptorSignature,
-    encryption_point: &PublicKey,
-    pk: &PublicKey,
-) -> Result<()> {
-    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
-
-    encsig
-        .verify(SECP256K1, &sighash, &pk.key, &encryption_point.key)
-        .context("failed to verify encsig spend tx")
+impl From<RolloverMsg1> for rollover::protocol::RolloverMsg1 {
+    fn from(msg: RolloverMsg1) -> Self {
+        rollover::protocol::RolloverMsg1 {
+            commit: msg.commit,
+            cets: msg.cets,
+            refund: msg.refund,
+        }
+    }
 }
 
-fn verify_signature(
-    tx: &Transaction,
-    spent_descriptor: &Descriptor<PublicKey>,
-    spent_amount: Amount,
-    sig: &Signature,
-    pk: &PublicKey,
-) -> Result<()> {
-    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
-    SECP256K1.verify(&sighash, sig, &pk.key)?;
-    Ok(())
-}
-
-fn verify_cet_encsig(
-    tx: &Transaction,
-    encsig: &EcdsaAdaptorSignature,
-    digits: &interval::Digits,
-    pk: &PublicKey,
-    (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
-    spent_descriptor: &Descriptor<PublicKey>,
-    spent_amount: Amount,
-) -> Result<()> {
-    let index_nonce_pairs = &digits
-        .to_indices()
-        .into_iter()
-        .zip(nonce_pks.iter().cloned())
-        .collect::<Vec<_>>();
-    let adaptor_point = compute_adaptor_pk(oracle_pk, index_nonce_pairs)
-        .context("could not calculate adaptor point")?;
-    verify_adaptor_signature(
-        tx,
-        spent_descriptor,
-        spent_amount,
-        encsig,
-        &bdk::bitcoin::PublicKey::new(adaptor_point),
-        pk,
-    )
-}
-
-/// Wrapper for the msg
-fn format_expect_msg_within(msg: &str, timeout: Duration) -> String {
-    let seconds = timeout.as_secs();
-
-    format!("Expected {msg} within {seconds} seconds")
+impl From<RolloverMsg2> for rollover::protocol::RolloverMsg2 {
+    fn from(msg: RolloverMsg2) -> Self {
+        rollover::protocol::RolloverMsg2 {
+            revocation_sk: msg.revocation_sk,
+        }
+    }
 }

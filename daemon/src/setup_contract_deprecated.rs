@@ -69,7 +69,7 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Given an initial set of parameters, sets up the CFD contract with
-/// the other party.
+/// the counterparty.
 #[allow(clippy::too_many_arguments)]
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
@@ -113,12 +113,18 @@ pub async fn new(
 
     tracing::info!("Exchanged setup parameters");
 
-    let (other, other_punish) = msg0.into();
+    let (counterparty, counterparty_punish) = msg0.into();
 
-    let params = AllParams::new(own_params, own_punish, other, other_punish, role);
+    let params = AllParams::new(
+        own_params,
+        own_punish,
+        counterparty,
+        counterparty_punish,
+        role,
+    );
 
     let expected_margin = setup_params.counterparty_margin;
-    let actual_margin = params.other.lock_amount;
+    let actual_margin = params.counterparty.lock_amount;
 
     if actual_margin != expected_margin {
         anyhow::bail!(
@@ -205,12 +211,12 @@ pub async fn new(
         lock_amount,
         &msg1.commit,
         &params.own_punish.publish_pk,
-        &params.other.identity_pk,
+        &params.counterparty.identity_pk,
     )
     .context("Commit adaptor signature does not verify")?;
 
     for own_grouped_cets in own_cets.clone() {
-        let other_cets = msg1
+        let counterparty_cets = msg1
             .cets
             .get(&own_grouped_cets.event.id)
             .cloned()
@@ -218,9 +224,9 @@ pub async fn new(
 
         verify_cets(
             (oracle_pk, own_grouped_cets.event.nonce_pks.clone()),
-            params.other.clone(),
+            params.counterparty.clone(),
             own_grouped_cets.cets,
-            other_cets,
+            counterparty_cets,
             commit_desc.clone(),
             commit_amount,
         )
@@ -236,7 +242,7 @@ pub async fn new(
         &commit_desc,
         commit_amount,
         &msg1.refund,
-        &params.other.identity_pk,
+        &params.counterparty.identity_pk,
     )
     .context("Refund signature does not verify")?;
 
@@ -264,9 +270,9 @@ pub async fn new(
 
     tracing::info!("Exchanged signed lock transaction");
 
-    // TODO: In case we sign+send but never receive (the signed lock_tx from the other party) we
-    // need some fallback handling (after x time) to spend the outputs in a different way so the
-    // other party cannot hold us hostage
+    // TODO: In case we sign+send but never receive (the signed lock_tx from the counterparty)
+    // we need some fallback handling (after x time) to spend the outputs in a different way so
+    // the counterparty cannot hold us hostage
 
     let cets = tokio::task::spawn_blocking({
         let maker_address = params.maker().address.clone();
@@ -278,7 +284,7 @@ pub async fn new(
             .into_iter()
             .map(|grouped_cets| {
                 let event_id = grouped_cets.event.id;
-                let other_cets = msg1
+                let counterparty_cets = msg1
                     .cets
                     .get(&event_id)
                     .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
@@ -286,10 +292,10 @@ pub async fn new(
                     .cets
                     .into_iter()
                     .map(|(tx, _, digits)| {
-                        let other_encsig = other_cets
+                        let counterparty_encsig = counterparty_cets
                             .iter()
-                            .find_map(|(other_range, other_encsig)| {
-                                (other_range == &digits.range()).then(|| other_encsig)
+                            .find_map(|(counterparty_range, counterparty_encsig)| {
+                                (counterparty_range == &digits.range()).then(|| counterparty_encsig)
                             })
                             .with_context(|| {
                                 let range = digits.range();
@@ -305,7 +311,7 @@ pub async fn new(
                         let cet = Cet {
                             maker_amount,
                             taker_amount,
-                            adaptor_sig: *other_encsig,
+                            adaptor_sig: *counterparty_encsig,
                             range: digits.range(),
                             n_bits: digits.len(),
                             txid: tx.txid(),
@@ -341,11 +347,11 @@ pub async fn new(
 
     Ok(Dlc {
         identity: sk,
-        identity_counterparty: params.other.identity_pk,
+        identity_counterparty: params.counterparty.identity_pk,
         revocation: rev_sk,
-        revocation_pk_counterparty: other_punish.revocation_pk,
+        revocation_pk_counterparty: counterparty_punish.revocation_pk,
         publish: publish_sk,
-        publish_pk_counterparty: other_punish.publish_pk,
+        publish_pk_counterparty: counterparty_punish.publish_pk,
         maker_address: params.maker().address.clone(),
         taker_address: params.taker().address.clone(),
         lock: (signed_lock_tx.extract_tx(), lock_desc),
@@ -424,7 +430,7 @@ pub async fn roll_over(
         .for_each(|input| input.witness.clear());
 
     let lock_tx = PartiallySignedTransaction::from_unsigned_tx(unsigned_lock_tx)?;
-    let other_punish_params = PunishParams {
+    let counterparty_punish_params = PunishParams {
         revocation_pk: msg0.revocation_pk,
         publish_pk: msg0.publish_pk,
     };
@@ -432,10 +438,10 @@ pub async fn roll_over(
         match our_role {
             Role::Maker => (
                 (pk, own_punish),
-                (dlc.identity_counterparty, other_punish_params),
+                (dlc.identity_counterparty, counterparty_punish_params),
             ),
             Role::Taker => (
-                (dlc.identity_counterparty, other_punish_params),
+                (dlc.identity_counterparty, counterparty_punish_params),
                 (pk, own_punish),
             ),
         };
@@ -511,13 +517,13 @@ pub async fn roll_over(
     )
     .context("Commit adaptor signature does not verify")?;
 
-    let other_address = match our_role {
+    let counterparty_address = match our_role {
         Role::Maker => dlc.taker_address.clone(),
         Role::Taker => dlc.maker_address.clone(),
     };
 
     for own_grouped_cets in own_cets.clone() {
-        let other_cets = msg1
+        let counterparty_cets = msg1
             .cets
             .get(&own_grouped_cets.event.id)
             .cloned()
@@ -529,10 +535,10 @@ pub async fn roll_over(
                 lock_psbt: lock_tx.clone(),
                 identity_pk: dlc.identity_counterparty,
                 lock_amount,
-                address: other_address.clone(),
+                address: counterparty_address.clone(),
             },
             own_grouped_cets.cets,
-            other_cets,
+            counterparty_cets,
             commit_desc.clone(),
             commit_amount,
         )
@@ -557,7 +563,7 @@ pub async fn roll_over(
         .into_iter()
         .map(|grouped_cets| {
             let event_id = grouped_cets.event.id;
-            let other_cets = msg1
+            let counterparty_cets = msg1
                 .cets
                 .get(&event_id)
                 .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
@@ -565,10 +571,10 @@ pub async fn roll_over(
                 .cets
                 .into_iter()
                 .map(|(tx, _, digits)| {
-                    let other_encsig = other_cets
+                    let counterparty_encsig = counterparty_cets
                         .iter()
-                        .find_map(|(other_range, other_encsig)| {
-                            (other_range == &digits.range()).then(|| other_encsig)
+                        .find_map(|(counterparty_range, counterparty_encsig)| {
+                            (counterparty_range == &digits.range()).then(|| counterparty_encsig)
                         })
                         .with_context(|| {
                             let range = digits.range();
@@ -588,7 +594,7 @@ pub async fn roll_over(
                     let cet = Cet {
                         maker_amount,
                         taker_amount,
-                        adaptor_sig: *other_encsig,
+                        adaptor_sig: *counterparty_encsig,
                         range: digits.range(),
                         n_bits: digits.len(),
                         txid: tx.txid(),
@@ -608,7 +614,7 @@ pub async fn roll_over(
         })
         .collect::<Result<HashMap<_, _>>>()?;
 
-    // reveal revocation secrets to the other party
+    // reveal revocation secrets to the counterparty
     sink.send(RolloverMsg::Msg2(RolloverMsg2 {
         revocation_sk: dlc.revocation,
     }))
@@ -659,9 +665,9 @@ pub async fn roll_over(
         identity: sk,
         identity_counterparty: dlc.identity_counterparty,
         revocation: rev_sk,
-        revocation_pk_counterparty: other_punish_params.revocation_pk,
+        revocation_pk_counterparty: counterparty_punish_params.revocation_pk,
         publish: publish_sk,
-        publish_pk_counterparty: other_punish_params.publish_pk,
+        publish_pk_counterparty: counterparty_punish_params.publish_pk,
         maker_address: dlc.maker_address,
         taker_address: dlc.taker_address,
         lock: dlc.lock.clone(),
@@ -681,8 +687,8 @@ pub async fn roll_over(
 struct AllParams {
     pub own: PartyParams,
     pub own_punish: PunishParams,
-    pub other: PartyParams,
-    pub other_punish: PunishParams,
+    pub counterparty: PartyParams,
+    pub counterparty_punish: PunishParams,
     pub own_role: Role,
 }
 
@@ -690,15 +696,15 @@ impl AllParams {
     fn new(
         own: PartyParams,
         own_punish: PunishParams,
-        other: PartyParams,
-        other_punish: PunishParams,
+        counterparty: PartyParams,
+        counterparty_punish: PunishParams,
         own_role: Role,
     ) -> Self {
         Self {
             own,
             own_punish,
-            other,
-            other_punish,
+            counterparty,
+            counterparty_punish,
             own_role,
         }
     }
@@ -706,13 +712,13 @@ impl AllParams {
     fn maker(&self) -> &PartyParams {
         match self.own_role {
             Role::Maker => &self.own,
-            Role::Taker => &self.other,
+            Role::Taker => &self.counterparty,
         }
     }
 
     fn taker(&self) -> &PartyParams {
         match self.own_role {
-            Role::Maker => &self.other,
+            Role::Maker => &self.counterparty,
             Role::Taker => &self.own,
         }
     }
@@ -720,12 +726,12 @@ impl AllParams {
     fn maker_punish(&self) -> &PunishParams {
         match self.own_role {
             Role::Maker => &self.own_punish,
-            Role::Taker => &self.other_punish,
+            Role::Taker => &self.counterparty_punish,
         }
     }
     fn taker_punish(&self) -> &PunishParams {
         match self.own_role {
-            Role::Maker => &self.other_punish,
+            Role::Maker => &self.counterparty_punish,
             Role::Taker => &self.own_punish,
         }
     }
@@ -733,7 +739,7 @@ impl AllParams {
 
 async fn verify_cets(
     (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
-    other: PartyParams,
+    counterparty: PartyParams,
     own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
     cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
     commit_desc: Descriptor<bdk::bitcoin::PublicKey>,
@@ -741,20 +747,20 @@ async fn verify_cets(
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         for (tx, _, digits) in own_cets.iter() {
-            let other_encsig = cets
+            let counterparty_encsig = cets
                 .iter()
                 .find_map(|(range, encsig)| (range == &digits.range()).then(|| encsig))
                 .with_context(|| {
                     let range = digits.range();
 
-                    format!("no enc sig from other party for price range {range:?}",)
+                    format!("no enc sig from counterparty for price range {range:?}",)
                 })?;
 
             verify_cet_encsig(
                 tx,
-                other_encsig,
+                counterparty_encsig,
                 digits,
-                &other.identity_pk,
+                &counterparty.identity_pk,
                 (&oracle_pk, &nonce_pks),
                 &commit_desc,
                 commit_amount,

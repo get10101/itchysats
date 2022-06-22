@@ -1,13 +1,19 @@
+use crate::command;
+use crate::future_ext::FutureExt;
+use crate::oracle;
+use crate::rollover::protocol::*;
+use crate::shared_protocol::format_expect_msg_within;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
-use futures::future;
+use bdk_ext::keypair;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::Dlc;
 use model::FundingRate;
 use model::OrderId;
 use model::Position;
@@ -20,11 +26,6 @@ use xtra::message_channel::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
-
-use crate::command;
-use crate::oracle;
-use crate::rollover::protocol::*;
-use crate::setup_contract;
 
 use super::protocol;
 
@@ -205,29 +206,144 @@ impl Actor {
 
                     let funding_fee = *rollover_params.funding_fee();
 
-                    let (sink, stream) = framed.split();
+                    let our_role = Role::Maker;
+                    let our_position = position;
 
-                    let dlc = setup_contract::roll_over(
-                        sink.with(|msg| future::ok(ListenerMessage::RolloverMsg(Box::new(msg)))),
-                        Box::pin(stream.filter_map(|msg| async move {
-                            match msg {
-                                Ok(msg) => msg.into_rollover_msg().ok(),
-                                Err(e) => {
-                                    tracing::error!("Failed to convert rollover message: {e:#}");
-                                    None
-                                }
-                            }
-                        }))
-                        .fuse(),
-                        (oracle_pk, announcement),
+                    let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
+                    let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
+
+                    let msg0 = framed
+                        .next()
+                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .await
+                        .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
+                        .context("Empty stream instead of Msg0")?
+                        .context("Unable to decode dialer Msg0")?
+                        .into_rollover_msg()?
+                        .try_into_msg0()?;
+
+                    framed
+                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg0(
+                            RolloverMsg0 {
+                                revocation_pk: rev_pk,
+                                publish_pk,
+                            },
+                        ))))
+                        .await
+                        .context("Failed to send Msg0")?;
+
+                    let punish_params = build_punish_params(
+                        our_role,
+                        dlc.identity,
+                        dlc.identity_counterparty,
+                        msg0,
+                        rev_pk,
+                        publish_pk,
+                    );
+
+                    let own_cfd_txs = build_own_cfd_transactions(
+                        &dlc,
                         rollover_params,
-                        Role::Maker,
-                        position,
-                        dlc,
+                        &announcement,
+                        oracle_pk,
+                        our_position,
                         n_payouts,
                         complete_fee,
+                        punish_params,
                     )
                     .await?;
+
+                    let msg1 = framed
+                        .next()
+                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .await
+                        .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
+                        .context("Empty stream instead of Msg1")?
+                        .context("Unable to decode dialer Msg1")?
+                        .into_rollover_msg()?
+                        .try_into_msg1()?;
+
+                    framed
+                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg1(
+                            RolloverMsg1::from(own_cfd_txs.clone()),
+                        ))))
+                        .await
+                        .context("Failed to send Msg1")?;
+
+                    let commit_desc = build_commit_descriptor(punish_params);
+                    let (cets, refund_tx) = build_and_verify_cets_and_refund(
+                        &dlc,
+                        &announcement,
+                        oracle_pk,
+                        publish_pk,
+                        our_role,
+                        &own_cfd_txs,
+                        &commit_desc,
+                        &msg1,
+                    )
+                    .await?;
+
+                    let msg2 = framed
+                        .next()
+                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .await
+                        .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
+                        .context("Empty stream instead of Msg2")?
+                        .context("Unable to decode dialer Msg2")?
+                        .into_rollover_msg()?
+                        .try_into_msg2()?;
+
+                    // reveal revocation secrets to the counterparty
+                    framed
+                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg2(
+                            RolloverMsg2 {
+                                revocation_sk: dlc.revocation,
+                            },
+                        ))))
+                        .await
+                        .context("Failed to send Msg2")?;
+
+                    let revoked_commit =
+                        finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2)?;
+
+                    let _msg3 = framed
+                        .next()
+                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .await
+                        .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
+                        .context("Empty stream instead of Msg3")?
+                        .context("Unable to decode dialer Msg3")?
+                        .into_rollover_msg()?
+                        .try_into_msg3()?;
+
+                    framed
+                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg3(
+                            RolloverMsg3,
+                        ))))
+                        .await
+                        .context("Failed to send Msg3")?;
+
+                    let dlc = Dlc {
+                        identity: dlc.identity,
+                        identity_counterparty: dlc.identity_counterparty,
+                        revocation: rev_sk,
+                        revocation_pk_counterparty: punish_params
+                            .counterparty_params()
+                            .revocation_pk,
+                        publish: publish_sk,
+                        publish_pk_counterparty: punish_params.counterparty_params().publish_pk,
+                        maker_address: dlc.maker_address,
+                        taker_address: dlc.taker_address,
+                        lock: dlc.lock.clone(),
+                        commit: (own_cfd_txs.commit.0.clone(), msg1.commit, commit_desc),
+                        cets,
+                        refund: (refund_tx, msg1.refund),
+                        maker_lock_amount: dlc.maker_lock_amount,
+                        taker_lock_amount: dlc.taker_lock_amount,
+                        revoked_commit,
+                        settlement_event_id: announcement.id,
+                        refund_timelock: rollover_params.refund_timelock,
+                    };
 
                     emit_completed(order_id, dlc, funding_fee, &executor).await;
 
