@@ -4,13 +4,20 @@ import {
     AccordionIcon,
     AccordionItem,
     AccordionPanel,
+    Alert,
+    AlertDescription,
+    AlertIcon,
+    AlertTitle,
     Box,
     Button,
     ButtonGroup,
     Center,
+    CloseButton,
     HStack,
+    Spacer,
     Text,
     useColorModeValue,
+    useDisclosure,
     useToast,
     VStack,
 } from "@chakra-ui/react";
@@ -24,6 +31,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
+import { SemVer } from "semver";
 import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
@@ -31,6 +39,7 @@ import PromoBanner from "./components/PromoBanner";
 import { Tour } from "./components/Tour";
 import Trade from "./components/Trade";
 import { Wallet } from "./components/Wallet";
+import { fetchDaemonVersion, fetchGithubVersion } from "./fetchVersion";
 import {
     BXBTData,
     Cfd,
@@ -72,6 +81,13 @@ export const App = () => {
     const toast = useToast();
 
     let [referencePrice, setReferencePrice] = useState<number>();
+    const [githubVersion, setGithubVersion] = useState<SemVer | null>();
+    const [daemonVersion, setDaemonVersion] = useState<SemVer | null>();
+
+    let outdated = false;
+    if (githubVersion && daemonVersion) {
+        outdated = githubVersion > daemonVersion;
+    }
 
     useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
         shouldReconnect: () => true,
@@ -82,6 +98,11 @@ export const App = () => {
             }
         },
     });
+
+    useEffect(() => {
+        void fetchGithubVersion(setGithubVersion);
+        void fetchDaemonVersion(setDaemonVersion);
+    }, []);
 
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
@@ -174,9 +195,27 @@ export const App = () => {
         }
     }, [toast, connectedToMakerOrUndefined]);
 
+    const {
+        isOpen: outdatedWarningIsVisible,
+        onClose,
+    } = useDisclosure({ defaultIsOpen: outdated });
+
     return (
         <>
             <Tour />
+            {outdatedWarningIsVisible
+                && (
+                    <Alert status="info">
+                        <AlertIcon />
+                        <AlertTitle>Your daemon is outdated!</AlertTitle>
+                        <AlertDescription>
+                            Upgrade now to get the best ItchySats experience. The latest version is '{githubVersion
+                                ?.version}' but your version is '{daemonVersion?.version}'.
+                        </AlertDescription>
+                        <Spacer />
+                        <CloseButton alignSelf="flex-start" position="relative" right={-1} top={-1} onClick={onClose} />
+                    </Alert>
+                )}
 
             <Nav
                 walletInfo={walletInfo}

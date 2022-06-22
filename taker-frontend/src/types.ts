@@ -1,3 +1,11 @@
+export interface DaemonVersion {
+    daemon_version: string;
+}
+
+export interface GithubVersion {
+    tag_name: string;
+}
+
 export interface WalletInfo {
     balance: number;
     address: string;

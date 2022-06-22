@@ -416,6 +416,7 @@ async fn main() -> Result<()> {
                 routes::post_withdraw_request,
                 routes::get_metrics,
                 routes::put_sync_wallet,
+                routes::get_version,
             ],
         )
         .register("/api", default_catchers())

@@ -180,6 +180,7 @@ async fn main() -> Result<()> {
                 routes::get_takers,
                 routes::get_metrics,
                 routes::put_sync_wallet,
+                routes::get_version,
             ],
         )
         .register("/api", default_catchers())

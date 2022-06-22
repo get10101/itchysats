@@ -29,6 +29,7 @@ use rocket_basicauth::Authenticated;
 use rust_embed::RustEmbed;
 use rust_embed_rocket::EmbeddedFileExt;
 use serde::Deserialize;
+use serde::Serialize;
 use shared_bin::ToSseEvent;
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -263,4 +264,16 @@ pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProb
         })?;
 
     Ok(metrics)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthCheck {
+    daemon_version: String,
+}
+
+#[rocket::get("/version")]
+pub async fn get_version() -> Json<HealthCheck> {
+    Json(HealthCheck {
+        daemon_version: daemon::version::version().to_string(),
+    })
 }
