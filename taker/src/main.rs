@@ -397,7 +397,7 @@ async fn main() -> Result<()> {
         possible_addresses,
     ));
 
-    rocket::custom(figment)
+    let mission_success = rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(identity_info)
@@ -427,6 +427,8 @@ async fn main() -> Result<()> {
         .attach(ui_browser_launch())
         .launch()
         .await?;
+
+    tracing::trace!(?mission_success, "Rocket has landed");
 
     db.close().await;
 

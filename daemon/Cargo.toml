@@ -40,7 +40,7 @@ serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.10"
 snow = "0.9"
 sqlite-db = { path = "../sqlite-db" }
-sqlx = { version = "0.5.13", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
+sqlx = { version = "0.6.0", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 statrs = "0.15"
 thiserror = "1"
 time = { version = "0.3.11", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
@@ -48,7 +48,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"]
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
-uuid = { version = "0.8", features = ["serde", "v4"] }
+uuid = { version = "1.1", features = ["serde", "v4"] }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }

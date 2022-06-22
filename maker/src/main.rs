@@ -158,7 +158,7 @@ async fn main() -> Result<()> {
         projection::Actor::new(db.clone(), bitcoin_network, &price_feed);
     tasks.add(projection_context.run(proj_actor));
 
-    rocket::custom(figment)
+    let mission_success = rocket::custom(figment)
         .manage(projection_feeds)
         .manage(wallet_feed_receiver)
         .manage(maker)
@@ -186,6 +186,8 @@ async fn main() -> Result<()> {
         .attach(fairings::log_requests())
         .launch()
         .await?;
+
+    tracing::trace!(?mission_success, "Rocket has landed");
 
     db.close().await;
 
