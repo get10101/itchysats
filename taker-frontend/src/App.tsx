@@ -28,7 +28,7 @@ import utc from "dayjs/plugin/utc";
 import "intro.js/introjs.css";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Link as ReachLink } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
@@ -79,6 +79,8 @@ export const FAQ_URL = "http://faq.itchysats.network";
 
 export const App = () => {
     const toast = useToast();
+    const navigate = useNavigate();
+    const location = useLocation();
 
     let [referencePrice, setReferencePrice] = useState<number>();
     const [githubVersion, setGithubVersion] = useState<SemVer | null>();
@@ -200,6 +202,13 @@ export const App = () => {
         onClose,
     } = useDisclosure({ defaultIsOpen: outdated });
 
+    const pathname = location.pathname;
+    useEffect(() => {
+        if (pathname !== "/long" && pathname !== "/short" && pathname !== "/wallet") {
+            navigate("/long");
+        }
+    }, [navigate, pathname]);
+
     return (
         <>
             <Tour />
@@ -284,12 +293,7 @@ export const App = () => {
                                             }
                                         />
                                     </Route>
-                                    <Route index element={<Navigate to="long" />} />
                                 </Route>
-                                <Route
-                                    path="/*"
-                                    element={<Navigate to="long" />}
-                                />
                             </Routes>
                         </Box>
                     </Center>
