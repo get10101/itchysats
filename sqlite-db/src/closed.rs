@@ -39,6 +39,7 @@ use model::FundingFee;
 use model::Identity;
 use model::Leverage;
 use model::Lock;
+use model::OfferId;
 use model::OrderId;
 use model::Position;
 use model::Price;
@@ -97,8 +98,8 @@ impl Connection {
             };
 
             match fut.await {
-                Ok(()) => tracing::debug!(order_id = %id, "Moved CFD to `closed_cfds` table"),
-                Err(e) => tracing::warn!(order_id = %id, "Failed to move closed CFD: {e:#}"),
+                Ok(()) => tracing::debug!(order_id =  %id, "Moved CFD to `closed_cfds` table"),
+                Err(e) => tracing::warn!(order_id =  %id, "Failed to move closed CFD: {e:#}"),
             }
         }
 
@@ -116,7 +117,8 @@ impl Connection {
         let cfd = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: models::OrderId",
+                order_id as "order_id: models::OrderId",
+                offer_id as "offer_id: models::OfferId",
                 position as "position: models::Position",
                 initial_price as "initial_price: models::Price",
                 taker_leverage as "taker_leverage: models::Leverage",
@@ -131,7 +133,7 @@ impl Connection {
             FROM
                 closed_cfds
             WHERE
-                closed_cfds.uuid = $1
+                closed_cfds.order_id = $1
             "#,
             inner_id
         )
@@ -162,6 +164,7 @@ impl Connection {
 
         let cfd = ClosedCfd {
             id,
+            offer_id: cfd.offer_id.into(),
             position: cfd.position.into(),
             initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage.into(),
@@ -188,7 +191,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: models::OrderId"
+                order_id as "order_id: models::OrderId"
             FROM
                 closed_cfds
             "#
@@ -196,7 +199,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid.into())
+        .map(|r| r.order_id.into())
         .collect();
 
         Ok(ids)
@@ -211,6 +214,7 @@ impl Connection {
 #[derive(Debug, Clone)]
 struct ClosedCfdInputAggregate {
     id: OrderId,
+    offer_id: OfferId,
     position: Position,
     initial_price: Price,
     taker_leverage: Leverage,
@@ -232,6 +236,7 @@ impl ClosedCfdInputAggregate {
     fn new(cfd: Cfd) -> Self {
         let Cfd {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -266,6 +271,7 @@ impl ClosedCfdInputAggregate {
 
         Self {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -467,6 +473,7 @@ impl ClosedCfdInputAggregate {
     fn build(self) -> Result<ClosedCfdInput> {
         let Self {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -499,6 +506,7 @@ impl ClosedCfdInputAggregate {
 
         Ok(ClosedCfdInput {
             id,
+            offer_id,
             position,
             initial_price: models::Price::from(initial_price),
             taker_leverage,
@@ -519,6 +527,7 @@ impl ClosedCfdInputAggregate {
 #[derive(Debug, Clone, Copy)]
 struct ClosedCfdInput {
     id: OrderId,
+    offer_id: OfferId,
     position: Position,
     initial_price: models::Price,
     taker_leverage: Leverage,
@@ -541,6 +550,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         Some(peer_id) => peer_id,
     };
     let id = models::OrderId::from(cfd.id);
+    let offer_id = models::OfferId::from(cfd.offer_id);
     let role = models::Role::from(cfd.role);
     let taker_leverage = models::Leverage::from(cfd.taker_leverage);
     let position = models::Position::from(cfd.position);
@@ -555,7 +565,8 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         r#"
         INSERT INTO closed_cfds
         (
-            uuid,
+            order_id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -568,9 +579,10 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
             lock_txid,
             lock_dlc_vout
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#,
         id,
+        offer_id,
         position,
         cfd.initial_price,
         taker_leverage,
@@ -676,7 +688,7 @@ async fn insert_collaborative_settlement(
         )
         VALUES
         (
-            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),
             $2, $3, $4, $5
         )
         "#,
@@ -721,7 +733,7 @@ async fn insert_cet_settlement(
         )
         VALUES
         (
-            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),
             $2, $3, $4, $5
         )
         "#,
@@ -764,7 +776,7 @@ async fn insert_refund_settlement(
         )
         VALUES
         (
-            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),
             $2, $3, $4
         )
         "#,
@@ -799,7 +811,7 @@ async fn insert_commit_tx(
         )
         VALUES
         (
-            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+            (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),
             $2
         )
         "#,
@@ -835,7 +847,7 @@ async fn load_collaborative_settlement(
         JOIN
             closed_cfds on closed_cfds.id = collaborative_settlement_txs.cfd_id
         WHERE
-            closed_cfds.uuid = $1
+            closed_cfds.order_id = $1
         "#,
         id
     )
@@ -867,7 +879,7 @@ async fn load_cet_settlement(
         JOIN
             closed_cfds on closed_cfds.id = closed_cets.cfd_id
         WHERE
-            closed_cfds.uuid = $1
+            closed_cfds.order_id = $1
         "#,
         id
     )
@@ -898,7 +910,7 @@ async fn load_refund_settlement(
         JOIN
             closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id
         WHERE
-            closed_cfds.uuid = $1
+            closed_cfds.order_id = $1
         "#,
         id
     )
@@ -925,7 +937,7 @@ async fn insert_event_log(
             )
             VALUES
             (
-                (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),
+                (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),
                 $2, $3
             )
             "#,
@@ -964,7 +976,7 @@ async fn load_creation_timestamp(
         JOIN
             closed_cfds on closed_cfds.id = event_log.cfd_id
         WHERE
-            closed_cfds.uuid = $1
+            closed_cfds.order_id = $1
         ORDER BY event_log.created_at ASC
         LIMIT 1
         "#,
@@ -985,6 +997,7 @@ mod tests {
     use model::Cfd;
     use model::EventKind;
     use model::FundingRate;
+    use model::OfferId;
     use model::OpeningFee;
     use model::Payout;
     use model::Price;
@@ -1275,6 +1288,7 @@ mod tests {
     ) -> Result<()> {
         let cfd = ClosedCfdInput {
             id,
+            offer_id: OfferId::default(),
             position: Position::Long,
             initial_price: models::Price::from(Decimal::ONE),
             taker_leverage: Leverage::TWO,
@@ -1302,11 +1316,13 @@ mod tests {
     }
 
     fn cfd_collaboratively_settled() -> (Cfd, CfdEvent, CfdEvent) {
-        // 1|<RANDOM-ORDER-ID>|Long|41772.8325|2|24|100|
+        // 1|<RANDOM-ORDER-ID>|<RANDOM-OFFER-ID>|Long|41772.8325|2|24|100|
         // 69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e|Taker|0|0|1
         let order_id = OrderId::default();
+        let offer_id = OfferId::default();
         let cfd = Cfd::new(
             order_id,
+            offer_id,
             Position::Long,
             Price::new(dec!(41_772.8325)).unwrap(),
             Leverage::TWO,

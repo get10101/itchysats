@@ -1,4 +1,4 @@
-use crate::Order;
+use crate::Offer;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -31,6 +31,7 @@ use model::FeeAccount;
 use model::FundingFee;
 use model::FundingRate;
 use model::Leverage;
+use model::OfferId;
 use model::OrderId;
 use model::Origin;
 use model::Position;
@@ -131,6 +132,7 @@ impl Actor {
 #[derivative(PartialEq)]
 pub struct Cfd {
     pub order_id: OrderId,
+    pub offer_id: OfferId,
     #[serde(with = "round_to_two_dp")]
     pub initial_price: Price,
 
@@ -331,6 +333,7 @@ impl Cfd {
     fn new(
         sqlite_db::Cfd {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -382,6 +385,7 @@ impl Cfd {
 
         Self {
             order_id: id,
+            offer_id,
             initial_price,
             accumulated_fees: fee_account.balance(),
             leverage_taker: taker_leverage,
@@ -821,7 +825,7 @@ impl Tx {
                 let projection_long =
                     offers
                         .long
-                        .and_then(|long| match TryInto::<CfdOrder>::try_into(long) {
+                        .and_then(|long| match TryInto::<CfdOffer>::try_into(long) {
                             Ok(projection_long) => Some(projection_long),
                             Err(e) => {
                                 tracing::warn!("Unable to convert long order: {e:#}");
@@ -832,7 +836,7 @@ impl Tx {
                 let projection_short =
                     offers
                         .short
-                        .and_then(|short| match TryInto::<CfdOrder>::try_into(short) {
+                        .and_then(|short| match TryInto::<CfdOffer>::try_into(short) {
                             Ok(projection_short) => Some(projection_short),
                             Err(e) => {
                                 tracing::warn!("Unable to convert short order: {e:#}");
@@ -878,6 +882,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
     fn new_closed(network: Self::CtorArgs, closed_cfd: ClosedCfd) -> Self {
         let ClosedCfd {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -986,6 +991,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 
         Self {
             order_id: id,
+            offer_id,
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
@@ -1018,6 +1024,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
     fn new_failed(network: Self::CtorArgs, failed_cfd: FailedCfd) -> Self {
         let FailedCfd {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -1061,6 +1068,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
 
         Self {
             order_id: id,
+            offer_id,
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
@@ -1250,14 +1258,14 @@ impl From<xtra_bitmex_price_feed::Quote> for Quote {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MakerOffers {
     /// The offer where the maker's position is long
-    pub long: Option<CfdOrder>,
+    pub long: Option<CfdOffer>,
     /// The offer where the maker's position is short
-    pub short: Option<CfdOrder>,
+    pub short: Option<CfdOffer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct CfdOrder {
-    pub id: OrderId,
+pub struct CfdOffer {
+    pub id: OfferId,
 
     pub trading_pair: TradingPair,
 
@@ -1325,40 +1333,40 @@ pub struct LeverageDetails {
     pub initial_funding_fee_per_lot: SignedAmount,
 }
 
-impl TryFrom<Order> for CfdOrder {
+impl TryFrom<Offer> for CfdOffer {
     type Error = anyhow::Error;
 
-    fn try_from(order: Order) -> std::result::Result<Self, Self::Error> {
+    fn try_from(offer: Offer) -> std::result::Result<Self, Self::Error> {
         let lot_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
 
-        let role = order.origin.into();
-        let own_position = match order.origin {
+        let role = offer.origin.into();
+        let own_position = match offer.origin {
             // we are the maker, the order's position is our position
-            Origin::Ours => order.position_maker,
+            Origin::Ours => offer.position_maker,
             // we are the taker, the order's position is our counter-position
-            Origin::Theirs => order.position_maker.counter_position(),
+            Origin::Theirs => offer.position_maker.counter_position(),
         };
 
-        let leverage_details = order
+        let leverage_details = offer
             .leverage_choices
             .iter()
             .map(|leverage| {
                 let liquidation_price = match own_position {
-                    Position::Long => calculate_long_liquidation_price(*leverage, order.price),
-                    Position::Short => calculate_short_liquidation_price(*leverage, order.price),
+                    Position::Long => calculate_long_liquidation_price(*leverage, offer.price),
+                    Position::Short => calculate_short_liquidation_price(*leverage, offer.price),
                 };
                 // Margin per lot price is dependent on one's own leverage
-                let margin_per_lot = calculate_margin(order.price, lot_size, *leverage);
+                let margin_per_lot = calculate_margin(offer.price, lot_size, *leverage);
 
                 let (long_leverage, short_leverage) =
                     long_and_short_leverage(*leverage, role, own_position);
 
                 let initial_funding_fee_per_lot = FundingFee::calculate(
-                    order.price,
+                    offer.price,
                     lot_size,
                     long_leverage,
                     short_leverage,
-                    order.funding_rate,
+                    offer.funding_rate,
                     SETTLEMENT_INTERVAL.whole_hours(),
                 )
                 .context("unable to calculate initial funding fee")?;
@@ -1379,24 +1387,24 @@ impl TryFrom<Order> for CfdOrder {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            id: order.id,
-            trading_pair: order.trading_pair,
-            position_maker: order.position_maker,
-            price: order.price,
-            min_quantity: order.min_quantity,
-            max_quantity: order.max_quantity,
+            id: offer.id,
+            trading_pair: offer.trading_pair,
+            position_maker: offer.position_maker,
+            price: offer.price,
+            min_quantity: offer.min_quantity,
+            max_quantity: offer.max_quantity,
             lot_size,
             leverage_details,
-            creation_timestamp: order.creation_timestamp_maker,
-            settlement_time_interval_in_secs: order
+            creation_timestamp: offer.creation_timestamp_maker,
+            settlement_time_interval_in_secs: offer
                 .settlement_interval
                 .whole_seconds()
                 .try_into()
                 .context("unable to convert settlement interval")?,
-            opening_fee: Some(order.opening_fee.to_inner()),
-            funding_rate_annualized_percent: AnnualisedFundingPercent::from(order.funding_rate)
+            opening_fee: Some(offer.opening_fee.to_inner()),
+            funding_rate_annualized_percent: AnnualisedFundingPercent::from(offer.funding_rate)
                 .to_string(),
-            funding_rate_hourly_percent: HourlyFundingPercent::from(order.funding_rate).to_string(),
+            funding_rate_hourly_percent: HourlyFundingPercent::from(offer.funding_rate).to_string(),
         })
     }
 }
@@ -1631,6 +1639,7 @@ impl fmt::Display for HourlyFundingPercent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use model::OfferId;
     use model::OpeningFee;
     use model::TxFeeRate;
     use sqlite_db::memory;
@@ -1662,6 +1671,7 @@ mod tests {
     pub fn dummy_cfd() -> model::Cfd {
         model::Cfd::new(
             OrderId::default(),
+            OfferId::default(),
             Position::Long,
             Price::new(dec!(60_000)).unwrap(),
             Leverage::TWO,
@@ -1698,8 +1708,10 @@ mod tests {
         // 1|<RANDOM-ORDER-ID>|Long|41772.8325|2|24|100|
         // 69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e|Taker|0|0|1
         let order_id = OrderId::default();
+        let offer_id = OfferId::default();
         let cfd = model::Cfd::new(
             order_id,
+            offer_id,
             Position::Long,
             Price::new(dec!(41_772.8325)).unwrap(),
             Leverage::TWO,

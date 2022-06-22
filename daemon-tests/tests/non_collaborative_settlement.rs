@@ -44,12 +44,7 @@ async fn force_close_open_cfd(maker_position: Position) {
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // Delivering correct attestation moves the state `PendingCet`
-    simulate_attestation!(
-        taker,
-        maker,
-        order_id,
-        oracle_data.attestations()[0].clone()
-    );
+    simulate_attestation!(taker, maker, order_id, oracle_data.settlement_attestation());
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);

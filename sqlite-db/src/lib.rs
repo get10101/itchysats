@@ -16,6 +16,7 @@ use model::EventKind;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
+use model::OfferId;
 use model::OpeningFee;
 use model::OrderId;
 use model::Position;
@@ -153,7 +154,8 @@ impl Connection {
     pub async fn insert_cfd(&self, cfd: &model::Cfd) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 
-        let id = models::OrderId::from(cfd.id());
+        let order_id = models::OrderId::from(cfd.id());
+        let offer_id = models::OfferId::from(cfd.offer_id());
 
         let role = models::Role::from(cfd.role());
         let quantity = models::Usd::from(cfd.quantity());
@@ -171,7 +173,8 @@ impl Connection {
         let query_result = sqlx::query(
             r#"
         insert into cfds (
-            uuid,
+            order_id,
+            offer_id,
             position,
             initial_price,
             leverage,
@@ -183,9 +186,10 @@ impl Connection {
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
         )
-        .bind(&id)
+        .bind(&order_id)
+        .bind(&offer_id)
         .bind(&position)
         .bind(&initial_price)
         .bind(&leverage)
@@ -238,7 +242,7 @@ impl Connection {
             data,
             created_at
         ) values (
-            (select id from cfds where cfds.uuid = $1),
+            (select id from cfds where cfds.order_id = $1),
             $2, $3, $4
         )"##,
         )
@@ -296,7 +300,7 @@ impl Connection {
             .with_context(|| format!("Could not load events for CFD {id}"))?;
         let num_events = events.len();
 
-        tracing::trace!(target = "aggregate", order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
+        tracing::trace!(target = "aggregate", order_id =  %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
 
         let cfd = events.into_iter().fold(cfd, C::apply);
 
@@ -399,7 +403,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: models::OrderId"
+                order_id as "order_id: models::OrderId"
             FROM
                 cfds
             "#
@@ -407,7 +411,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid.into())
+        .map(|r| r.order_id.into())
         .collect();
 
         Ok(ids)
@@ -420,7 +424,7 @@ impl Connection {
             r#"
             select
                 id as cfd_id,
-                uuid as "uuid: models::OrderId"
+                order_id as "order_id: models::OrderId"
             from
                 cfds
             where exists (
@@ -440,7 +444,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid.into())
+        .map(|r| r.order_id.into())
         .collect();
 
         Ok(ids)
@@ -453,7 +457,7 @@ impl Connection {
             r#"
             select
                 id as cfd_id,
-                uuid as "uuid: models::OrderId"
+                order_id as "order_id: models::OrderId"
             from
                 cfds
             where exists (
@@ -471,7 +475,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid.into())
+        .map(|r| r.order_id.into())
         .collect();
 
         Ok(ids)
@@ -483,6 +487,7 @@ impl Connection {
 #[derive(Clone, Copy)]
 pub struct Cfd {
     pub id: OrderId,
+    pub offer_id: OfferId,
     pub position: Position,
     pub initial_price: Price,
     pub taker_leverage: Leverage,
@@ -538,7 +543,8 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
         r#"
             select
                 id as cfd_id,
-                uuid as "uuid: models::OrderId",
+                order_id as "order_id: models::OrderId",
+                offer_id as "offer_id: models::OfferId",
                 position as "position: models::Position",
                 initial_price as "initial_price: models::Price",
                 leverage as "leverage: models::Leverage",
@@ -553,7 +559,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
             from
                 cfds
             where
-                cfds.uuid = $1
+                cfds.order_id = $1
             "#,
         id
     )
@@ -572,7 +578,8 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
     };
 
     Ok(Cfd {
-        id: cfd_row.uuid.into(),
+        id: cfd_row.order_id.into(),
+        offer_id: cfd_row.offer_id.into(),
         position: cfd_row.position.into(),
         initial_price: cfd_row.initial_price.into(),
         taker_leverage: cfd_row.leverage.into(),
@@ -641,7 +648,7 @@ async fn load_cfd_events(
         join
             cfds c on c.id = events.cfd_id
         where
-            uuid = $1
+            order_id = $1
         order by
             events.id
         limit $2,-1
@@ -694,7 +701,7 @@ async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId)
         DELETE FROM
             cfds
         WHERE
-            cfds.uuid = $1
+            cfds.order_id = $1
         "#,
         id,
     )
@@ -716,7 +723,7 @@ async fn delete_from_events_table(conn: &mut Transaction<'_, Sqlite>, id: OrderI
         DELETE FROM
             events
         WHERE events.cfd_id IN
-            (SELECT id FROM cfds WHERE cfds.uuid = $1)
+            (SELECT id FROM cfds WHERE cfds.order_id = $1)
         "#,
         id,
     )
@@ -757,6 +764,7 @@ mod tests {
 
         let super::Cfd {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage: leverage,
@@ -773,6 +781,7 @@ mod tests {
         db_tx.commit().await.unwrap();
 
         assert_eq!(cfd.id(), id);
+        assert_eq!(cfd.offer_id(), offer_id);
         assert_eq!(cfd.position(), position);
         assert_eq!(cfd.initial_price(), initial_price);
         assert_eq!(cfd.taker_leverage(), leverage);
@@ -923,6 +932,7 @@ mod tests {
     pub fn dummy_taker_with_counterparty_peer_id() -> Cfd {
         Cfd::new(
             OrderId::default(),
+            OfferId::default(),
             Position::Long,
             Price::new(dec!(60_000)).unwrap(),
             Leverage::TWO,
@@ -942,6 +952,7 @@ mod tests {
     pub fn dummy_taker_with_legacy_identity(identity: &str) -> Cfd {
         Cfd::new(
             OrderId::default(),
+            OfferId::default(),
             Position::Long,
             Price::new(dec!(60_000)).unwrap(),
             Leverage::TWO,

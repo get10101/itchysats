@@ -13,6 +13,7 @@ use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::command;
 use daemon::oracle;
 use daemon::oracle::NoAnnouncement;
+use daemon::order;
 use daemon::process_manager;
 use daemon::projection;
 use daemon::wallet;
@@ -28,8 +29,8 @@ use model::FundingRate;
 use model::Identity;
 use model::Leverage;
 use model::MakerOffers;
+use model::Offer;
 use model::OpeningFee;
-use model::Order;
 use model::OrderId;
 use model::Origin;
 use model::Position;
@@ -121,9 +122,9 @@ impl OfferParams {
         olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval)
     }
 
-    pub fn create_long_order(&self, settlement_interval: Duration) -> Option<Order> {
+    pub fn create_long_order(&self, settlement_interval: Duration) -> Option<Offer> {
         self.price_long.map(|price_long| {
-            Order::new(
+            Offer::new(
                 Position::Long,
                 price_long,
                 self.min_quantity,
@@ -139,9 +140,9 @@ impl OfferParams {
         })
     }
 
-    pub fn create_short_order(&self, settlement_interval: Duration) -> Option<Order> {
+    pub fn create_short_order(&self, settlement_interval: Duration) -> Option<Offer> {
         self.price_short.map(|price_short| {
-            Order::new(
+            Offer::new(
                 Position::Short,
                 price_short,
                 self.min_quantity,
@@ -200,6 +201,7 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     n_payouts: usize,
     libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
+    order: xtra::Address<order::maker::Actor>,
 }
 
 impl<O, T, W> Actor<O, T, W> {
@@ -217,6 +219,7 @@ impl<O, T, W> Actor<O, T, W> {
         n_payouts: usize,
         libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
         libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
+        order: xtra::Address<order::maker::Actor>,
     ) -> Self {
         Self {
             db: db.clone(),
@@ -237,6 +240,7 @@ impl<O, T, W> Actor<O, T, W> {
             settlement_actors: AddressMap::default(),
             libp2p_collab_settlement,
             libp2p_offer,
+            order,
         }
     }
 
@@ -357,7 +361,7 @@ where
         let order_to_take = self
             .current_offers
             .as_ref()
-            .and_then(|offers| offers.pick_order_to_take(order_id));
+            .and_then(|offers| offers.pick_offer_to_take(order_id));
 
         let order_to_take = if let Some(order_to_take) = order_to_take {
             order_to_take
@@ -379,6 +383,9 @@ where
         };
 
         let cfd = Cfd::from_order(
+            // For the legacy code offer_id = order_id because of the constraint that an offer can
+            // only be take by exactly one taker
+            order_id,
             &order_to_take,
             quantity,
             taker_id,
@@ -460,7 +467,21 @@ impl<O, T, W> Actor<O, T, W> {
     async fn handle_accept_order(&mut self, msg: AcceptOrder) -> Result<()> {
         let AcceptOrder { order_id } = msg;
 
-        tracing::debug!(%order_id, "Maker accepts order");
+        match self
+            .order
+            .send(order::maker::Decision::Accept(order_id))
+            .await
+        {
+            Ok(Ok(_)) => return Ok(()),
+            Err(e) => {
+                tracing::warn!("Libp2p order actor is down, trying legacy mechanism: {e:#}");
+            }
+            Ok(Err(e)) => {
+                tracing::debug!(
+                    "Could not accept order via libp2p, trying legacy mechanism: {e:#}"
+                );
+            }
+        };
 
         match self
             .setup_actors
@@ -470,7 +491,10 @@ impl<O, T, W> Actor<O, T, W> {
             })
             .await
         {
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(())) => {
+                tracing::debug!(%order_id, "Maker accepts order");
+                Ok(())
+            }
             Ok(Err(NotConnected(e))) => {
                 self.executor
                     .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(anyhow!(e))))
@@ -495,6 +519,22 @@ impl<O, T, W> Actor<O, T, W> {
         let RejectOrder { order_id } = msg;
 
         tracing::debug!(%order_id, "Maker rejects order");
+
+        match self
+            .order
+            .send(order::maker::Decision::Reject(order_id))
+            .await
+        {
+            Ok(Ok(_)) => return Ok(()),
+            Err(e) => {
+                tracing::warn!("Libp2p order actor is down, trying legacy mechanism: {e:#}");
+            }
+            Ok(Err(e)) => {
+                tracing::debug!(
+                    "Could not reject order via libp2p, trying legacy mechanism: {e:#}"
+                );
+            }
+        };
 
         match self
             .setup_actors

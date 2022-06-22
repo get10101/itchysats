@@ -204,6 +204,33 @@ macro_rules! wait_next_state {
     };
 }
 
+/// Waits until the CFDs with given order_id for both maker and taker are in the given state.
+#[macro_export]
+macro_rules! wait_next_state_multi_cfd {
+    ($id:expr, $maker:expr, $taker:expr, $maker_state:expr, $taker_state:expr) => {
+        let wait_until_taker = next_with($taker.cfd_feed(), |maybe_cfds| {
+            maybe_cfds.and_then(cfd_with_state($id, $taker_state))
+        });
+        let wait_until_maker = next_with($maker.cfd_feed(), |maybe_cfds| {
+            maybe_cfds.and_then(cfd_with_state($id, $maker_state))
+        });
+
+        let (taker_cfd, maker_cfd) = tokio::join!(wait_until_taker, wait_until_maker);
+        let taker_cfd = taker_cfd.unwrap();
+        let maker_cfd = maker_cfd.unwrap();
+
+        assert_eq!(
+            taker_cfd.order_id, maker_cfd.order_id,
+            "order id mismatch between maker and taker"
+        );
+        assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
+        assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
+    };
+    ($id:expr, $maker:expr, $taker:expr, $state:expr) => {
+        wait_next_state_multi_cfd!($id, $maker, $taker, $state, $state)
+    };
+}
+
 /// Hide the implementation detail of arriving at the Cfd open state.
 /// Useful when reading tests that should start at this point.
 /// For convenience, returns also OrderId of the opened Cfd.
@@ -243,20 +270,21 @@ pub async fn start_from_open_cfd_state(
 
     mock_oracle_announcements(&mut maker, &mut taker, announcements).await;
 
-    let order_to_take = match position_maker {
+    let offer_to_take = match position_maker {
         Position::Short => received.short,
         Position::Long => received.long,
     }
     .context("Order for expected position not set")
     .unwrap();
 
-    taker
+    let offer_id = offer_to_take.id;
+
+    let order_id = taker
         .system
-        .take_offer(order_to_take.id, quantity, taker_leverage)
+        .place_order(offer_id, quantity, Leverage::TWO)
         .await
         .unwrap();
-
-    wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);
+    wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
     taker.mocks.mock_party_params().await;
@@ -264,18 +292,17 @@ pub async fn start_from_open_cfd_state(
     maker.mocks.mock_wallet_sign_and_broadcast().await;
     taker.mocks.mock_wallet_sign_and_broadcast().await;
 
-    maker.system.accept_order(order_to_take.id).await.unwrap();
-    wait_next_state!(order_to_take.id, maker, taker, CfdState::ContractSetup);
+    maker.system.accept_order(order_id).await.unwrap();
+    wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-    wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingOpen);
+    wait_next_state!(order_id, maker, taker, CfdState::PendingOpen);
 
-    confirm!(lock transaction, order_to_take.id, maker, taker);
-    wait_next_state!(order_to_take.id, maker, taker, CfdState::Open);
+    confirm!(lock transaction, order_id, maker, taker);
+    wait_next_state!(order_id, maker, taker, CfdState::Open);
 
-    (maker, taker, order_to_take.id, fee_calculator)
+    (maker, taker, order_id, fee_calculator)
 }
-
 pub struct FeeCalculator {
     /// Opening fee charged by the maker
     opening_fee: OpeningFee,
@@ -508,6 +535,10 @@ impl Maker {
             .clone()
     }
 
+    pub fn cfds(&mut self) -> Vec<Cfd> {
+        self.cfd_feed().borrow().as_ref().unwrap().clone()
+    }
+
     pub fn latest_commit_txid(&mut self) -> Txid {
         self.first_cfd()
             .aggregated()
@@ -680,6 +711,10 @@ impl Taker {
             .clone()
     }
 
+    pub fn cfds(&mut self) -> Vec<Cfd> {
+        self.cfd_feed().borrow().as_ref().unwrap().clone()
+    }
+
     pub fn latest_commit_txid(&mut self) -> Txid {
         self.first_cfd()
             .aggregated()
@@ -811,12 +846,12 @@ impl Taker {
         }
     }
 
-    pub async fn trigger_rollover_with_latest_dlc_params(&mut self, id: OrderId) {
+    pub async fn trigger_rollover_with_latest_dlc_params(&mut self, order_id: OrderId) {
         let latest_dlc = self.first_cfd().aggregated().latest_dlc().clone().unwrap();
         self.system
             .auto_rollover_actor
             .send(auto_rollover::Rollover {
-                order_id: id,
+                order_id,
                 maker_peer_id: Some(self.maker_peer_id),
                 from_commit_txid: latest_dlc.commit.0.txid(),
                 from_settlement_event_id: latest_dlc.settlement_event_id,
@@ -827,14 +862,14 @@ impl Taker {
 
     pub async fn trigger_rollover_with_specific_params(
         &mut self,
-        id: OrderId,
+        order_id: OrderId,
         from_commit_txid: Txid,
         from_settlement_event_id: BitMexPriceEventId,
     ) {
         self.system
             .auto_rollover_actor
             .send(auto_rollover::Rollover {
-                order_id: id,
+                order_id,
                 maker_peer_id: Some(self.maker_peer_id),
                 from_commit_txid,
                 from_settlement_event_id,

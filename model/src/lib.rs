@@ -1060,6 +1060,7 @@ impl From<&Payout> for i64 {
 #[derive(Debug, Clone, Copy)]
 pub struct FailedCfd {
     pub id: OrderId,
+    pub offer_id: OfferId,
     pub position: Position,
     pub initial_price: Price,
     pub taker_leverage: Leverage,
@@ -1111,6 +1112,7 @@ pub enum Settlement {
 #[derive(Debug, Clone, Copy)]
 pub struct ClosedCfd {
     pub id: OrderId,
+    pub offer_id: OfferId,
     pub position: Position,
     pub initial_price: Price,
     pub taker_leverage: Leverage,

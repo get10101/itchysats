@@ -75,8 +75,8 @@ impl Connection {
             };
 
             match fut.await {
-                Ok(()) => tracing::debug!(order_id = %id, "Moved CFD to `failed_cfds` table"),
-                Err(e) => tracing::warn!(order_id = %id, "Failed to move failed CFD: {e:#}"),
+                Ok(()) => tracing::debug!(order_id =  %id, "Moved CFD to `failed_cfds` table"),
+                Err(e) => tracing::warn!(order_id =  %id, "Failed to move failed CFD: {e:#}"),
             }
         }
 
@@ -94,7 +94,8 @@ impl Connection {
         let cfd = sqlx::query!(
             r#"
             SELECT
-                uuid as "id: models::OrderId",
+                order_id as "order_id: models::OrderId",
+                offer_id as "offer_id: models::OfferId",
                 position as "position: models::Position",
                 initial_price as "initial_price: models::Price",
                 taker_leverage as "taker_leverage: models::Leverage",
@@ -107,7 +108,7 @@ impl Connection {
             FROM
                 failed_cfds
             WHERE
-                failed_cfds.uuid = $1
+                failed_cfds.order_id = $1
             "#,
             inner_id
         )
@@ -118,6 +119,7 @@ impl Connection {
 
         let cfd = FailedCfd {
             id,
+            offer_id: cfd.offer_id.into(),
             position: cfd.position.into(),
             initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage.into(),
@@ -139,7 +141,7 @@ impl Connection {
         let ids = sqlx::query!(
             r#"
             SELECT
-                uuid as "uuid: models::OrderId"
+                order_id as "order_id: models::OrderId"
             FROM
                 failed_cfds
             "#
@@ -147,7 +149,7 @@ impl Connection {
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
-        .map(|r| r.uuid.into())
+        .map(|r| r.order_id.into())
         .collect();
 
         Ok(ids)
@@ -201,6 +203,7 @@ async fn insert_failed_cfd(
     };
 
     let id = models::OrderId::from(cfd.id);
+    let offer_id = models::OfferId::from(cfd.offer_id);
     let role = models::Role::from(cfd.role);
     let initial_price = models::Price::from(cfd.initial_price);
     let taker_leverage = models::Leverage::from(cfd.taker_leverage);
@@ -212,7 +215,8 @@ async fn insert_failed_cfd(
         r#"
         INSERT INTO failed_cfds
         (
-            uuid,
+            order_id,
+            offer_id,
             position,
             initial_price,
             taker_leverage,
@@ -223,9 +227,10 @@ async fn insert_failed_cfd(
             fees,
             kind
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
         id,
+        offer_id,
         position,
         initial_price,
         taker_leverage,
@@ -263,7 +268,7 @@ async fn insert_event_log(
             )
             VALUES
             (
-                (SELECT id FROM failed_cfds WHERE failed_cfds.uuid = $1),
+                (SELECT id FROM failed_cfds WHERE failed_cfds.order_id = $1),
                 $2, $3
             )
             "#,
@@ -302,7 +307,7 @@ async fn load_creation_timestamp(
         JOIN
             failed_cfds on failed_cfds.id = event_log_failed.cfd_id
         WHERE
-            failed_cfds.uuid = $1
+            failed_cfds.order_id = $1
         ORDER BY event_log_failed.created_at ASC
         LIMIT 1
         "#,

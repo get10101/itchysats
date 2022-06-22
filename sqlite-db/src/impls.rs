@@ -7,6 +7,7 @@ impl crate::CfdAggregate for model::Cfd {
         _: Self::CtorArgs,
         crate::Cfd {
             id,
+            offer_id,
             position,
             initial_price,
             taker_leverage: leverage,
@@ -22,6 +23,7 @@ impl crate::CfdAggregate for model::Cfd {
     ) -> Self {
         model::Cfd::new(
             id,
+            offer_id,
             position,
             initial_price,
             leverage,

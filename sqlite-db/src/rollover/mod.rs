@@ -20,6 +20,7 @@ mod tests {
     use model::EventKind;
     use model::FundingRate;
     use model::Leverage;
+    use model::OfferId;
     use model::OpeningFee;
     use model::OrderId;
     use model::Position;
@@ -39,6 +40,7 @@ mod tests {
     pub fn dummy_cfd() -> Cfd {
         Cfd::new(
             OrderId::default(),
+            OfferId::default(),
             Position::Long,
             Price::new(dec!(60_000)).unwrap(),
             Leverage::TWO,
@@ -147,7 +149,7 @@ mod tests {
 
         let order_id = models::OrderId::from(cfd.id());
 
-        let cfd_row_id = sqlx::query!(r#"select id from cfds where uuid = $1"#, order_id)
+        let cfd_row_id = sqlx::query!(r#"select id from cfds where order_id = $1"#, order_id)
             .fetch_one(&mut connection)
             .await?
             .id
@@ -214,9 +216,9 @@ mod tests {
             .await
             .unwrap();
 
-        let offer_id = models::OrderId::from(cfd.id());
+        let order_id = models::OrderId::from(cfd.id());
 
-        let cfd_row_id = sqlx::query!(r#"select id from cfds where uuid = $1"#, offer_id)
+        let cfd_row_id = sqlx::query!(r#"select id from cfds where order_id = $1"#, order_id)
             .fetch_one(&mut connection)
             .await?
             .id

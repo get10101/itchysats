@@ -81,7 +81,7 @@ async fn insert_rollover_completed_event_data(
     dlc: &Dlc,
     funding_fee: FundingFee,
     complete_fee: Option<CompleteFee>,
-    offer_id: models::OrderId,
+    order_id: models::OrderId,
 ) -> Result<()> {
     let (lock_tx, lock_tx_descriptor) = dlc.lock.clone();
     let (commit_tx, commit_adaptor_signature, commit_descriptor) = dlc.commit.clone();
@@ -146,11 +146,11 @@ async fn insert_rollover_completed_event_data(
                 complete_fee,
                 complete_fee_flow
             ) values (
-            (select id from cfds where cfds.uuid = $1),
+            (select id from cfds where cfds.order_id = $1),
             $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
             )
         "#,
-        offer_id,
+        order_id,
         event_id,
         settlement_event_id,
         dlc.refund_timelock,
@@ -187,7 +187,7 @@ async fn insert_rollover_completed_event_data(
 
 async fn insert_revoked_commit_transaction(
     inner_transaction: &mut Transaction<'_, Sqlite>,
-    offer_id: models::OrderId,
+    order_id: models::OrderId,
     revoked: RevokedCommit,
 ) -> Result<()> {
     let revoked_tx_script_pubkey = revoked.script_pubkey.to_hex();
@@ -215,9 +215,9 @@ async fn insert_revoked_commit_transaction(
                     complete_fee,
                     complete_fee_flow,
                     revocation_sk_ours
-                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7, $8, $9, $10 )
+                ) values ( (select id from cfds where cfds.order_id = $1), $2, $3, $4, $5, $6, $7, $8, $9, $10 )
             "#,
-        offer_id,
+        order_id,
         encsig_ours,
         publication_pk_theirs,
         revocation_sk_theirs,
@@ -240,7 +240,7 @@ async fn insert_revoked_commit_transaction(
 async fn insert_cet(
     db_transaction: &mut Transaction<'_, Sqlite>,
     event_id: BitMexPriceEventId,
-    offer_id: models::OrderId,
+    order_id: models::OrderId,
     cet: Cet,
 ) -> Result<()> {
     let maker_amount = cet.maker_amount.as_sat() as i64;
@@ -263,9 +263,9 @@ async fn insert_cet(
                     range_start,
                     range_end,
                     txid
-                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7, $8, $9 )
+                ) values ( (select id from cfds where cfds.order_id = $1), $2, $3, $4, $5, $6, $7, $8, $9 )
             "#,
-        offer_id,
+        order_id,
         event_id,
         adaptor_sig,
         maker_amount,
