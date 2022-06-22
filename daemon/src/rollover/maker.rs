@@ -302,14 +302,15 @@ impl Actor {
                         .try_into_msg2()?;
 
                     // reveal revocation secrets to the counterparty
-                    framed
+                    if let Err(e) = framed
                         .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg2(
                             RolloverMsg2 {
                                 revocation_sk: dlc.revocation,
                             },
                         ))))
-                        .await
-                        .context("Failed to send Msg2")?;
+                        .await {
+                        tracing::warn!(%order_id, "Failed to last rollover message to taker, this rollover will likely be retried by the taker: {e:#}");
+                    }
 
                     let revoked_commit = finalize_revoked_commits(
                         &dlc,
