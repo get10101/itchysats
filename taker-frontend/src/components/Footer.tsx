@@ -31,9 +31,10 @@ function TextDivider() {
 
 interface FooterProps {
     identityInfo: IdentityInfo | null;
+    daemonVersion: string | undefined;
 }
 
-export default function Footer({ identityInfo }: FooterProps) {
+export default function Footer({ identityInfo, daemonVersion }: FooterProps) {
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     return (
@@ -79,6 +80,13 @@ export default function Footer({ identityInfo }: FooterProps) {
                                 />
                                 <Text fontWeight={"bold"}>Your Peer ID:</Text>
                                 <Text>{identityInfo ? identityInfo.taker_peer_id : "unknown"}</Text>
+                                <Divider
+                                    orientation={"horizontal"}
+                                    borderColor={useColorModeValue("black", "white")}
+                                    height={"20px"}
+                                />
+                                <Text fontWeight={"bold"}>Daemon version:</Text>
+                                <Text>{daemonVersion ? daemonVersion : "unknown"}</Text>
                             </ModalBody>
                             <ModalFooter>
                                 <Button colorScheme="blue" mr={3} onClick={onClose}>
@@ -94,6 +102,7 @@ export default function Footer({ identityInfo }: FooterProps) {
                             position: "footer",
                             customerid: identityInfo ? identityInfo.taker_id : "unknown",
                             peerid: identityInfo ? identityInfo.taker_peer_id : "unknown",
+                            daemon: daemonVersion ? daemonVersion : "unknown",
                         }}
                     >
                         <Button
