@@ -14,7 +14,7 @@ rust_decimal = { version = "1", features = ["serde-with-float"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-time = { version = "0.3", features = ["serde-well-known"] }
+time = { version = "=0.3.9", features = ["serde-well-known"] }
 tokio = "1"
 tokio-tasks = { path = "../tokio-tasks" }
 tracing = "0.1"

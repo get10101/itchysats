@@ -27,7 +27,7 @@ serde = { version = "1", features = ["derive"] }
 shared-bin = { path = "../shared-bin" }
 sqlite-db = { path = "../sqlite-db" }
 thiserror = "1"
-time = { version = "0.3", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
+time = { version = "=0.3.9", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
