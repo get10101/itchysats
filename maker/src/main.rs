@@ -25,6 +25,7 @@ use std::net::SocketAddr;
 use tokio_tasks::Tasks;
 use xtra::Actor;
 use xtras::supervisor;
+use xtras::supervisor::always_restart;
 
 #[rocket::main]
 async fn main() -> Result<()> {
@@ -148,12 +149,7 @@ async fn main() -> Result<()> {
 
     let (supervisor, price_feed) = supervisor::Actor::with_policy(
         move || xtra_bitmex_price_feed::Actor::new(opts.network.price_feed_network()),
-        |e| match e {
-            xtra_bitmex_price_feed::Error::FailedToParseQuote { .. }
-            | xtra_bitmex_price_feed::Error::Failed { .. }
-            | xtra_bitmex_price_feed::Error::Unspecified
-            | xtra_bitmex_price_feed::Error::StreamEnded => true, // always restart price feed actor
-        },
+        always_restart::<xtra_bitmex_price_feed::Error>(),
     );
 
     let _supervisor_address = supervisor.create(None).spawn(&mut tasks);

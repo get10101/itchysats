@@ -42,9 +42,14 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
+use xtras::supervisor::always_restart_after;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Duration between the restart attempts after a supervised actor has quit with
+/// a failure.
+pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 
 pub struct ActorSystem<O, W> {
     pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
@@ -178,7 +183,7 @@ where
 
         let (listener_supervisor, listener_actor) = supervisor::Actor::with_policy(
             move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone()),
-            |_: &listener::Error| true, // always restart listener actor
+            always_restart_after(RESTART_INTERVAL),
         );
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
