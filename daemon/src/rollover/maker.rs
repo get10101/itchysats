@@ -312,9 +312,7 @@ impl Actor {
                         tracing::warn!(%order_id, "Failed to last rollover message to taker, this rollover will likely be retried by the taker: {e:#}");
                     }
 
-                    let revoked_commit = finalize_revoked_commits(
-                        &dlc,
-                        own_cfd_txs.commit.1,
+                    let revoked_commit = finalize_revoked_commits(&dlc, dlc.commit.1,
                         msg2,
                         rollover_params.complete_fee_before_rollover(),
                     )?;

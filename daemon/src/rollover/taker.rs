@@ -281,7 +281,7 @@ impl Actor {
 
                             let revoked_commit = finalize_revoked_commits(
                                 &dlc,
-                                own_cfd_txs.commit.1,
+                                dlc.commit.1,
                                 msg2,
                                 complete_fee_before_rollover,
                             )?;
