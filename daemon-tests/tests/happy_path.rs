@@ -1,5 +1,6 @@
 use anyhow::Context;
 use daemon::bdk::bitcoin::Amount;
+use daemon::bdk::bitcoin::SignedAmount;
 use daemon::connection::ConnectionStatus;
 use daemon::connection::MAX_RECONNECT_INTERVAL_SECONDS;
 use daemon::projection::CfdOrder;
@@ -22,12 +23,18 @@ use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
+use maker::cfd::OfferParams;
 use model::olivia;
+use model::FeeAccount;
+use model::FundingFee;
 use model::Identity;
 use model::Leverage;
+use model::OpeningFee;
 use model::OrderId;
 use model::Position;
+use model::Role;
 use model::Usd;
+use model::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -322,7 +329,7 @@ async fn collaboratively_close_an_open_cfd_maker_going_long() {
 }
 
 async fn collaboratively_close_an_open_cfd(maker_position: Position) {
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(OliviaData::example_0().announcement(), maker_position).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -363,7 +370,7 @@ async fn force_close_an_open_cfd_maker_going_long() {
 
 async fn force_close_open_cfd(maker_position: Position) {
     let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
     // Taker initiates force-closing
     taker.system.commit(order_id).await.unwrap();
@@ -414,7 +421,7 @@ async fn double_rollover_an_open_cfd() {
 
 async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
     let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, fee_structure) =
         start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
 
     // Maker needs to have an active offer in order to accept rollover
@@ -422,10 +429,14 @@ async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
         .set_offer_params(dummy_offer_params(maker_position))
         .await;
 
-    let mut maker_fees_before_rollover = maker.first_cfd().accumulated_fees;
-    let mut taker_fees_before_rollover = taker.first_cfd().accumulated_fees;
+    let maker_fees_before_rollover = maker.first_cfd().accumulated_fees;
+    let taker_fees_before_rollover = taker.first_cfd().accumulated_fees;
 
-    for _ in 0..nr_rollovers {
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(0);
+    assert_eq!(expected_maker_fee, maker_fees_before_rollover);
+    assert_eq!(expected_taker_fee, taker_fees_before_rollover);
+
+    for rollover_nr in 0..nr_rollovers {
         taker.trigger_rollover(order_id).await;
 
         wait_next_state!(
@@ -444,19 +455,14 @@ async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
         let maker_fees_after_rollover = maker.first_cfd().accumulated_fees;
         let taker_fees_after_rollover = taker.first_cfd().accumulated_fees;
 
-        match maker_position {
-            Position::Long => {
-                assert!(maker_fees_after_rollover > maker_fees_before_rollover, "The long maker's fees have to be more after a successful rollover where long pays short. before: {}, after: {}", maker_fees_before_rollover, maker_fees_after_rollover);
-                assert!(taker_fees_after_rollover < taker_fees_before_rollover, "The short taker's fees have to be less after a successful rollover where long pays short. before: {}, after: {}", taker_fees_before_rollover, taker_fees_after_rollover);
-            }
-            Position::Short => {
-                assert!(maker_fees_after_rollover < maker_fees_before_rollover, "The short maker's fees have to be less after a successful rollover where long pays short. before: {}, after: {}", maker_fees_before_rollover, maker_fees_after_rollover);
-                assert!(taker_fees_after_rollover > taker_fees_before_rollover, "The long taker's fees have to be more after a successful rollover where long pays short. before: {}, after: {}", taker_fees_before_rollover, taker_fees_after_rollover);
-            }
-        }
+        // predict fee after the rollover, i.e. rollover_nr + 1
+        // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+        // the settlement-event is already expired
+        let (expected_maker_fee, expected_taker_fee) =
+            fee_structure.predict_fees(((rollover_nr as i64) + 1) * 24);
 
-        maker_fees_before_rollover = maker_fees_after_rollover;
-        taker_fees_before_rollover = taker_fees_after_rollover;
+        assert_eq!(expected_maker_fee, maker_fees_after_rollover);
+        assert_eq!(expected_taker_fee, taker_fees_after_rollover);
     }
 }
 
@@ -464,7 +470,7 @@ async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
 async fn maker_rejects_rollover_of_open_cfd() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
     taker.trigger_rollover(order_id).await;
@@ -486,7 +492,7 @@ async fn maker_rejects_rollover_of_open_cfd() {
 async fn maker_rejects_rollover_after_commit_finality() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -517,7 +523,7 @@ async fn maker_rejects_rollover_after_commit_finality() {
 async fn maker_accepts_rollover_after_commit_finality() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -551,7 +557,7 @@ async fn maker_accepts_rollover_after_commit_finality() {
 #[tokio::test]
 async fn maker_rejects_collab_settlement_after_commit_finality() {
     let _guard = init_tracing();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(OliviaData::example_0().announcement(), Position::Short).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -580,7 +586,7 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
 #[tokio::test]
 async fn maker_accepts_collab_settlement_after_commit_finality() {
     let _guard = init_tracing();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(OliviaData::example_0().announcement(), Position::Short).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -610,7 +616,7 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
 async fn open_cfd_is_refunded() {
     let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id) =
+    let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
     confirm!(commit transaction, order_id, maker, taker);
 
@@ -688,6 +694,130 @@ async fn maker_notices_lack_of_taker() {
         next(maker.connected_takers_feed()).await.unwrap()
     );
 }
+pub struct FeeStructure {
+    /// Opening fee charged by the maker
+    opening_fee: OpeningFee,
+
+    /// Funding fee for the first 24h calculated when opening a Cfd
+    initial_funding_fee: FundingFee,
+
+    /// The maker's position for the Cfd
+    maker_position: Position,
+
+    offer_params: OfferParams,
+    quantity: Usd,
+    taker_leverage: Leverage,
+}
+
+impl FeeStructure {
+    pub fn new(
+        offer_params: OfferParams,
+        quantity: Usd,
+        taker_leverage: Leverage,
+        maker_position: Position,
+    ) -> Self {
+        let initial_funding_fee = match maker_position {
+            Position::Long => FundingFee::calculate(
+                offer_params.price_long.unwrap(),
+                quantity,
+                Leverage::ONE,
+                taker_leverage,
+                offer_params.funding_rate_long,
+                SETTLEMENT_INTERVAL.whole_hours(),
+            )
+            .unwrap(),
+            Position::Short => FundingFee::calculate(
+                offer_params.price_short.unwrap(),
+                quantity,
+                taker_leverage,
+                Leverage::ONE,
+                offer_params.funding_rate_short,
+                SETTLEMENT_INTERVAL.whole_hours(),
+            )
+            .unwrap(),
+        };
+
+        Self {
+            opening_fee: offer_params.opening_fee,
+            initial_funding_fee,
+            maker_position,
+            offer_params,
+            quantity,
+            taker_leverage,
+        }
+    }
+
+    pub fn predict_fees(
+        &self,
+        accumulated_rollover_hours_to_charge: i64,
+    ) -> (SignedAmount, SignedAmount) {
+        if accumulated_rollover_hours_to_charge == 0 {
+            tracing::info!("Predicting fees before first rollover")
+        } else {
+            tracing::info!(
+                "Predicting fee for {} hours",
+                accumulated_rollover_hours_to_charge
+            );
+        }
+
+        tracing::debug!("Opening fee: {}", self.opening_fee);
+
+        let mut maker_fee_account = FeeAccount::new(self.maker_position, Role::Maker)
+            .add_opening_fee(self.opening_fee)
+            .add_funding_fee(self.initial_funding_fee);
+
+        let taker_position = self.maker_position.counter_position();
+        let mut taker_fee_account = FeeAccount::new(taker_position, Role::Taker)
+            .add_opening_fee(self.opening_fee)
+            .add_funding_fee(self.initial_funding_fee);
+
+        tracing::debug!(
+            "Maker fees including opening and initial funding fee: {}",
+            maker_fee_account.balance()
+        );
+
+        tracing::debug!(
+            "Taker fees including opening and initial funding fee: {}",
+            taker_fee_account.balance()
+        );
+
+        let accumulated_hours_to_charge = match self.maker_position {
+            Position::Long => FundingFee::calculate(
+                self.offer_params.price_long.unwrap(),
+                self.quantity,
+                Leverage::ONE,
+                self.taker_leverage,
+                self.offer_params.funding_rate_long,
+                accumulated_rollover_hours_to_charge,
+            )
+            .unwrap(),
+            Position::Short => FundingFee::calculate(
+                self.offer_params.price_short.unwrap(),
+                self.quantity,
+                self.taker_leverage,
+                Leverage::ONE,
+                self.offer_params.funding_rate_short,
+                accumulated_rollover_hours_to_charge,
+            )
+            .unwrap(),
+        };
+
+        maker_fee_account = maker_fee_account.add_funding_fee(accumulated_hours_to_charge);
+        taker_fee_account = taker_fee_account.add_funding_fee(accumulated_hours_to_charge);
+
+        tracing::debug!(
+            "Maker fees including all fees: {}",
+            maker_fee_account.balance()
+        );
+
+        tracing::debug!(
+            "Taker fees including all fees: {}",
+            taker_fee_account.balance()
+        );
+
+        (maker_fee_account.balance(), taker_fee_account.balance())
+    }
+}
 
 /// Hide the implementation detail of arriving at the Cfd open state.
 /// Useful when reading tests that should start at this point.
@@ -696,7 +826,7 @@ async fn maker_notices_lack_of_taker() {
 async fn start_from_open_cfd_state(
     announcement: olivia::Announcement,
     position_maker: Position,
-) -> (Maker, Taker, OrderId) {
+) -> (Maker, Taker, OrderId, FeeStructure) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
     let mut taker = Taker::start(
         &TakerConfig::default(),
@@ -708,9 +838,19 @@ async fn start_from_open_cfd_state(
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
 
-    maker
-        .set_offer_params(dummy_offer_params(position_maker))
-        .await;
+    let offer_params = dummy_offer_params(position_maker);
+
+    let quantity = Usd::new(dec!(100));
+    let taker_leverage = Leverage::TWO;
+
+    let fee_structure = FeeStructure::new(
+        offer_params.clone(),
+        quantity,
+        taker_leverage,
+        position_maker,
+    );
+
+    maker.set_offer_params(offer_params).await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
@@ -734,9 +874,10 @@ async fn start_from_open_cfd_state(
 
     taker
         .system
-        .take_offer(order_to_take.id, Usd::new(dec!(100)), Leverage::TWO)
+        .take_offer(order_to_take.id, quantity, taker_leverage)
         .await
         .unwrap();
+
     wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
@@ -754,5 +895,5 @@ async fn start_from_open_cfd_state(
     confirm!(lock transaction, order_to_take.id, maker, taker);
     wait_next_state!(order_to_take.id, maker, taker, CfdState::Open);
 
-    (maker, taker, order_to_take.id)
+    (maker, taker, order_to_take.id, fee_structure)
 }
