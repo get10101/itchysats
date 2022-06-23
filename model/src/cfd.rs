@@ -3745,6 +3745,43 @@ mod tests {
         assert!(!sane, "an oracle event id that is outdated got accepted")
     }
 
+    #[test]
+    fn calculated_funding_fee_of_24h_should_equal_24_hourly_fees() {
+        let price = Price::new(dec!(10000)).unwrap();
+        let quantity = Usd::new(dec!(10));
+        let long_leverage = Leverage::TWO;
+        let short_leverage = Leverage::ONE;
+        let funding_rate = FundingRate::new(dec!(0.001)).unwrap();
+
+        let funding_fee_24h = FundingFee::calculate(
+            price,
+            quantity,
+            long_leverage,
+            short_leverage,
+            funding_rate,
+            24,
+        )
+        .unwrap();
+        let fee_account_24h =
+            FeeAccount::new(Position::Long, Role::Taker).add_funding_fee(funding_fee_24h);
+
+        let funding_fee_1h = FundingFee::calculate(
+            price,
+            quantity,
+            long_leverage,
+            short_leverage,
+            funding_rate,
+            1,
+        )
+        .unwrap();
+        let mut fee_account_1h_times_24 = FeeAccount::new(Position::Long, Role::Taker);
+        for _ in 0..24 {
+            fee_account_1h_times_24 = fee_account_1h_times_24.add_funding_fee(funding_fee_1h);
+        }
+
+        assert_eq!(fee_account_24h.balance, fee_account_1h_times_24.balance);
+    }
+
     impl CfdEvent {
         fn dummy_open(event_id: BitMexPriceEventId) -> Vec<Self> {
             vec![
