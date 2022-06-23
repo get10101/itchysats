@@ -204,7 +204,7 @@ async fn taker_takes_order_and_maker_rejects() {
     maker.mocks.mock_oracle_announcement().await;
     taker
         .system
-        .take_offer(order_id, Usd::new(dec!(10)), Leverage::TWO)
+        .take_offer(order_id, Usd::new(dec!(100)), Leverage::TWO)
         .await
         .unwrap();
 
@@ -288,7 +288,7 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     taker
         .system
-        .take_offer(order_id, Usd::new(dec!(5)), Leverage::TWO)
+        .take_offer(order_id, Usd::new(dec!(100)), Leverage::TWO)
         .await
         .unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
@@ -734,7 +734,7 @@ async fn start_from_open_cfd_state(
 
     taker
         .system
-        .take_offer(order_to_take.id, Usd::new(dec!(5)), Leverage::TWO)
+        .take_offer(order_to_take.id, Usd::new(dec!(100)), Leverage::TWO)
         .await
         .unwrap();
     wait_next_state!(order_to_take.id, maker, taker, CfdState::PendingSetup);

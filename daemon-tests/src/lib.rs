@@ -505,8 +505,8 @@ pub fn dummy_offer_params(position_maker: Position) -> maker::cfd::OfferParams {
     maker::cfd::OfferParams {
         price_long,
         price_short,
-        min_quantity: Usd::new(dec!(5)),
-        max_quantity: Usd::new(dec!(100)),
+        min_quantity: Usd::new(dec!(100)),
+        max_quantity: Usd::new(dec!(1000)),
         tx_fee_rate: TxFeeRate::default(),
         // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
         funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
