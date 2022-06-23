@@ -36,11 +36,29 @@ pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
     executor: command::Executor,
-    announcement_lookahead: Duration,
     tasks: Tasks,
     db: sqlite_db::Connection,
     client: reqwest::Client,
 }
+
+/// We want to fetch at least this much announcements into the future
+///
+/// For a rollover to happen successfully we need to know the oracle announcement details.
+/// Our actor is checking if a new announcement can be fetched every SYNC_ANNOUNCEMENTS_INTERVAL and
+/// ANNOUNCEMENT_LOOKAHEAD hours into the future. Given we rollover every for
+/// hour model::SETTLEMENT_INTERVAL into the future, we want to have at least
+/// model::SETTLEMENT_INTERVAL announcements ready. Due to sync interval coincidence, it might
+/// happen that we do not have synced for a specific announcement yet. Hence, we need to fetch more
+/// announcements. We fetch model::SETTLEMENT_INTERVAL + 2 announcement into the future because of
+/// this example:
+///
+/// Assume the last fetch was at 01.01.2022 00:59:55, i.e. 5 seconds before midnight and we would
+/// have synced for model::SETTLEMENT_INTERVAL+1 we would have synced announcements until 02.01.2022
+/// 01:00:00. A rollover request happening exactly at 01.01.2022 01:00:00 would ask for the
+/// announcement at 02.01.2022 02:00:00 because of how olivia::next_announcement_after works. Note:
+/// even if the underlying logic of olivia::next_announcement_after changes, fetching model::
+/// SETTLEMENT_INTERVAL + 2 won't hurt.
+const ANNOUNCEMENT_LOOKAHEAD: Duration = Duration::hours(26);
 
 #[derive(Clone, Copy)]
 pub struct SyncAnnouncements;
@@ -132,31 +150,21 @@ impl sqlite_db::CfdAggregate for Cfd {
 }
 
 impl Actor {
-    pub fn new(
-        db: sqlite_db::Connection,
-        executor: command::Executor,
-        announcement_lookahead: Duration,
-    ) -> Self {
+    pub fn new(db: sqlite_db::Connection, executor: command::Executor) -> Self {
         Self {
             announcements: HashMap::new(),
             pending_attestations: HashSet::new(),
             executor,
-            announcement_lookahead,
             tasks: Tasks::default(),
             db,
             client: reqwest::Client::new(),
         }
     }
 
-    fn ensure_having_announcements(
-        &mut self,
-        announcement_lookahead: Duration,
-        ctx: &mut xtra::Context<Self>,
-    ) {
-        // we want inclusive the settlement_time_interval_hours length hence +1
-        for hour in 1..announcement_lookahead.whole_hours() + 1 {
+    fn ensure_having_announcements(&mut self, ctx: &mut xtra::Context<Self>) {
+        for hour in 1..ANNOUNCEMENT_LOOKAHEAD.whole_hours() {
             let event_id =
-                next_announcement_after(time::OffsetDateTime::now_utc() + Duration::hours(hour));
+                next_announcement_after(OffsetDateTime::now_utc() + Duration::hours(hour));
 
             if self.announcements.get(&event_id).is_some() {
                 continue;
@@ -290,7 +298,7 @@ impl Actor {
     }
 
     fn handle_sync_announcements(&mut self, _: SyncAnnouncements, ctx: &mut xtra::Context<Self>) {
-        self.ensure_having_announcements(self.announcement_lookahead, ctx);
+        self.ensure_having_announcements(ctx);
     }
 
     fn handle_sync_attestations(&mut self, _: SyncAttestations, ctx: &mut xtra::Context<Self>) {
@@ -387,4 +395,16 @@ impl Attestation {
 
 impl xtra::Message for Attestation {
     type Result = ();
+}
+
+#[cfg(test)]
+pub mod tests {
+    #[test]
+    fn ensure_lookahead_constant() {
+        use time::Duration;
+        assert_eq!(
+            crate::oracle::ANNOUNCEMENT_LOOKAHEAD,
+            model::SETTLEMENT_INTERVAL + Duration::hours(2)
+        );
+    }
 }
