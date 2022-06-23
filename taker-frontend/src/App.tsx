@@ -299,7 +299,7 @@ export const App = () => {
                     </Center>
                 </Box>
             </Center>
-            <Footer identityInfo={identityOrUndefined} />
+            <Footer identityInfo={identityOrUndefined} daemonVersion={daemonVersion?.version} />
         </>
     );
 };
