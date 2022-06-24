@@ -1,8 +1,10 @@
 use crate::connection;
+use crate::connection::NoConnection;
 use crate::metrics::time_to_first_position;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::command;
 use daemon::process_manager;
 use daemon::setup_contract_deprecated;
@@ -10,9 +12,10 @@ use daemon::wallet;
 use daemon::wire;
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
-use futures::future;
+use futures::sink;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
+use maia_core::PartyParams;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;
@@ -21,9 +24,8 @@ use model::Role;
 use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use xtras::address_map::IPromiseIStopAll;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
@@ -32,10 +34,10 @@ pub struct Actor {
     n_payouts: usize,
     oracle_pk: XOnlyPublicKey,
     announcement: Announcement,
-    build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
-    sign: Box<dyn MessageChannel<wallet::Sign>>,
-    taker: Box<dyn MessageChannel<connection::TakerMessage>>,
-    confirm_order: Box<dyn MessageChannel<connection::ConfirmOrder>>,
+    build_party_params: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
+    sign: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
+    taker: MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+    confirm_order: MessageChannel<connection::ConfirmOrder, Result<()>>,
     taker_id: Identity,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
@@ -44,17 +46,17 @@ pub struct Actor {
 }
 
 impl Actor {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn new(
         db: sqlite_db::Connection,
         process_manager: xtra::Address<process_manager::Actor>,
         (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (XOnlyPublicKey, Announcement),
-        build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
-        sign: &(impl MessageChannel<wallet::Sign> + 'static),
+        build_party_params: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
+        sign: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
         (taker, confirm_order, taker_id): (
-            &(impl MessageChannel<connection::TakerMessage> + 'static),
-            &(impl MessageChannel<connection::ConfirmOrder> + 'static),
+            MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+            MessageChannel<connection::ConfirmOrder, Result<()>>,
             Identity,
         ),
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
@@ -66,10 +68,10 @@ impl Actor {
             n_payouts,
             oracle_pk,
             announcement,
-            build_party_params: build_party_params.clone_channel(),
-            sign: sign.clone_channel(),
-            taker: taker.clone_channel(),
-            confirm_order: confirm_order.clone_channel(),
+            build_party_params,
+            sign,
+            taker,
+            confirm_order,
             taker_id,
             setup_msg_sender: None,
             tasks: Tasks::default(),
@@ -91,19 +93,26 @@ impl Actor {
             .await?;
 
         let taker_id = setup_params.counterparty_identity();
+        let taker = self.taker.clone();
 
         let contract_future = setup_contract_deprecated::new(
-            self.taker.sink().with(move |msg| {
-                future::ok(connection::TakerMessage {
-                    taker_id,
-                    msg: wire::MakerToTaker::Protocol { order_id, msg },
-                })
+            sink::unfold((), move |_, msg| {
+                let taker = taker.clone();
+                async move {
+                    let msg = connection::TakerMessage {
+                        taker_id,
+                        msg: wire::MakerToTaker::Protocol { order_id, msg },
+                    };
+
+                    let _ = taker.send(msg).split_receiver().await;
+                    Ok(())
+                }
             }),
             receiver,
             (self.oracle_pk, self.announcement.clone()),
             setup_params,
-            self.build_party_params.clone_channel(),
-            self.sign.clone_channel(),
+            self.build_party_params.clone(),
+            self.sign.clone(),
             Role::Maker,
             position,
             self.n_payouts,
@@ -136,7 +145,7 @@ impl Actor {
             tracing::warn!("Failed to record potential time to first position: {e:#}");
         };
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -148,7 +157,7 @@ impl Actor {
             tracing::error!("Failed to execute `reject_contract_setup` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -160,7 +169,7 @@ impl Actor {
             tracing::error!("Failed to execute `fail_contract_setup` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn forward_protocol_msg(&self, msg: wire::SetupMsg) -> Result<()> {
@@ -271,14 +280,10 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
-    }
-
     async fn stopped(self) -> Self::Stop {}
 }
 
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
+impl IPromiseIStopAll for Actor {}
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted

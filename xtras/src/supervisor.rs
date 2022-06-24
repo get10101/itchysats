@@ -11,7 +11,6 @@ use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra::Context;
-use xtra::Message;
 use xtra_productivity::xtra_productivity;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on
@@ -220,6 +219,8 @@ where
     R: Error + Send + Sync + 'static,
     S: Into<R> + Send + 'static,
 {
+    type Return = ();
+
     async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
         let actor = T::name();
         let reason = match msg.error.downcast::<&'static str>() {
@@ -243,18 +244,10 @@ struct Stopped<R> {
     pub reason: R,
 }
 
-impl<R: Send + 'static> Message for Stopped<R> {
-    type Result = ();
-}
-
 /// Module private message to notify ourselves that an actor panicked.
 #[derive(Debug)]
 struct Panicked {
     pub error: Box<dyn Any + Send>,
-}
-
-impl Message for Panicked {
-    type Result = ();
 }
 
 /// Return the metrics tracked by this supervisor.
@@ -411,7 +404,7 @@ mod tests {
     #[xtra_productivity]
     impl RemoteShutdown {
         fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-            ctx.stop()
+            ctx.stop_self()
         }
 
         fn handle(&mut self, msg: SayHello) -> String {

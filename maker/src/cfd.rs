@@ -1,5 +1,6 @@
 use crate::collab_settlement;
 use crate::connection;
+use crate::connection::NoConnection;
 use crate::contract_setup;
 use crate::future_ext::FutureExt;
 use crate::metrics::time_to_first_position;
@@ -9,16 +10,20 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::command;
 use daemon::libp2p_utils::can_use_libp2p;
 use daemon::oracle;
+use daemon::oracle::NoAnnouncement;
 use daemon::process_manager;
 use daemon::projection;
 use daemon::wallet;
 use daemon::wire;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
+use maia_core::PartyParams;
 use model::libp2p::PeerId;
 use model::olivia;
+use model::olivia::Announcement;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
 use model::FundingRate;
@@ -173,7 +178,7 @@ struct RolloverProposal {
     pub timestamp: Timestamp,
 }
 
-pub struct Actor<O, T, W> {
+pub struct Actor<O: 'static, T: 'static, W: 'static> {
     db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
@@ -252,7 +257,7 @@ impl<O, T, W> Actor<O, T, W> {
 
 impl<O, T, W> Actor<O, T, W>
 where
-    T: xtra::Handler<connection::TakerMessage>,
+    T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>,
 {
     async fn handle_taker_connected(&mut self, taker_id: Identity) -> Result<()> {
         self.takers
@@ -283,8 +288,10 @@ where
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<connection::TakerMessage> + xtra::Handler<connection::RegisterRollover>,
+    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+        + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
+    T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
+        + xtra::Handler<connection::RegisterRollover, Return = ()>,
     W: 'static,
 {
     async fn handle_propose_rollover(
@@ -296,12 +303,12 @@ where
         let rollover_actor_addr = rollover::Actor::new(
             order_id,
             self.n_payouts,
-            &self.takers,
+            self.takers.clone().into(),
             taker_id,
             self.oracle_pk,
-            &self.oracle,
+            self.oracle.clone().into(),
             self.process_manager.clone(),
-            &self.takers,
+            self.takers.clone().into(),
             self.db.clone(),
             version,
         )
@@ -316,11 +323,13 @@ where
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<connection::ConfirmOrder>
-        + xtra::Handler<connection::TakerMessage>
-        + xtra::Handler<connection::BroadcastOffers>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
+    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+        + xtra::Handler<oracle::MonitorAttestation>,
+    T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
+        + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
+        + xtra::Handler<connection::BroadcastOffers, Return = ()>,
+    W: xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
+        + xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>,
 {
     async fn handle_take_order(
         &mut self,
@@ -411,9 +420,13 @@ where
             self.process_manager.clone(),
             (order_to_take.clone(), cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
-            &self.wallet,
-            &self.wallet,
-            (&self.takers, &self.takers, taker_id),
+            self.wallet.clone().into(),
+            self.wallet.clone().into(),
+            (
+                self.takers.clone().into(),
+                self.takers.clone().into(),
+                taker_id,
+            ),
             self.time_to_first_position.clone(),
         )
         .create(None)
@@ -694,8 +707,8 @@ impl<O, T, W> Actor<O, T, W> {
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<connection::settlement::Response>,
+    O: xtra::Handler<oracle::MonitorAttestation, Return = ()>,
+    T: xtra::Handler<connection::settlement::Response, Return = Result<()>>,
     W: 'static + Send,
 {
     async fn handle_propose_settlement(
@@ -713,7 +726,7 @@ where
         let addr = collab_settlement::Actor::new(
             proposal,
             taker_id,
-            &self.takers,
+            self.takers.clone().into(),
             self.process_manager.clone(),
             self.db.clone(),
             self.n_payouts,
@@ -730,13 +743,15 @@ where
 #[xtra_productivity]
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    T: xtra::Handler<connection::ConfirmOrder>
-        + xtra::Handler<connection::TakerMessage>
-        + xtra::Handler<connection::BroadcastOffers>
-        + xtra::Handler<connection::settlement::Response>
-        + xtra::Handler<connection::RegisterRollover>,
-    W: xtra::Handler<wallet::Sign> + xtra::Handler<wallet::BuildPartyParams>,
+    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+        + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
+    T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
+        + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
+        + xtra::Handler<connection::BroadcastOffers, Return = ()>
+        + xtra::Handler<connection::settlement::Response, Return = Result<()>>
+        + xtra::Handler<connection::RegisterRollover, Return = ()>,
+    W: xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
+        + xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>,
 {
     async fn handle_offer_params(&mut self, msg: OfferParams) -> Result<()> {
         // 1. Update actor state to current order

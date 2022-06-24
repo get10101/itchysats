@@ -1,12 +1,10 @@
 use async_trait::async_trait;
 use std::time::Duration;
 use xtra::address;
-use xtra::Message;
 
 #[async_trait]
 pub trait SendInterval<A, M>
 where
-    M: Message,
     A: xtra::Handler<M>,
 {
     /// Similar to xtra::Context::notify_interval, however it uses `send`
@@ -18,15 +16,14 @@ where
     async fn send_interval<F>(self, duration: Duration, constructor: F)
     where
         F: Send + Sync + Fn() -> M,
-        M: Message<Result = ()>,
-        A: xtra::Handler<M>;
+        A: xtra::Handler<M, Return = ()>;
 }
 
 #[async_trait]
 impl<A, M> SendInterval<A, M> for address::Address<A>
 where
-    M: Message,
     A: xtra::Handler<M>,
+    M: Send + 'static,
 {
     async fn send_interval<F>(self, duration: Duration, constructor: F)
     where

@@ -12,6 +12,7 @@ use crate::wire::Msg3;
 use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk_ext::keypair;
 use futures::Sink;
@@ -52,8 +53,8 @@ pub async fn new(
     mut stream: impl Stream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
     setup_params: SetupParams,
-    build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
-    sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
+    build_party_params_channel: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
+    sign_channel: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
     role: Role,
     position: Position,
     n_payouts: usize,

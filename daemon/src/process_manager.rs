@@ -20,13 +20,13 @@ use xtras::SendAsyncSafe;
 pub struct Actor {
     db: sqlite_db::Connection,
     role: Role,
-    cfds_changed: Box<dyn MessageChannel<projection::CfdChanged>>,
-    cfd_changed_metrics: Box<dyn MessageChannel<position_metrics::CfdChanged>>,
-    try_broadcast_transaction: Box<dyn MessageChannel<TryBroadcastTransaction>>,
-    start_monitoring: Box<dyn MessageChannel<StartMonitoring>>,
-    monitor_cet_finality: Box<dyn MessageChannel<MonitorCetFinality>>,
-    monitor_collaborative_settlement: Box<dyn MessageChannel<MonitorCollaborativeSettlement>>,
-    monitor_attestation: Box<dyn MessageChannel<oracle::MonitorAttestation>>,
+    cfds_changed: MessageChannel<projection::CfdChanged, ()>,
+    cfd_changed_metrics: MessageChannel<position_metrics::CfdChanged, ()>,
+    try_broadcast_transaction: MessageChannel<TryBroadcastTransaction, Result<()>>,
+    start_monitoring: MessageChannel<StartMonitoring, ()>,
+    monitor_cet_finality: MessageChannel<MonitorCetFinality, Result<()>>,
+    monitor_collaborative_settlement: MessageChannel<MonitorCollaborativeSettlement, ()>,
+    monitor_attestation: MessageChannel<oracle::MonitorAttestation, ()>,
 }
 
 pub struct Event(CfdEvent);
@@ -42,25 +42,24 @@ impl Actor {
     pub fn new(
         db: sqlite_db::Connection,
         role: Role,
-        cfds_changed: &(impl MessageChannel<projection::CfdChanged> + 'static),
-        cfd_changed_metrics: &(impl MessageChannel<position_metrics::CfdChanged> + 'static),
-        try_broadcast_transaction: &(impl MessageChannel<TryBroadcastTransaction> + 'static),
-        start_monitoring: &(impl MessageChannel<StartMonitoring> + 'static),
-        monitor_cet: &(impl MessageChannel<MonitorCetFinality> + 'static),
-        monitor_collaborative_settlement: &(impl MessageChannel<MonitorCollaborativeSettlement>
-              + 'static),
-        monitor_attestation: &(impl MessageChannel<oracle::MonitorAttestation> + 'static),
+        cfds_changed: MessageChannel<projection::CfdChanged, ()>,
+        cfd_changed_metrics: MessageChannel<position_metrics::CfdChanged, ()>,
+        try_broadcast_transaction: MessageChannel<TryBroadcastTransaction, Result<()>>,
+        start_monitoring: MessageChannel<StartMonitoring, ()>,
+        monitor_cet_finality: MessageChannel<MonitorCetFinality, Result<()>>,
+        monitor_collaborative_settlement: MessageChannel<MonitorCollaborativeSettlement, ()>,
+        monitor_attestation: MessageChannel<oracle::MonitorAttestation, ()>,
     ) -> Self {
         Self {
             db,
             role,
-            cfds_changed: cfds_changed.clone_channel(),
-            cfd_changed_metrics: cfd_changed_metrics.clone_channel(),
-            try_broadcast_transaction: try_broadcast_transaction.clone_channel(),
-            start_monitoring: start_monitoring.clone_channel(),
-            monitor_cet_finality: monitor_cet.clone_channel(),
-            monitor_collaborative_settlement: monitor_collaborative_settlement.clone_channel(),
-            monitor_attestation: monitor_attestation.clone_channel(),
+            cfds_changed,
+            cfd_changed_metrics,
+            try_broadcast_transaction,
+            start_monitoring,
+            monitor_cet_finality,
+            monitor_collaborative_settlement,
+            monitor_attestation,
         }
     }
 }

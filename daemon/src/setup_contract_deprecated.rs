@@ -72,12 +72,12 @@ const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 /// the counterparty.
 #[allow(clippy::too_many_arguments)]
 pub async fn new(
-    mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
+    sink: impl Sink<SetupMsg, Error = anyhow::Error>,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
     setup_params: SetupParams,
-    build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
-    sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
+    build_party_params_channel: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
+    sign_channel: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
     role: Role,
     position: Position,
     n_payouts: usize,
@@ -100,6 +100,8 @@ pub async fn new(
         revocation_pk: rev_pk,
         publish_pk,
     };
+
+    futures::pin_mut!(sink);
 
     sink.send(SetupMsg::Msg0(Msg0::from((own_params.clone(), own_punish))))
         .await
@@ -368,7 +370,7 @@ pub async fn new(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn roll_over(
-    mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
+    sink: impl Sink<RolloverMsg, Error = anyhow::Error>,
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
     (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
@@ -389,6 +391,8 @@ pub async fn roll_over(
         revocation_pk: rev_pk,
         publish_pk,
     };
+
+    futures::pin_mut!(sink);
 
     sink.send(RolloverMsg::Msg0(RolloverMsg0 {
         revocation_pk: rev_pk,

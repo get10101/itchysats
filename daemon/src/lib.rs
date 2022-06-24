@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::bitcoin::Txid;
 use anyhow::Context as _;
 use anyhow::Result;
@@ -36,6 +37,7 @@ use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::always_restart_after;
+use xtras::HandlerTimeoutExt;
 
 pub use bdk;
 pub use maia;
@@ -112,13 +114,18 @@ pub struct TakerActorSystem<O, W, P> {
 
 impl<O, W, P> TakerActorSystem<O, W, P>
 where
-    O: Handler<oracle::MonitorAttestation> + Handler<oracle::GetAnnouncement> + Actor<Stop = ()>,
-    W: Handler<wallet::BuildPartyParams>
-        + Handler<wallet::Sign>
-        + Handler<wallet::Withdraw>
-        + Handler<wallet::Sync>
+    O: Handler<oracle::MonitorAttestation, Return = ()>
+        + Handler<
+            oracle::GetAnnouncement,
+            Return = Result<olivia::Announcement, oracle::NoAnnouncement>,
+        > + Actor<Stop = ()>,
+    W: Handler<wallet::BuildPartyParams, Return = Result<maia_core::PartyParams>>
+        + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
+        + Handler<wallet::Withdraw, Return = Result<Txid>>
+        + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
-    P: Handler<xtra_bitmex_price_feed::LatestQuote> + Actor<Stop = xtra_bitmex_price_feed::Error>,
+    P: Handler<xtra_bitmex_price_feed::LatestQuote, Return = Option<xtra_bitmex_price_feed::Quote>>
+        + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -137,11 +144,11 @@ where
         environment: Environment,
     ) -> Result<Self>
     where
-        M: Handler<monitor::StartMonitoring>
-            + Handler<monitor::Sync>
-            + Handler<monitor::MonitorCollaborativeSettlement>
-            + Handler<monitor::MonitorCetFinality>
-            + Handler<monitor::TryBroadcastTransaction>
+        M: Handler<monitor::StartMonitoring, Return = ()>
+            + Handler<monitor::Sync, Return = ()>
+            + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
+            + Handler<monitor::MonitorCetFinality, Return = Result<()>>
+            + Handler<monitor::TryBroadcastTransaction, Return = Result<()>>
             + Actor<Stop = ()>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
@@ -162,13 +169,13 @@ where
         tasks.add(process_manager_ctx.run(process_manager::Actor::new(
             db.clone(),
             Role::Taker,
-            &projection_actor,
-            &position_metrics_actor,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &oracle_addr,
+            projection_actor.clone().into(),
+            position_metrics_actor.into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.into(),
+            oracle_addr.clone().into(),
         )));
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
@@ -218,7 +225,7 @@ where
                     endpoint_addr.clone(),
                     executor.clone(),
                     oracle_pk,
-                    xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+                    oracle_addr.clone().into(),
                     n_payouts,
                 )
             }
@@ -265,7 +272,7 @@ where
 
         let (offers_supervisor, libp2p_offer_addr) = supervisor::Actor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
-            move || xtra_libp2p_offer::taker::Actor::new(&cfd_actor_addr)
+            move || xtra_libp2p_offer::taker::Actor::new(cfd_actor_addr.clone().into())
         });
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
@@ -280,24 +287,18 @@ where
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
-                (
-                    xtra_libp2p_ping::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
-                ),
-                (
-                    xtra_libp2p_offer::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&libp2p_offer_addr),
-                ),
+                (xtra_libp2p_ping::PROTOCOL_NAME, pong_address.clone().into()),
+                (xtra_libp2p_offer::PROTOCOL_NAME, libp2p_offer_addr.into()),
             ],
             endpoint::Subscribers::new(
                 vec![
-                    xtra::message_channel::MessageChannel::clone_channel(&online_status_actor),
-                    xtra::message_channel::MessageChannel::clone_channel(&ping_actor),
+                    online_status_actor.clone().into(),
+                    ping_actor.clone().into(),
                 ],
                 vec![
-                    xtra::message_channel::MessageChannel::clone_channel(&dialer_actor),
-                    xtra::message_channel::MessageChannel::clone_channel(&ping_actor),
-                    xtra::message_channel::MessageChannel::clone_channel(&online_status_actor),
+                    dialer_actor.into(),
+                    ping_actor.into(),
+                    online_status_actor.clone().into(),
                 ],
                 vec![],
                 vec![],
