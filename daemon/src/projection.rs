@@ -203,7 +203,7 @@ pub struct Cfd {
 ///
 /// This dual-role motivates the existence of this struct.
 #[derive(Clone, Debug)]
-struct Aggregated {
+pub struct Aggregated {
     fee_account: FeeAccount,
 
     /// If this is present, we have an active DLC.
@@ -291,6 +291,11 @@ impl Aggregated {
             };
         };
         self.state
+    }
+
+    // Only used in integration tests
+    pub fn latest_dlc(&self) -> &Option<Dlc> {
+        &self.latest_dlc
     }
 }
 
@@ -715,6 +720,11 @@ impl Cfd {
         let url = TxUrl::new(dlc.commit.0.txid(), network, TxLabel::Commit);
 
         Some(url)
+    }
+
+    // Only used in integration tests
+    pub fn aggregated(&self) -> &Aggregated {
+        &self.aggregated
     }
 
     fn collab_settlement_tx_url(&self, network: Network) -> Option<TxUrl> {

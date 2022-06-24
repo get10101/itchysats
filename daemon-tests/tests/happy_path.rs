@@ -402,13 +402,41 @@ async fn force_close_open_cfd(maker_position: Position) {
 #[tokio::test]
 async fn rollover_an_open_cfd_maker_going_short() {
     let _guard = init_tracing();
-    rollover_an_open_cfd(Position::Short, 1).await;
+    let (mut maker, mut taker, order_id, fee_structure) =
+        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+
+    // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+    // the settlement-event is already expired
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_0(),
+        expected_maker_fee,
+        expected_taker_fee,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn rollover_an_open_cfd_maker_going_long() {
     let _guard = init_tracing();
-    rollover_an_open_cfd(Position::Long, 1).await;
+    let (mut maker, mut taker, order_id, fee_structure) =
+        prepare_rollover(Position::Long, OliviaData::example_0()).await;
+
+    // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+    // the settlement-event is already expired
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_0(),
+        expected_maker_fee,
+        expected_taker_fee,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -416,11 +444,38 @@ async fn double_rollover_an_open_cfd() {
     // double rollover ensures that both parties properly succeeded and can do another rollover
 
     let _guard = init_tracing();
-    rollover_an_open_cfd(Position::Short, 2).await;
+    let (mut maker, mut taker, order_id, fee_structure) =
+        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+
+    // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+    // the settlement-event is already expired
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_0(),
+        expected_maker_fee,
+        expected_taker_fee,
+    )
+    .await;
+
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(48);
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_0(),
+        expected_maker_fee,
+        expected_taker_fee,
+    )
+    .await;
 }
 
-async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
-    let oracle_data = OliviaData::example_0();
+async fn prepare_rollover(
+    maker_position: Position,
+    oracle_data: OliviaData,
+) -> (Maker, Taker, OrderId, FeeStructure) {
     let (mut maker, mut taker, order_id, fee_structure) =
         start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
 
@@ -429,41 +484,70 @@ async fn rollover_an_open_cfd(maker_position: Position, nr_rollovers: u8) {
         .set_offer_params(dummy_offer_params(maker_position))
         .await;
 
-    let maker_fees_before_rollover = maker.first_cfd().accumulated_fees;
-    let taker_fees_before_rollover = taker.first_cfd().accumulated_fees;
+    let maker_cfd = maker.first_cfd();
+    let taker_cfd = taker.first_cfd();
 
     let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(0);
-    assert_eq!(expected_maker_fee, maker_fees_before_rollover);
-    assert_eq!(expected_taker_fee, taker_fees_before_rollover);
+    assert_eq!(expected_maker_fee, maker_cfd.accumulated_fees);
+    assert_eq!(expected_taker_fee, taker_cfd.accumulated_fees);
 
-    for rollover_nr in 0..nr_rollovers {
-        taker.trigger_rollover(order_id).await;
+    (maker, taker, order_id, fee_structure)
+}
 
-        wait_next_state!(
-            order_id,
-            maker,
-            taker,
-            CfdState::IncomingRolloverProposal,
-            CfdState::OutgoingRolloverProposal
-        );
+async fn rollover(
+    maker: &mut Maker,
+    taker: &mut Taker,
+    order_id: OrderId,
+    oracle_data: OliviaData,
+    expected_fees_after_rollover_maker: SignedAmount,
+    expected_fees_after_rollover_taker: SignedAmount,
+) {
+    taker.trigger_rollover(order_id).await;
 
-        maker.system.accept_rollover(order_id).await.unwrap();
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
 
-        wait_next_state!(order_id, maker, taker, CfdState::RolloverSetup);
-        wait_next_state!(order_id, maker, taker, CfdState::Open);
+    maker.system.accept_rollover(order_id).await.unwrap();
 
-        let maker_fees_after_rollover = maker.first_cfd().accumulated_fees;
-        let taker_fees_after_rollover = taker.first_cfd().accumulated_fees;
+    wait_next_state!(order_id, maker, taker, CfdState::RolloverSetup);
+    wait_next_state!(order_id, maker, taker, CfdState::Open);
 
-        // predict fee after the rollover, i.e. rollover_nr + 1
-        // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
-        // the settlement-event is already expired
-        let (expected_maker_fee, expected_taker_fee) =
-            fee_structure.predict_fees(((rollover_nr as i64) + 1) * 24);
+    let maker_cfd = maker.first_cfd();
+    let taker_cfd = taker.first_cfd();
 
-        assert_eq!(expected_maker_fee, maker_fees_after_rollover);
-        assert_eq!(expected_taker_fee, taker_fees_after_rollover);
-    }
+    assert_eq!(
+        expected_fees_after_rollover_maker,
+        maker_cfd.accumulated_fees
+    );
+    assert_eq!(
+        expected_fees_after_rollover_taker,
+        taker_cfd.accumulated_fees
+    );
+
+    // Ensure that the event ID of the latest dlc is the event ID used for rollover
+    assert_eq!(
+        oracle_data.announcement().id,
+        maker_cfd
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .settlement_event_id
+    );
+    assert_eq!(
+        oracle_data.announcement().id,
+        taker_cfd
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .settlement_event_id
+    );
 }
 
 #[tokio::test]
