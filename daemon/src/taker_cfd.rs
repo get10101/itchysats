@@ -1,3 +1,4 @@
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::collab_settlement;
 use crate::collab_settlement::taker::Settle;
 use crate::connection;
@@ -11,8 +12,10 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use maia_core::PartyParams;
 use model::libp2p::PeerId;
 use model::market_closing_price;
+use model::olivia;
 use model::Cfd;
 use model::Identity;
 use model::Leverage;
@@ -166,8 +169,12 @@ impl<O, W> Actor<O, W> {
 #[xtra_productivity]
 impl<O, W> Actor<O, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement> + xtra::Handler<oracle::MonitorAttestation>,
-    W: xtra::Handler<wallet::BuildPartyParams> + xtra::Handler<wallet::Sign>,
+    O: xtra::Handler<
+            oracle::GetAnnouncement,
+            Return = Result<olivia::Announcement, oracle::NoAnnouncement>,
+        > + xtra::Handler<oracle::MonitorAttestation>,
+    W: xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
+        + xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>,
 {
     async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
         let TakeOffer {
@@ -241,8 +248,8 @@ where
                 self.n_payouts,
             ),
             (self.oracle_pk, announcement),
-            &self.wallet,
-            &self.wallet,
+            self.wallet.clone().into(),
+            self.wallet.clone().into(),
             self.conn_actor.clone(),
         )
         .create(None)

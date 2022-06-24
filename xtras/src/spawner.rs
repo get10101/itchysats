@@ -54,6 +54,8 @@ where
     EF: Future<Output = ()> + Send + 'static,
     E: Send + 'static,
 {
+    type Return = ();
+
     async fn handle(&mut self, msg: SpawnFallible<T, EH>, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we are alive");
         let id = Uuid::new_v4();
@@ -117,12 +119,4 @@ impl Default for Actor {
     fn default() -> Self {
         Self::new()
     }
-}
-
-impl<T, EH> xtra::Message for SpawnFallible<T, EH>
-where
-    T: Send + 'static,
-    EH: Send + 'static,
-{
-    type Result = ();
 }

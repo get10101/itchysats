@@ -384,8 +384,11 @@ async fn main() -> Result<()> {
         environment,
     )?;
 
-    let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), bitcoin_network, &taker.price_feed_actor);
+    let (proj_actor, projection_feeds) = projection::Actor::new(
+        db.clone(),
+        bitcoin_network,
+        taker.price_feed_actor.clone().into(),
+    );
     tasks.add(projection_context.run(proj_actor));
 
     tasks.add(connect(

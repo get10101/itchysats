@@ -11,16 +11,16 @@ use xtras::spawner::SpawnFallible;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    maker_offers: Box<dyn MessageChannel<LatestMakerOffers>>,
+    maker_offers: MessageChannel<LatestMakerOffers, ()>,
     spawner: xtra::Address<spawner::Actor>,
 }
 
 impl Actor {
-    pub fn new(maker_offers: &(impl MessageChannel<LatestMakerOffers> + 'static)) -> Self {
+    pub fn new(maker_offers: MessageChannel<LatestMakerOffers, ()>) -> Self {
         let spawner = spawner::Actor::new().create(None).spawn_global();
 
         Self {
-            maker_offers: maker_offers.clone_channel(),
+            maker_offers,
             spawner,
         }
     }
@@ -30,7 +30,7 @@ impl Actor {
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream) {
         let NewInboundSubstream { peer, stream } = msg;
-        let maker_offers = self.maker_offers.clone_channel();
+        let maker_offers = self.maker_offers.clone();
 
         let task = async move {
             let offers = protocol::recv(stream).await?;
@@ -58,10 +58,6 @@ impl Actor {
 /// Message used to inform other actors about the maker's latest
 /// offers.
 pub struct LatestMakerOffers(pub Option<MakerOffers>);
-
-impl xtra::Message for LatestMakerOffers {
-    type Result = ();
-}
 
 #[async_trait]
 impl xtra::Actor for Actor {

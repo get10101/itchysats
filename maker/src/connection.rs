@@ -94,6 +94,8 @@ pub struct TakerMessage {
     pub msg: wire::MakerToTaker,
 }
 
+pub struct TakerMessageIgnoreErr(pub TakerMessage);
+
 pub struct RegisterRollover {
     pub order_id: OrderId,
     pub address: xtra::Address<rollover::Actor>,
@@ -101,9 +103,9 @@ pub struct RegisterRollover {
 
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
-    taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected>>,
-    taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected>>,
-    taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker>>,
+    taker_connected_channel: MessageChannel<cfd::TakerConnected, Result<()>>,
+    taker_disconnected_channel: MessageChannel<cfd::TakerDisconnected, Result<()>>,
+    taker_msg_channel: MessageChannel<cfd::FromTaker, ()>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     p2p_socket: SocketAddr,
@@ -205,9 +207,9 @@ impl Drop for Connection {
 
 impl Actor {
     pub fn new(
-        taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected>>,
-        taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected>>,
-        taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker>>,
+        taker_connected_channel: MessageChannel<cfd::TakerConnected, Result<()>>,
+        taker_disconnected_channel: MessageChannel<cfd::TakerDisconnected, Result<()>>,
+        taker_msg_channel: MessageChannel<cfd::FromTaker, ()>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
@@ -216,9 +218,9 @@ impl Actor {
 
         Self {
             connections: HashMap::new(),
-            taker_connected_channel: taker_connected_channel.clone_channel(),
-            taker_disconnected_channel: taker_disconnected_channel.clone_channel(),
-            taker_msg_channel: taker_msg_channel.clone_channel(),
+            taker_connected_channel,
+            taker_disconnected_channel,
+            taker_msg_channel,
             noise_priv_key,
             heartbeat_interval,
             p2p_socket,
@@ -415,6 +417,10 @@ impl Actor {
         Ok(())
     }
 
+    async fn handle_taker_message_ignore_err(&mut self, msg: TakerMessageIgnoreErr) {
+        let _ = self.send_to_taker(&msg.0.taker_id, msg.0.msg).await;
+    }
+
     async fn handle_read_fail(&mut self, msg: ReadFail) {
         let ReadFail { taker_id, error } = msg;
 
@@ -528,7 +534,7 @@ impl Actor {
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
         tracing::warn!("TCP listener failed: {:#}", msg.error);
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn handle_rollover_proposed(&mut self, msg: RegisterRollover) {

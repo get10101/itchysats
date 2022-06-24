@@ -1,8 +1,10 @@
 use crate::connection;
+use crate::connection::NoConnection;
 use anyhow::Context as _;
 use anyhow::Result;
 use daemon::command;
 use daemon::oracle;
+use daemon::oracle::NoAnnouncement;
 use daemon::process_manager;
 use daemon::setup_contract_deprecated;
 use daemon::wire;
@@ -11,6 +13,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::olivia::Announcement;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -22,9 +25,8 @@ use model::RolloverVersion;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use xtras::address_map::IPromiseIStopAll;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
@@ -55,13 +57,14 @@ struct RolloverFailed {
 
 pub struct Actor {
     order_id: OrderId,
-    send_to_taker_actor: Box<dyn MessageChannel<connection::TakerMessage>>,
+    send_to_taker_actor: MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+    send_to_taker_actor_ignore_err: MessageChannel<connection::TakerMessageIgnoreErr, ()>,
     n_payouts: usize,
     taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
-    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
-    register: Box<dyn MessageChannel<connection::RegisterRollover>>,
+    oracle_actor: MessageChannel<oracle::GetAnnouncement, Result<Announcement, NoAnnouncement>>,
+    register: MessageChannel<connection::RegisterRollover, ()>,
     tasks: Tasks,
     executor: command::Executor,
     version: RolloverVersion,
@@ -72,24 +75,26 @@ impl Actor {
     pub fn new(
         order_id: OrderId,
         n_payouts: usize,
-        send_to_taker_actor: &(impl MessageChannel<connection::TakerMessage> + 'static),
+        send_to_taker_actor: MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+        send_to_taker_actor_ignore_err: MessageChannel<connection::TakerMessageIgnoreErr, ()>,
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
+        oracle_actor: MessageChannel<oracle::GetAnnouncement, Result<Announcement, NoAnnouncement>>,
         process_manager: xtra::Address<process_manager::Actor>,
-        register: &(impl MessageChannel<connection::RegisterRollover> + 'static),
+        register: MessageChannel<connection::RegisterRollover, ()>,
         db: sqlite_db::Connection,
         version: RolloverVersion,
     ) -> Self {
         Self {
             order_id,
             n_payouts,
-            send_to_taker_actor: send_to_taker_actor.clone_channel(),
+            send_to_taker_actor,
+            send_to_taker_actor_ignore_err,
             taker_id,
             oracle_pk,
             sent_from_taker: None,
-            oracle_actor: oracle_actor.clone_channel(),
-            register: register.clone_channel(),
+            oracle_actor,
+            register,
             executor: command::Executor::new(db, process_manager),
             tasks: Tasks::default(),
             version,
@@ -112,7 +117,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -124,7 +129,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -136,7 +141,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn accept(&mut self, msg: AcceptRollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
@@ -218,12 +223,17 @@ impl Actor {
         let funding_fee = *rollover_params.funding_fee();
 
         let rollover_fut = setup_contract_deprecated::roll_over(
-            self.send_to_taker_actor.sink().with(move |msg| {
-                future::ok(connection::TakerMessage {
-                    taker_id,
-                    msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
-                })
-            }),
+            self.send_to_taker_actor_ignore_err
+                .clone()
+                .into_sink()
+                .with(move |msg| {
+                    future::ok(connection::TakerMessageIgnoreErr(
+                        connection::TakerMessage {
+                            taker_id,
+                            msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
+                        },
+                    ))
+                }),
             receiver,
             (self.oracle_pk, announcement),
             rollover_params,
@@ -261,7 +271,7 @@ impl Actor {
 
         self.emit_reject(anyhow::format_err!("unknown"), ctx).await;
 
-        ctx.stop();
+        ctx.stop_self();
 
         Ok(())
     }
@@ -315,14 +325,10 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
-    }
-
     async fn stopped(self) -> Self::Stop {}
 }
 
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
+impl IPromiseIStopAll for Actor {}
 
 #[xtra_productivity]
 impl Actor {

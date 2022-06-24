@@ -393,10 +393,6 @@ impl Attestation {
     }
 }
 
-impl xtra::Message for Attestation {
-    type Result = ();
-}
-
 #[cfg(test)]
 pub mod tests {
     #[test]

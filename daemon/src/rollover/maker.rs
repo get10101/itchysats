@@ -1,6 +1,7 @@
 use crate::command;
 use crate::future_ext::FutureExt;
 use crate::oracle;
+use crate::oracle::NoAnnouncement;
 use crate::rollover::protocol::*;
 use crate::shared_protocol::format_expect_msg_within;
 use anyhow::Context;
@@ -13,6 +14,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::Dlc;
 use model::FundingRate;
@@ -45,7 +47,8 @@ pub struct Actor {
     tasks: Tasks,
     protocol_tasks: HashMap<OrderId, Tasks>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+    get_announcement:
+        MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
     n_payouts: usize,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
     executor: command::Executor,
@@ -55,7 +58,10 @@ impl Actor {
     pub fn new(
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+        get_announcement: MessageChannel<
+            oracle::GetAnnouncement,
+            Result<olivia::Announcement, NoAnnouncement>,
+        >,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -167,7 +173,7 @@ impl Actor {
         tasks.add_fallible(
             {
                 let executor = self.executor.clone();
-                let get_announcement = self.get_announcement.clone_channel();
+                let get_announcement = self.get_announcement.clone();
                 let oracle_pk = self.oracle_pk;
                 let n_payouts = self.n_payouts;
                 async move {

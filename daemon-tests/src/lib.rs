@@ -250,7 +250,8 @@ impl Maker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) = projection::Actor::new(db, Network::Testnet, &price_feed_addr);
+        let (proj_actor, feeds) =
+            projection::Actor::new(db, Network::Testnet, price_feed_addr.into());
         tasks.add(projection_context.run(proj_actor));
 
         Self {
@@ -409,7 +410,7 @@ impl Taker {
         );
 
         let (proj_actor, feeds) =
-            projection::Actor::new(db, Network::Testnet, &taker.price_feed_actor);
+            projection::Actor::new(db, Network::Testnet, taker.price_feed_actor.clone().into());
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(

@@ -22,7 +22,7 @@ members = [
 resolver = "2"
 
 [patch.crates-io]
-xtra = { git = "https://github.com/comit-network/xtra" } # We need to use unreleased patches.
+xtra = { git = "https://github.com/Restioson/xtra", rev = "fc3dca2b14653095659ed8aff067150854aed1c2" } # Unreleased
 maia = { git = "https://github.com/comit-network/maia", rev = "a963084189e1598ca622abe206a78015ab6b8466" } # Unreleased
 maia-core = { git = "https://github.com/comit-network/maia", rev = "e419cb2cf19bed6ec53eaa3672408a6205a9b705", package = "maia-core" } # Unreleased version, pinned before maia's breaking change
-xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased
+xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity", rev = "bebe45425ae44980186df7b96b41f70cad58a4bb" } # Unreleased
