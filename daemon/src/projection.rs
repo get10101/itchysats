@@ -188,7 +188,7 @@ pub struct Cfd {
 
     #[serde(skip)]
     #[derivative(PartialEq = "ignore")]
-    aggregated: Aggregated,
+    pub aggregated: Aggregated,
 
     #[serde(skip)]
     network: Network,
@@ -203,11 +203,11 @@ pub struct Cfd {
 ///
 /// This dual-role motivates the existence of this struct.
 #[derive(Clone, Debug)]
-struct Aggregated {
+pub struct Aggregated {
     fee_account: FeeAccount,
 
     /// If this is present, we have an active DLC.
-    latest_dlc: Option<Dlc>,
+    pub latest_dlc: Option<Dlc>,
     /// If this is present, it should have been published.
     collab_settlement_tx: Option<(Transaction, Script)>,
     /// If this is present, it should have been published.
