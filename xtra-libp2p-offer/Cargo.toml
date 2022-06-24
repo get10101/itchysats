@@ -14,7 +14,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks" }
 tracing = "0.1"
-xtra = { version = "0.6", features = ["metrics", "timeout", "tracing"] }
+xtra = { version = "0.6", features = ["with-tracing-0_1"] }
 xtra-libp2p = { path = "../xtra-libp2p" }
 xtra_productivity = "0.1"
 xtras = { path = "../xtras" }

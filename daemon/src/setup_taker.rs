@@ -21,11 +21,12 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use std::time::Duration;
+use maia_core::PartyParams;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 
 /// The maximum amount of time we give the maker to send us a response.
 const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -37,8 +38,8 @@ pub struct Actor {
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
-    build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
-    sign: Box<dyn MessageChannel<wallet::Sign>>,
+    build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams, Return = Result<PartyParams>>>,
+    sign: Box<dyn MessageChannel<wallet::Sign, Return = Result<PartiallySignedTransaction>>>,
     maker: xtra::Address<connection::Actor>,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
@@ -52,8 +53,8 @@ impl Actor {
         process_manager: xtra::Address<process_manager::Actor>,
         (order_id, quantity, leverage, n_payouts): (OrderId, Usd, Leverage, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
-        build_party_params: &(impl MessageChannel<wallet::BuildPartyParams> + 'static),
-        sign: &(impl MessageChannel<wallet::Sign> + 'static),
+        build_party_params: &(impl MessageChannel<wallet::BuildPartyParams, Return = Result<PartyParams>> + 'static),
+        sign: &(impl MessageChannel<wallet::Sign, Return = Result<PartiallySignedTransaction>> + 'static),
         maker: xtra::Address<connection::Actor>,
     ) -> Self {
         Self {
@@ -112,7 +113,7 @@ impl Actor {
         self.setup_msg_sender = Some(sender);
 
         let contract_future = setup_contract_deprecated::new(
-            xtra::message_channel::MessageChannel::sink(&self.maker)
+            self.maker.clone().into_sink()
                 .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
             receiver,
             (self.oracle_pk, self.announcement.clone()),
@@ -151,7 +152,7 @@ impl Actor {
             tracing::warn!("Failed to execute `reject_contract_setup` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     fn handle(&mut self, msg: wire::SetupMsg) {
@@ -169,7 +170,7 @@ impl Actor {
             tracing::warn!("Failed to execute `complete_contract_setup` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
@@ -181,7 +182,7 @@ impl Actor {
             tracing::warn!("Failed to execute `fail_contract_setup` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     pub async fn handle_setup_timeout_reached(
@@ -209,7 +210,7 @@ impl Actor {
             tracing::warn!("Failed to execute `fail_contract_setup` command: {:#}", e);
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 }
 
@@ -233,7 +234,7 @@ impl xtra::Actor for Actor {
 
         if let Err(e) = res {
             tracing::warn!(id = %self.order_id, "Stopping setup_taker actor: {e}");
-            ctx.stop()
+            ctx.stop_all(); // TODO(restioson) stop
         }
 
         let maker_response_timeout = {
@@ -250,10 +251,6 @@ impl xtra::Actor for Actor {
         };
 
         self.tasks.add(maker_response_timeout);
-    }
-
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
     }
 
     async fn stopped(self) -> Self::Stop {}

@@ -26,7 +26,7 @@ use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use xtra::prelude::*;
-use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
+use xtra_bitmex_price_feed::{Quote, QUOTE_INTERVAL_MINUTES};
 use xtra_libp2p::dialer;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
@@ -40,6 +40,8 @@ use xtras::supervisor::always_restart_after;
 pub use bdk;
 pub use maia;
 pub use maia_core;
+use maia_core::PartyParams;
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 
 pub mod archive_closed_cfds;
 pub mod archive_failed_cfds;
@@ -81,7 +83,7 @@ pub const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
-pub struct TakerActorSystem<O, W, P> {
+pub struct TakerActorSystem<O: 'static, W: 'static, P: 'static> {
     pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
@@ -110,13 +112,13 @@ pub struct TakerActorSystem<O, W, P> {
 
 impl<O, W, P> TakerActorSystem<O, W, P>
 where
-    O: Handler<oracle::MonitorAttestation> + Handler<oracle::GetAnnouncement> + Actor<Stop = ()>,
-    W: Handler<wallet::BuildPartyParams>
-        + Handler<wallet::Sign>
-        + Handler<wallet::Withdraw>
-        + Handler<wallet::Sync>
+    O: Handler<oracle::MonitorAttestation, Return = ()> + Handler<oracle::GetAnnouncement, Return = Result<olivia::Announcement, oracle::NoAnnouncement>> + Actor<Stop = ()>,
+    W: Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
+        + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
+        + Handler<wallet::Withdraw, Return = Result<Txid>>
+        + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
-    P: Handler<xtra_bitmex_price_feed::LatestQuote> + Actor<Stop = xtra_bitmex_price_feed::Error>,
+    P: Handler<xtra_bitmex_price_feed::LatestQuote, Return = Option<Quote>> + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -136,11 +138,11 @@ where
         environment: Environment,
     ) -> Result<Self>
     where
-        M: Handler<monitor::StartMonitoring>
-            + Handler<monitor::Sync>
-            + Handler<monitor::MonitorCollaborativeSettlement>
-            + Handler<monitor::MonitorCetFinality>
-            + Handler<monitor::TryBroadcastTransaction>
+        M: Handler<monitor::StartMonitoring, Return = ()>
+            + Handler<monitor::Sync, Return = ()>
+            + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
+            + Handler<monitor::MonitorCetFinality, Return = Result<()>>
+            + Handler<monitor::TryBroadcastTransaction, Return = Result<()>>
             + Actor<Stop = ()>,
     {
         let (maker_online_status_feed_sender, maker_online_status_feed_receiver) =
@@ -230,7 +232,8 @@ where
 
         tasks.add(
             connection_actor_ctx
-                .with_handler_timeout(Duration::from_secs(120))
+                // TODO(restioson) timeout
+                //.with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
                     maker_online_status_feed_sender,
                     identity.identity_sk.clone(),

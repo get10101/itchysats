@@ -11,7 +11,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use maia_core::secp256k1_zkp::schnorrsig;
 use model::libp2p::PeerId;
-use model::Dlc;
+use model::{Dlc, olivia};
 use model::OrderId;
 use model::Role;
 use model::Timestamp;
@@ -23,6 +23,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
+use crate::oracle::NoAnnouncement;
 
 /// The duration that the taker waits until a decision (accept/reject) is expected from the maker
 ///
@@ -34,7 +35,7 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Actor {
     endpoint: Address<Endpoint>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
     n_payouts: usize,
     tasks: Tasks,
     executor: command::Executor,
@@ -58,7 +59,7 @@ impl Actor {
         endpoint: Address<Endpoint>,
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
         n_payouts: usize,
     ) -> Self {
         Self {

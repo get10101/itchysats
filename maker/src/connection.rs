@@ -92,9 +92,9 @@ pub struct RegisterRollover {
 
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
-    taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected>>,
-    taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected>>,
-    taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker>>,
+    taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected, Return = Result<()>>>,
+    taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected, Return = Result<()>>>,
+    taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker, Return = ()>>,
     noise_priv_key: x25519_dalek::StaticSecret,
     heartbeat_interval: Duration,
     p2p_socket: SocketAddr,
@@ -196,9 +196,9 @@ impl Drop for Connection {
 
 impl Actor {
     pub fn new(
-        taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected>>,
-        taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected>>,
-        taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker>>,
+        taker_connected_channel: Box<dyn MessageChannel<cfd::TakerConnected, Return = Result<()>>>,
+        taker_disconnected_channel: Box<dyn MessageChannel<cfd::TakerDisconnected, Return = Result<()>>>,
+        taker_msg_channel: Box<dyn MessageChannel<cfd::FromTaker, Return = ()>>,
         noise_priv_key: x25519_dalek::StaticSecret,
         heartbeat_interval: Duration,
         p2p_socket: SocketAddr,
@@ -508,7 +508,7 @@ impl Actor {
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
         tracing::warn!("TCP listener failed: {:#}", msg.error);
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     async fn handle_rollover_proposed(&mut self, msg: RegisterRollover) {

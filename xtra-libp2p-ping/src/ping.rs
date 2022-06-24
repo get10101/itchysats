@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_tasks::Tasks;
-use xtra::async_trait;
+use xtra::prelude::async_trait;
 use xtra::Address;
 use xtra::Context;
 use xtra_libp2p::endpoint;
@@ -79,7 +79,7 @@ impl xtra::Actor for Actor {
                 // prevents a continuous endless loup of restarts.
                 tokio::time::sleep(Duration::from_secs(2)).await;
 
-                ctx.stop();
+                ctx.stop_all(); // TODO(restioson) stop
             }
         }
 

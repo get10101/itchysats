@@ -54,7 +54,7 @@ pub struct Endpoint {
     tasks: Tasks,
     controls: HashMap<PeerId, (yamux::Control, Tasks)>,
     inbound_substream_channels:
-        HashMap<&'static str, Box<dyn StrongMessageChannel<NewInboundSubstream>>>,
+        HashMap<&'static str, Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>>,
     listen_addresses: HashSet<Multiaddr>,
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
@@ -172,18 +172,18 @@ pub enum Error {
 /// established or dropped as well as listening addresses being added or removed.
 #[derive(Default)]
 pub struct Subscribers {
-    connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished>>>,
-    connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped>>>,
-    listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded>>>,
-    listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved>>>,
+    connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished, Return = ()>>>,
+    connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped, Return = ()>>>,
+    listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded, Return = ()>>>,
+    listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved, Return = ()>>>,
 }
 
 impl Subscribers {
     pub fn new(
-        connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished>>>,
-        connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped>>>,
-        listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded>>>,
-        listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved>>>,
+        connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished, Return = ()>>>,
+        connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped, Return = ()>>>,
+        listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded, Return = ()>>>,
+        listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved, Return = ()>>>,
     ) -> Self {
         Self {
             connection_established,
@@ -212,7 +212,7 @@ impl Endpoint {
         connection_timeout: Duration,
         inbound_substream_handlers: [(
             &'static str,
-            Box<dyn StrongMessageChannel<NewInboundSubstream>>,
+            Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>,
         ); N],
         subscribers: Subscribers,
     ) -> Self
@@ -603,8 +603,8 @@ impl Endpoint {
 }
 
 fn verify_unique_handlers<const N: usize>(
-    inbound_substream_handlers: [(&str, Box<dyn StrongMessageChannel<NewInboundSubstream>>); N],
-) -> HashMap<&str, Box<dyn StrongMessageChannel<NewInboundSubstream>>> {
+    inbound_substream_handlers: [(&str, Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>); N],
+) -> HashMap<&str, Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>> {
     let mut map = HashMap::with_capacity(inbound_substream_handlers.len());
 
     for (protocol, handler) in inbound_substream_handlers {
@@ -662,17 +662,9 @@ struct NewConnection {
     worker: BoxFuture<'static, ()>,
 }
 
-impl xtra::Message for NewInboundSubstream {
-    type Result = ();
-}
-
 #[derive(Clone, Copy)]
 pub struct ConnectionEstablished {
     pub peer: PeerId,
-}
-
-impl xtra::Message for ConnectionEstablished {
-    type Result = ();
 }
 
 #[derive(Clone, Copy)]
@@ -680,22 +672,10 @@ pub struct ConnectionDropped {
     pub peer: PeerId,
 }
 
-impl xtra::Message for ConnectionDropped {
-    type Result = ();
-}
-
 pub struct ListenAddressAdded {
     pub address: Multiaddr,
 }
 
-impl xtra::Message for ListenAddressAdded {
-    type Result = ();
-}
-
 pub struct ListenAddressRemoved {
     pub address: Multiaddr,
-}
-
-impl xtra::Message for ListenAddressRemoved {
-    type Result = ();
 }

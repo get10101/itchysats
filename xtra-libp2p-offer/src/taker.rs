@@ -11,12 +11,12 @@ use xtras::spawner::SpawnFallible;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    maker_offers: Box<dyn MessageChannel<LatestMakerOffers>>,
+    maker_offers: Box<dyn MessageChannel<LatestMakerOffers, Return = ()>>,
     spawner: xtra::Address<spawner::Actor>,
 }
 
 impl Actor {
-    pub fn new(maker_offers: &(impl MessageChannel<LatestMakerOffers> + 'static)) -> Self {
+    pub fn new(maker_offers: &(impl MessageChannel<LatestMakerOffers, Return = ()> + 'static)) -> Self {
         let spawner = spawner::Actor::new().create(None).spawn_global();
 
         Self {
@@ -58,10 +58,6 @@ impl Actor {
 /// Message used to inform other actors about the maker's latest
 /// offers.
 pub struct LatestMakerOffers(pub Option<MakerOffers>);
-
-impl xtra::Message for LatestMakerOffers {
-    type Result = ();
-}
 
 #[async_trait]
 impl xtra::Actor for Actor {

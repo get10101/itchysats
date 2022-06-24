@@ -75,7 +75,7 @@ pub struct Actor {
     db: sqlite_db::Connection,
     tx: Tx,
     state: State,
-    price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote>>,
+    price_feed: Box<dyn MessageChannel<xtra_bitmex_price_feed::LatestQuote, Return = Option<xtra_bitmex_price_feed::Quote>>>,
     tasks: Tasks,
 }
 
@@ -90,7 +90,7 @@ impl Actor {
     pub fn new(
         db: sqlite_db::Connection,
         network: Network,
-        price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote> + 'static),
+        price_feed: &(impl MessageChannel<xtra_bitmex_price_feed::LatestQuote, Return = Option<xtra_bitmex_price_feed::Quote>> + 'static),
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
         let (tx_order, rx_order) = watch::channel(MakerOffers {

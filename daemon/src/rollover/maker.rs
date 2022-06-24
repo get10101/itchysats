@@ -13,7 +13,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::Dlc;
+use model::{Dlc, olivia};
 use model::FundingRate;
 use model::OrderId;
 use model::Position;
@@ -26,6 +26,7 @@ use xtra::message_channel::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
+use crate::oracle::NoAnnouncement;
 
 use super::protocol;
 
@@ -43,7 +44,7 @@ pub struct Actor {
     tasks: Tasks,
     protocol_tasks: HashMap<OrderId, Tasks>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
     n_payouts: usize,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
     executor: command::Executor,
@@ -53,7 +54,7 @@ impl Actor {
     pub fn new(
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
+        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
         n_payouts: usize,
     ) -> Self {
         Self {

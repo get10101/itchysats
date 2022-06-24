@@ -29,12 +29,16 @@ use model::TxFeeRate;
 use model::Usd;
 use std::net::SocketAddr;
 use std::time::Duration;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+use maia_core::PartyParams;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
+use daemon::oracle::NoAnnouncement;
+use model::olivia::Announcement;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
@@ -51,7 +55,7 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 /// a failure.
 pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 
-pub struct ActorSystem<O, W> {
+pub struct ActorSystem<O: 'static, W: 'static> {
     pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
     wallet_actor: Address<W>,
     _archive_closed_cfds_actor: Address<archive_closed_cfds::Actor>,
@@ -72,11 +76,11 @@ pub struct ActorSystem<O, W> {
 
 impl<O, W> ActorSystem<O, W>
 where
-    O: Handler<oracle::MonitorAttestation> + Handler<oracle::GetAnnouncement> + Actor<Stop = ()>,
-    W: Handler<wallet::BuildPartyParams>
-        + Handler<wallet::Sign>
-        + Handler<wallet::Withdraw>
-        + Handler<wallet::Sync>
+    O: Handler<oracle::MonitorAttestation, Return = ()> + Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>> + Actor<Stop = ()>,
+    W: Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
+        + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
+        + Handler<wallet::Withdraw, Return = Result<Txid>>
+        + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -95,11 +99,11 @@ where
         listen_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
-        M: Handler<monitor::StartMonitoring>
-            + Handler<monitor::Sync>
-            + Handler<monitor::MonitorCollaborativeSettlement>
-            + Handler<monitor::TryBroadcastTransaction>
-            + Handler<monitor::MonitorCetFinality>
+        M: Handler<monitor::StartMonitoring, Return = ()>
+            + Handler<monitor::Sync, Return = ()>
+            + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
+            + Handler<monitor::TryBroadcastTransaction, Return = Result<()>>
+            + Handler<monitor::MonitorCetFinality,Return = Result<()>>
             + Actor<Stop = ()>,
     {
         let (monitor_addr, monitor_ctx) = Context::new(None);
@@ -231,7 +235,8 @@ where
 
         tasks.add(
             inc_conn_ctx
-                .with_handler_timeout(Duration::from_secs(120))
+                // TODO(restioson) timeout
+                //.with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
                     Box::new(cfd_actor_addr.clone()),
                     Box::new(cfd_actor_addr.clone()),

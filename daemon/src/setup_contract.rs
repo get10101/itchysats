@@ -48,6 +48,7 @@ use model::CET_TIMELOCK;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::time::Duration;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use xtra::prelude::MessageChannel;
 
 /// How long contract setup protocol waits for the next message before giving up
@@ -71,8 +72,8 @@ pub async fn new(
     mut stream: impl Stream<Item = SetupMsg> + Unpin,
     (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
     setup_params: SetupParams,
-    build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
-    sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
+    build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams, Return = Result<PartyParams>>>,
+    sign_channel: Box<dyn MessageChannel<wallet::Sign, Return = Result<PartiallySignedTransaction>>>,
     role: Role,
     position: Position,
     n_payouts: usize,

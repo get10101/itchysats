@@ -91,7 +91,7 @@ impl xtra::Actor for Actor {
 impl Actor {
     async fn handle(&mut self, msg: Error, ctx: &mut xtra::Context<Self>) {
         self.stop_reason = Some(msg);
-        ctx.stop();
+        ctx.stop_all(); // TODO
     }
 
     async fn handle(&mut self, msg: NewQuoteReceived) {

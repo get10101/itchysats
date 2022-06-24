@@ -7,12 +7,12 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use xtra::Address;
 use xtra::Handler;
-use xtra::Message;
 
-pub struct AddressMap<K, A> {
+pub struct AddressMap<K, A: 'static> {
     inner: HashMap<K, Address<A>>,
 }
 
+// TODO what is this really doing?
 /// A loud trait that makes sure we don't forget to return `StopAll` from the `stopping` lifecycle
 /// callback.
 ///
@@ -79,8 +79,8 @@ where
     /// Sends a message to the actor stored with the given key.
     pub async fn send<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
-        M: Message<Result = ()>,
-        A: Handler<M> + ActorName,
+        A: Handler<M, Return = ()> + ActorName,
+        M: Send + 'static,
     {
         self.get(key)?
             .send(msg)
@@ -92,8 +92,8 @@ where
 
     pub async fn send_async<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
-        M: Message<Result = ()>,
-        A: Handler<M> + ActorName,
+        A: Handler<M, Return = ()> + ActorName,
+        M: Send + 'static,
     {
         self.get(key)?
             .send_async_safe(msg)
@@ -128,7 +128,7 @@ impl NotConnected {
 #[error("The address is still connected")]
 pub struct StillConnected;
 
-pub struct Disconnected<'a, K, A> {
+pub struct Disconnected<'a, K, A: 'static> {
     entry: Entry<'a, K, Address<A>>,
 }
 

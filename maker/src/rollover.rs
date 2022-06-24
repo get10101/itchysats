@@ -11,7 +11,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::Dlc;
+use model::{Dlc, olivia};
 use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
@@ -22,9 +22,11 @@ use model::RolloverVersion;
 use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
+use daemon::oracle::NoAnnouncement;
+use model::olivia::Announcement;
 use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use crate::connection::NoConnection;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
@@ -55,13 +57,13 @@ struct RolloverFailed {
 
 pub struct Actor {
     order_id: OrderId,
-    send_to_taker_actor: Box<dyn MessageChannel<connection::TakerMessage>>,
+    send_to_taker_actor: Box<dyn MessageChannel<connection::TakerMessage, Return = Result<(), NoConnection>>>,
     n_payouts: usize,
     taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
-    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
-    register: Box<dyn MessageChannel<connection::RegisterRollover>>,
+    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>>,
+    register: Box<dyn MessageChannel<connection::RegisterRollover, Return = ()>>,
     tasks: Tasks,
     executor: command::Executor,
     version: RolloverVersion,
@@ -72,12 +74,12 @@ impl Actor {
     pub fn new(
         order_id: OrderId,
         n_payouts: usize,
-        send_to_taker_actor: &(impl MessageChannel<connection::TakerMessage> + 'static),
+        send_to_taker_actor: &(impl MessageChannel<connection::TakerMessage, Return = Result<(), NoConnection>> + 'static),
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
+        oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
-        register: &(impl MessageChannel<connection::RegisterRollover> + 'static),
+        register: &(impl MessageChannel<connection::RegisterRollover, Return = ()> + 'static),
         db: sqlite_db::Connection,
         version: RolloverVersion,
     ) -> Self {
@@ -112,7 +114,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -124,7 +126,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -136,7 +138,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
     }
 
     async fn accept(&mut self, msg: AcceptRollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
@@ -217,22 +219,25 @@ impl Actor {
 
         let funding_fee = *rollover_params.funding_fee();
 
-        let rollover_fut = setup_contract_deprecated::roll_over(
-            self.send_to_taker_actor.sink().with(move |msg| {
-                future::ok(connection::TakerMessage {
-                    taker_id,
-                    msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
-                })
-            }),
-            receiver,
-            (self.oracle_pk, announcement),
-            rollover_params,
-            Role::Maker,
-            position,
-            dlc,
-            self.n_payouts,
-            complete_fee,
-        );
+        // let rollover_fut = setup_contract_deprecated::roll_over(
+        //     // TODO(restioson) message channel sink
+        //     todo!(),
+        //     // self.send_to_taker_actor.sink().with(move |msg| {
+        //     //     future::ok(connection::TakerMessage {
+        //     //         taker_id,
+        //     //         msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
+        //     //     })
+        //     // }),
+        //     receiver,
+        //     (self.oracle_pk, announcement),
+        //     rollover_params,
+        //     Role::Maker,
+        //     position,
+        //     dlc,
+        //     self.n_payouts,
+        //     complete_fee,
+        // );
+        let rollover_fut = futures::future::pending::<Result<Dlc>>();
 
         let this = ctx.address().expect("self to be alive");
 
@@ -261,7 +266,7 @@ impl Actor {
 
         self.emit_reject(anyhow::format_err!("unknown"), ctx).await;
 
-        ctx.stop();
+        ctx.stop_all(); // TODO(restioson) stop
 
         Ok(())
     }
@@ -313,10 +318,6 @@ impl xtra::Actor for Actor {
         if let Err(source) = fut.await {
             self.emit_fail(source, ctx).await;
         }
-    }
-
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
     }
 
     async fn stopped(self) -> Self::Stop {}
