@@ -188,7 +188,7 @@ pub struct Cfd {
 
     #[serde(skip)]
     #[derivative(PartialEq = "ignore")]
-    pub aggregated: Aggregated,
+    aggregated: Aggregated,
 
     #[serde(skip)]
     network: Network,
@@ -207,7 +207,7 @@ pub struct Aggregated {
     fee_account: FeeAccount,
 
     /// If this is present, we have an active DLC.
-    pub latest_dlc: Option<Dlc>,
+    latest_dlc: Option<Dlc>,
     /// If this is present, it should have been published.
     collab_settlement_tx: Option<(Transaction, Script)>,
     /// If this is present, it should have been published.
@@ -291,6 +291,11 @@ impl Aggregated {
             };
         };
         self.state
+    }
+
+    // Only used in integration tests
+    pub fn latest_dlc(&self) -> &Option<Dlc> {
+        &self.latest_dlc
     }
 }
 
@@ -715,6 +720,11 @@ impl Cfd {
         let url = TxUrl::new(dlc.commit.0.txid(), network, TxLabel::Commit);
 
         Some(url)
+    }
+
+    // Only used in integration tests
+    pub fn aggregated(&self) -> &Aggregated {
+        &self.aggregated
     }
 
     fn collab_settlement_tx_url(&self, network: Network) -> Option<TxUrl> {

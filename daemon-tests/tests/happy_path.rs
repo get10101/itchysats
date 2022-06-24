@@ -532,11 +532,21 @@ async fn rollover(
     // Ensure that the event ID of the latest dlc is the event ID used for rollover
     assert_eq!(
         oracle_data.announcement().id,
-        maker_cfd.aggregated.latest_dlc.unwrap().settlement_event_id
+        maker_cfd
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .settlement_event_id
     );
     assert_eq!(
         oracle_data.announcement().id,
-        taker_cfd.aggregated.latest_dlc.unwrap().settlement_event_id
+        taker_cfd
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .settlement_event_id
     );
 }
 
