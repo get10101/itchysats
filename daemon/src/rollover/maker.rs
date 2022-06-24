@@ -13,6 +13,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::olivia::BitMexPriceEventId;
 use model::Dlc;
 use model::FundingRate;
 use model::OrderId;
@@ -32,6 +33,7 @@ use super::protocol;
 type ListenerConnection = (
     Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
     PeerId,
+    (BitMexPriceEventId, model::CompleteFee),
 );
 
 /// Permanent actor to handle incoming substreams for the `/itchysats/rollover/1.0.0`
@@ -120,28 +122,32 @@ impl Actor {
         } = msg;
         let order_id = propose.order_id;
 
-        if let Err(e) = self
+        let (from_event_id, from_complete_fee) = match self
             .executor
             .execute(order_id, |cfd| {
                 cfd.verify_counterparty_peer_id(&peer.into())?;
-                cfd.start_rollover()
+                cfd.start_rollover_maker(propose.from_commit_txid)
             })
             .await
         {
-            tracing::warn!(%order_id, "Rollover failed after handling taker proposal: {e:#}");
+            Ok(event_id) => event_id,
+            Err(e) => {
+                tracing::warn!(%order_id, "Rollover failed after handling taker proposal: {e:#}");
 
-            // We have to append failed to ensure that we can rollover in the future
-            // The cfd logic might otherwise prevent us from starting a rollover if there is still
-            // one ongoing that was not properly ended.
-            emit_failed(order_id, e, &self.executor).await;
+                // We have to append failed to ensure that we can rollover in the future
+                // The cfd logic might otherwise prevent us from starting a rollover if there is
+                // still one ongoing that was not properly ended.
+                emit_failed(order_id, e, &self.executor).await;
 
-            return;
-        }
+                return;
+            }
+        };
 
         // In case we fail to accept/reject some proposals might never get cleaned up. Given that
         // the taker will retry this should not do much harm because we will replace the proposal
         // with a new one. This is acceptable for now.
-        self.pending_protocols.insert(order_id, (framed, peer));
+        self.pending_protocols
+            .insert(order_id, (framed, peer, (from_event_id, from_complete_fee)));
     }
 
     async fn handle(&mut self, msg: Accept) -> Result<()> {
@@ -152,9 +158,10 @@ impl Actor {
             short_funding_rate,
         } = msg;
 
-        let (mut framed, _) = self.pending_protocols.remove(&order_id).with_context(|| {
-            format!("No active protocol for {order_id} when accepting rollover")
-        })?;
+        let (mut framed, _, from_params) =
+            self.pending_protocols.remove(&order_id).with_context(|| {
+                format!("No active protocol for {order_id} when accepting rollover")
+            })?;
 
         let mut tasks = Tasks::default();
         tasks.add_fallible(
@@ -175,6 +182,7 @@ impl Actor {
                                 .accept_rollover_proposal(
                                     tx_fee_rate,
                                     funding_rate,
+                                    Some(from_params),
                                     RolloverVersion::V3,
                                 )?;
 
@@ -294,34 +302,22 @@ impl Actor {
                         .try_into_msg2()?;
 
                     // reveal revocation secrets to the counterparty
-                    framed
+                    if let Err(e) = framed
                         .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg2(
                             RolloverMsg2 {
                                 revocation_sk: dlc.revocation,
                             },
                         ))))
-                        .await
-                        .context("Failed to send Msg2")?;
+                        .await {
+                        tracing::warn!(%order_id, "Failed to last rollover message to taker, this rollover will likely be retried by the taker: {e:#}");
+                    }
 
-                    let revoked_commit =
-                        finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2)?;
-
-                    let _msg3 = framed
-                        .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT)
-                        .await
-                        .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
-                        .context("Empty stream instead of Msg3")?
-                        .context("Unable to decode dialer Msg3")?
-                        .into_rollover_msg()?
-                        .try_into_msg3()?;
-
-                    framed
-                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg3(
-                            RolloverMsg3,
-                        ))))
-                        .await
-                        .context("Failed to send Msg3")?;
+                    let revoked_commit = finalize_revoked_commits(
+                        &dlc,
+                        own_cfd_txs.commit.1,
+                        msg2,
+                        rollover_params.complete_fee_before_rollover(),
+                    )?;
 
                     let dlc = Dlc {
                         identity: dlc.identity,
@@ -345,7 +341,7 @@ impl Actor {
                         refund_timelock: rollover_params.refund_timelock,
                     };
 
-                    emit_completed(order_id, dlc, funding_fee, &executor).await;
+                    emit_completed(order_id, dlc, funding_fee, complete_fee, &executor).await;
 
                     Ok(())
                 }

@@ -1,9 +1,11 @@
 use crate::rollover;
 use crate::rollover::taker::ProposeRollover;
+use crate::Txid;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use model::libp2p::PeerId;
+use model::olivia::BitMexPriceEventId;
 use model::OrderId;
 use sqlite_db;
 use std::time::Duration;
@@ -50,6 +52,8 @@ impl Actor {
         Rollover {
             order_id,
             maker_peer_id,
+            from_commit_txid,
+            from_settlement_event_id,
         }: Rollover,
     ) {
         if let Some(maker_peer_id) = maker_peer_id {
@@ -58,6 +62,8 @@ impl Actor {
                 .send(ProposeRollover {
                     order_id,
                     maker_peer_id,
+                    from_commit_txid,
+                    from_settlement_event_id,
                 })
                 .await
             {
@@ -81,7 +87,7 @@ impl Actor {
         let mut stream = self.db.load_all_open_cfds::<model::Cfd>(());
 
         while let Some(cfd) = stream.next().await {
-            let cfd = match cfd {
+            let cfd: model::Cfd = match cfd {
                 Ok(cfd) => cfd,
                 Err(e) => {
                     tracing::warn!("Failed to load CFD from database: {e:#}");
@@ -92,12 +98,14 @@ impl Actor {
             let maker_peer_id = cfd.counterparty_peer_id();
 
             match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
-                Ok(()) => {
+                Ok((from_commit_txid, from_settlement_event_id)) => {
                     // If we disconnect, we don't care.
                     let _ = this
                         .send_async_safe(Rollover {
                             order_id: id,
                             maker_peer_id,
+                            from_commit_txid,
+                            from_settlement_event_id,
                         })
                         .await;
                 }
@@ -136,4 +144,6 @@ pub struct AutoRollover;
 pub struct Rollover {
     pub order_id: OrderId,
     pub maker_peer_id: Option<PeerId>,
+    pub from_commit_txid: Txid,
+    pub from_settlement_event_id: BitMexPriceEventId,
 }

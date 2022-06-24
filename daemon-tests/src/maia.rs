@@ -6,6 +6,7 @@ use model::olivia::BitMexPriceEventId;
 use std::str::FromStr;
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct OliviaData {
     id: BitMexPriceEventId,
     pk: schnorrsig::PublicKey,
@@ -15,14 +16,21 @@ pub struct OliviaData {
 }
 
 impl OliviaData {
-    // Note: protocol tests have example 1 as well, but so far we are not asserting on that level of
-    // granularity; example 1 can be pulled in once needed
     pub fn example_0() -> Self {
         Self::example(
             Self::EVENT_ID_0,
             Self::PRICE_0,
             &Self::NONCE_PKS_0,
             &Self::ATTESTATIONS_0,
+        )
+    }
+
+    pub fn example_1() -> Self {
+        Self::example(
+            Self::EVENT_ID_1,
+            Self::PRICE_1,
+            &Self::NONCE_PKS_1,
+            &Self::ATTESTATIONS_1,
         )
     }
 
@@ -116,5 +124,52 @@ impl OliviaData {
         "0818c9c245d7d2162cd393c562a121f80405a27d22ae465e95030c31ebb4bd24",
         "b7c03f0bd6d63bd78ad4ea0f3452ff9717ba65ca42038e6e90a1aa558b7942dc",
         "90c4d8ec9f408ccb62a62daa993c20f2f86799e1fdea520c6d060418e55fd216",
+    ];
+
+    const EVENT_ID_1: &'static str = "/x/BitMEX/BXBT/2021-10-05T08:00:00.price?n=20";
+    const NONCE_PKS_1: [&'static str; 20] = [
+        "150df2e64f39706e726eaa1fe081af3edf376d9644723e135a99328fd194caca",
+        "b90629cedc7cb8430b4d15c84bbe1fe173e70e626d40c465e64de29d4879e20f",
+        "ae14ffb8701d3e224b6632a1bb7b099c8aa90979c3fb788422daa08bca25fa68",
+        "3717940a7e8c35b48b3596498ed93e4d54ba01a2bcbb645d30dae2fc98f087a8",
+        "91beb5da91cc8b4ee6ae603e7ae41cc041d5ea2c13bae9f0e630c69f6c0adfad",
+        "c51cafb450b01f30ec8bd2b4b5fed6f7e179f49945959f0d7609b4b9c5ab3781",
+        "75f2d9332aa1b2d84446a4b2aa276b4c2853659ab0ba74f0881289d3ab700f0c",
+        "5367de73acb53e69b0a4f777e564f87055fede5d4492ddafae876a815fa6166c",
+        "2087a513adb1aa2cc8506ca58306723ed13ba82e054f5bf29fcbeef1ab915c5a",
+        "71c980fb6adae9c121405628c91daffcc5ab52a8a0b6f53c953e8a0236b05782",
+        "d370d22f06751fc649f6ee930ac7f8f3b00389fdad02883a8038a81c46c33b19",
+        "fa6f7d37dc88b510c250dcae1023cce5009d5beb85a75f5b8b10c973b62348aa",
+        "a658077f9c963d1f41cf63b7ebf6e08331f5d201554b3af7814673108abe1bf3",
+        "8a816bf4caa2d6114b2e4d3ab9bff0d470ee0b90163c78c9b67f90238ead9319",
+        "c2519a4e764a65204c469062e260d8565f7730847c507b92c987e478ca91abe1",
+        "59cb6b5beac6511a671076530cc6cc9f1926f54c640828f38c363b110dd8a0cd",
+        "4625b1f3ab9ee01455fa1a98d15fc8d73a7cf41becb4ca5c6eab88db0ba7c114",
+        "82a4de403c604fe40aa3804c5ada6af54c425c0576980b50f259d32dc1a0fcff",
+        "5c4fb87b3812982759ed7264676e713e4e477a41759261515b04797db393ef62",
+        "f3f6b9134c0fdd670767fbf478fd0dd3430f195ce9c21cabb84f3c1dd4848a11",
+    ];
+    const PRICE_1: u64 = 49493;
+    const ATTESTATIONS_1: [&'static str; 20] = [
+        "605f458e9a7bd216ff522e45f6cd14378c03ccfd4d35a69b9b6ce5c4ebfc89fa",
+        "edc7215277d2c24a7a4659ff8831352db609fcc467fead5e27fdada172cdfd86",
+        "1c2d76fcbe724b1fabd2622b991e90bbb2ea9244489de960747134c9fd695dcb",
+        "26b4f078c9ca2233b18b0e42c4bb9867e5de8ee35b500e30b28d9b1742322e49",
+        "2b59aeaacb80056b45dc12d6525d5c75343ef75730623c8d9893e2b681bf4b85",
+        "782e38e777d527e7cb0028a6d03e8f760c6202dbc5ac605f67f995919dee6182",
+        "a902f37f71a78e4bcf431a778024bd775db6d7ade0626a9e7bc4cdf0b1e52dfd",
+        "3927eb5ef3b56817c08709e0af1bb643ad4d95dbf5a92a49e1e9c8c811e929c4",
+        "9ff44fa9d8377a3531792cd6362e4a5b24b86d85602749d301f8449859065b77",
+        "6a2156ff0aaef174b36d5f8adc597fdcb26f306f7ef6e9a485faabc8eb29da2e",
+        "53445b507c0de312959fe4566b82db93987dd0b854f1a33bbad7768512bcaf69",
+        "793c40e0ec3a830c46658bfaed7df74e3fc6781e421e00db5b5f46b26ce4d092",
+        "db7f800da2f22878c8fc8368047308146e1ebd6316c389303c07ebeed7488fc9",
+        "73921d09e0d567a03f3a411c0f3455f9f652bbede808a694cca0fa94619f5ba9",
+        "3d4bd70d93f20aa6b1621ccd077c90bcdee47ce2bae15155434a77a3153a3235",
+        "90fc10577ab737e311b43288a266490f222a6ecb9f9667e01d7a54c0437d145f",
+        "51d350616c6fdf90254240b757184fc0dd226328adb42be214ec25832854950e",
+        "bab3a6269e172ac590fd36683724f087b4add293bb0ee4ef3d21fb5929985c75",
+        "d65a4c71062fc0b0210bb3e239f60d826a37d28caadfc52edd7afde6e91ff818",
+        "ea5dfd972784808a15543f850c7bc86bff2b51cff81ec68fc4c3977d5e7d38de",
     ];
 }

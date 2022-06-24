@@ -1,6 +1,7 @@
 use anyhow::Context;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::SignedAmount;
+use daemon::bdk::bitcoin::Txid;
 use daemon::connection::ConnectionStatus;
 use daemon::connection::MAX_RECONNECT_INTERVAL_SECONDS;
 use daemon::projection::CfdOrder;
@@ -15,6 +16,7 @@ use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::init_tracing;
 use daemon_tests::maia::OliviaData;
+use daemon_tests::mock_oracle_announcements;
 use daemon_tests::mocks::oracle::dummy_wrong_attestation;
 use daemon_tests::simulate_attestation;
 use daemon_tests::start_both;
@@ -25,6 +27,7 @@ use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
 use maker::cfd::OfferParams;
 use model::olivia;
+use model::olivia::BitMexPriceEventId;
 use model::FeeAccount;
 use model::FundingFee;
 use model::Identity;
@@ -405,7 +408,7 @@ async fn rollover_an_open_cfd_maker_going_short() {
     let (mut maker, mut taker, order_id, fee_structure) =
         prepare_rollover(Position::Short, OliviaData::example_0()).await;
 
-    // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
     // the settlement-event is already expired
     let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
     rollover(
@@ -413,6 +416,7 @@ async fn rollover_an_open_cfd_maker_going_short() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
+        None,
         expected_maker_fee,
         expected_taker_fee,
     )
@@ -425,7 +429,7 @@ async fn rollover_an_open_cfd_maker_going_long() {
     let (mut maker, mut taker, order_id, fee_structure) =
         prepare_rollover(Position::Long, OliviaData::example_0()).await;
 
-    // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
     // the settlement-event is already expired
     let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
     rollover(
@@ -433,6 +437,7 @@ async fn rollover_an_open_cfd_maker_going_long() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
+        None,
         expected_maker_fee,
         expected_taker_fee,
     )
@@ -447,7 +452,7 @@ async fn double_rollover_an_open_cfd() {
     let (mut maker, mut taker, order_id, fee_structure) =
         prepare_rollover(Position::Short, OliviaData::example_0()).await;
 
-    // We charge 24 times per rollover because that is the fallback strategy if the timestamp of
+    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
     // the settlement-event is already expired
     let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
     rollover(
@@ -455,6 +460,7 @@ async fn double_rollover_an_open_cfd() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
+        None,
         expected_maker_fee,
         expected_taker_fee,
     )
@@ -466,10 +472,114 @@ async fn double_rollover_an_open_cfd() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
+        None,
         expected_maker_fee,
         expected_taker_fee,
     )
     .await;
+}
+/// This test simulates a rollover retry
+///
+/// We use two different oracle events: `exmaple_0` and `example_1`
+/// The contract setup is done with `example_0`.
+/// The first rollover is done with `example_1`.
+/// The second rollover is done with `example_0` (we re-use it)
+#[tokio::test]
+async fn retry_rollover_an_open_cfd() {
+    let _guard = init_tracing();
+
+    let contract_setup_oracle_data = OliviaData::example_0();
+    let contract_setup_oracle_data_announcement = contract_setup_oracle_data.announcement();
+    let (mut maker, mut taker, order_id, fee_structure) =
+        prepare_rollover(Position::Short, contract_setup_oracle_data.clone()).await;
+
+    let taker_commit_txid_after_contract_setup = taker.latest_commit_txid();
+
+    let first_rollover_oracle_data = OliviaData::example_1();
+    let first_rollover_oracle_data_announcement = first_rollover_oracle_data.announcement();
+
+    // We mock a different oracle event-id for the first rollover
+    mock_oracle_announcements(
+        &mut maker,
+        &mut taker,
+        first_rollover_oracle_data_announcement.clone(),
+    )
+    .await;
+
+    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
+    // the settlement-event is already expired
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        first_rollover_oracle_data,
+        None,
+        expected_maker_fee,
+        expected_taker_fee,
+    )
+    .await;
+
+    let taker_commit_txid_after_first_rollover = taker.latest_commit_txid();
+
+    // We ensure that the taker has a *different* commit_txid after the first rollover
+    assert_ne!(
+        taker_commit_txid_after_contract_setup,
+        taker_commit_txid_after_first_rollover,
+        "The commit_txid of the taker after the first rollover should not be the same as after contract setup"
+    );
+
+    let maker_commit_txid_after_first_rollover = maker.latest_commit_txid();
+
+    // We ensure that maker and taker have the same commit_txid after the first rollover
+    assert_eq!(
+        taker_commit_txid_after_first_rollover, maker_commit_txid_after_first_rollover,
+        "The maker and taker should have the same commit_txid after the first rollover"
+    );
+
+    // We mock the initial oracle event-id for the second rollover again
+    mock_oracle_announcements(
+        &mut maker,
+        &mut taker,
+        contract_setup_oracle_data_announcement.clone(),
+    )
+    .await;
+
+    // We expect that the second rollover won't add additional costs, because it is a retry
+    let (expected_maker_fee, expected_taker_fee) = fee_structure.predict_fees(24);
+    // We explicitly specify the `from_params_taker` for the second rollover which results in a
+    // retry of the first rollover, i.e. the taker specifies the given `commit_txid` when proposing
+    // the rollover to the maker.
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        contract_setup_oracle_data,
+        Some((
+            taker_commit_txid_after_contract_setup,
+            contract_setup_oracle_data_announcement.id,
+        )),
+        expected_maker_fee,
+        expected_taker_fee,
+    )
+    .await;
+
+    let taker_commit_txid_after_second_rollover = taker.latest_commit_txid();
+
+    // We ensure that the taker has a *different* commit_txid after the second rollover
+    assert_ne!(
+        taker_commit_txid_after_first_rollover,
+        taker_commit_txid_after_second_rollover,
+        "The commit_txid of the taker after the second rollover should not be the same as after the first rollover"
+    );
+
+    let maker_commit_txid_after_second_rollover = maker.latest_commit_txid();
+
+    // We ensure that maker and taker have the same commit_txid after the second rollover
+    assert_eq!(
+        taker_commit_txid_after_second_rollover, maker_commit_txid_after_second_rollover,
+        "The maker and taker should have the same commit_txid after the second rollover"
+    );
 }
 
 async fn prepare_rollover(
@@ -499,10 +609,26 @@ async fn rollover(
     taker: &mut Taker,
     order_id: OrderId,
     oracle_data: OliviaData,
+    from_params_taker: Option<(Txid, BitMexPriceEventId)>,
     expected_fees_after_rollover_maker: SignedAmount,
     expected_fees_after_rollover_taker: SignedAmount,
 ) {
-    taker.trigger_rollover(order_id).await;
+    match from_params_taker {
+        None => {
+            taker
+                .trigger_rollover_with_latest_dlc_params(order_id)
+                .await;
+        }
+        Some((from_commit_txid, from_settlement_event_id)) => {
+            taker
+                .trigger_rollover_with_specific_params(
+                    order_id,
+                    from_commit_txid,
+                    from_settlement_event_id,
+                )
+                .await;
+        }
+    }
 
     wait_next_state!(
         order_id,
@@ -521,12 +647,12 @@ async fn rollover(
     let taker_cfd = taker.first_cfd();
 
     assert_eq!(
-        expected_fees_after_rollover_maker,
-        maker_cfd.accumulated_fees
+        expected_fees_after_rollover_maker, maker_cfd.accumulated_fees,
+        "Maker's fees after rollover don't match predicted fees"
     );
     assert_eq!(
-        expected_fees_after_rollover_taker,
-        taker_cfd.accumulated_fees
+        expected_fees_after_rollover_taker, taker_cfd.accumulated_fees,
+        "Taker's fees after rollover don't match predicted fees"
     );
 
     // Ensure that the event ID of the latest dlc is the event ID used for rollover
@@ -537,7 +663,8 @@ async fn rollover(
             .latest_dlc()
             .as_ref()
             .unwrap()
-            .settlement_event_id
+            .settlement_event_id,
+        "Taker's latest event-id does not match given event-id"
     );
     assert_eq!(
         oracle_data.announcement().id,
@@ -546,7 +673,8 @@ async fn rollover(
             .latest_dlc()
             .as_ref()
             .unwrap()
-            .settlement_event_id
+            .settlement_event_id,
+        "Taker's latest event-id does not match given event-id"
     );
 }
 
@@ -557,7 +685,9 @@ async fn maker_rejects_rollover_of_open_cfd() {
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
 
-    taker.trigger_rollover(order_id).await;
+    taker
+        .trigger_rollover_with_latest_dlc_params(order_id)
+        .await;
 
     wait_next_state!(
         order_id,
@@ -583,7 +713,9 @@ async fn maker_rejects_rollover_after_commit_finality() {
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
-    taker.trigger_rollover(order_id).await;
+    taker
+        .trigger_rollover_with_latest_dlc_params(order_id)
+        .await;
 
     wait_next_state!(
         order_id,
@@ -614,7 +746,9 @@ async fn maker_accepts_rollover_after_commit_finality() {
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
-    taker.trigger_rollover(order_id).await;
+    taker
+        .trigger_rollover_with_latest_dlc_params(order_id)
+        .await;
 
     wait_next_state!(
         order_id,

@@ -584,12 +584,15 @@
           "publication_pk_theirs": "0365b5818a889a2d6756db89c723631b9add9ea1911d1ad7c7184477fe41f46424",
           "revocation_sk_theirs": "e4f2652ba41bedf0271e85ccd2ffb6f972bb4b67591dda43979c638b1187fba6",
           "script_pubkey": "0020de27d4eeaa1bcec849f007bb55ccb1adc638484caf1e67f503dfbdda751edd10",
-          "txid": "53f58ce696b0f732ae5a637741b0bd23d69e313848183fd4b32d1a98a9143299"
+          "txid": "53f58ce696b0f732ae5a637741b0bd23d69e313848183fd4b32d1a98a9143299",
+          "settlement_event_id": "/x/BitMEX/BXBT/2022-04-15T00:00:00.price?n=20",
+          "complete_fee": { "LongPaysShort": 1000 }
         }
       ],
       "settlement_event_id": "/x/BitMEX/BXBT/2022-04-15T01:00:00.price?n=20",
       "taker_address": "tb1q7ysq6mc5qavt5ppps0mkcqwf6fm4zamc7zhpqn",
-      "taker_lock_amount": 119695
+      "taker_lock_amount": 119695,
+      "complete_fee": { "LongPaysShort": 1000 }
     }
   }
 }

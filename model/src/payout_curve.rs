@@ -1,4 +1,4 @@
-use crate::FeeFlow;
+use crate::CompleteFee;
 use crate::Leverage;
 use crate::Price;
 use crate::Usd;
@@ -53,7 +53,7 @@ pub fn calculate(
     long_leverage: Leverage,
     short_leverage: Leverage,
     n_payouts: usize,
-    fee: FeeFlow,
+    fee: CompleteFee,
 ) -> Result<Vec<Payout>> {
     let payouts = calculate_payout_parameters(
         price,
@@ -88,7 +88,7 @@ fn calculate_payout_parameters(
     long_leverage: Leverage,
     short_leverage: Leverage,
     n_payouts: usize,
-    fee: FeeFlow,
+    fee: CompleteFee,
 ) -> Result<Vec<PayoutParameter>> {
     let initial_rate = price
         .try_into_f64()
@@ -123,21 +123,21 @@ fn calculate_payout_parameters(
             // payout is close or equal to zero and the fee is
             // sufficiently large we would overflow otherwise.
             let (short_amount, long_amount) = match fee {
-                FeeFlow::LongPaysShort(fee) => {
+                CompleteFee::LongPaysShort(fee) => {
                     let long_minus_fee = long_amount.saturating_sub(fee.as_sat());
                     let long_fee_deduction = (long_amount as i64) - (long_minus_fee as i64);
                     let short_plus_fee = (short_amount as i64) + long_fee_deduction;
 
                     (short_plus_fee as u64, long_minus_fee as u64)
                 }
-                FeeFlow::ShortPaysLong(fee) => {
+                CompleteFee::ShortPaysLong(fee) => {
                     let short_minus_fee = short_amount.saturating_sub(fee.as_sat());
                     let short_fee_deduction = (short_amount as i64) - (short_minus_fee as i64);
                     let long_plus_fee = (long_amount as i64) + short_fee_deduction;
 
                     (short_minus_fee as u64, long_plus_fee as u64)
                 }
-                FeeFlow::Nein => (short_amount, long_amount),
+                CompleteFee::None => (short_amount, long_amount),
             };
 
             Ok(PayoutParameter {
@@ -546,7 +546,7 @@ mod tests {
             Leverage::new(5).unwrap(),
             Leverage::new(1).unwrap(),
             200,
-            FeeFlow::Nein,
+            CompleteFee::None,
         )
         .unwrap();
 
@@ -768,11 +768,11 @@ mod tests {
             Leverage::new(5).unwrap(),
             Leverage::new(1).unwrap(),
             200,
-            FeeFlow::Nein,
+            CompleteFee::None,
         )
         .unwrap();
 
-        let fee = FeeFlow::LongPaysShort(Amount::from_sat(100));
+        let fee = CompleteFee::LongPaysShort(Amount::from_sat(100));
 
         let payouts_with_fee = calculate_payout_parameters(
             price,
@@ -796,7 +796,7 @@ mod tests {
         assert_eq!(total_per_payout, total_per_payout_with_fee);
 
         let fee: u64 = match fee {
-            FeeFlow::LongPaysShort(fee) => fee.as_sat(),
+            CompleteFee::LongPaysShort(fee) => fee.as_sat(),
             _ => unreachable!("unreachable in this test"),
         };
 
@@ -832,7 +832,7 @@ mod tests {
             Leverage::new(5).unwrap(),
             Leverage::new(1).unwrap(),
             200,
-            FeeFlow::Nein,
+            CompleteFee::None,
         )
         .unwrap();
 
@@ -909,14 +909,14 @@ mod tests {
         /// A positive value represents a fee flow from long to short.
         /// Conversely, a negative valure represents a fee flow from
         /// short to long.
-        fn arb_fee_flow(lower: i64, upper: i64)(fee in lower..upper) -> FeeFlow {
+        fn arb_fee_flow(lower: i64, upper: i64)(fee in lower..upper) -> CompleteFee {
             let fee_amount = Amount::from_sat(fee.abs().try_into().unwrap());
             if fee.is_positive() {
-                FeeFlow::LongPaysShort(fee_amount)
+                CompleteFee::LongPaysShort(fee_amount)
             } else if fee.is_negative() {
-                FeeFlow::ShortPaysLong(fee_amount)
+                CompleteFee::ShortPaysLong(fee_amount)
             } else {
-                FeeFlow::Nein
+                CompleteFee::None
             }
         }
     }

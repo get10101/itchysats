@@ -1,3 +1,4 @@
+use crate::CompleteFee;
 use crate::FeeAccount;
 use crate::FundingFee;
 use crate::Leverage;
@@ -77,5 +78,9 @@ impl RolloverParams {
 
     pub fn funding_fee(&self) -> &FundingFee {
         &self.current_fee
+    }
+
+    pub fn complete_fee_before_rollover(&self) -> CompleteFee {
+        self.fee_account.settle()
     }
 }

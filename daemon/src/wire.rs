@@ -17,7 +17,6 @@ use maia_core::CfdTransactions;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
 use model::libp2p::PeerId;
-use model::FeeFlow;
 use model::FundingRate;
 use model::Leverage;
 use model::MakerOffers;
@@ -243,22 +242,22 @@ pub enum CompleteFee {
     Nein,
 }
 
-impl From<FeeFlow> for CompleteFee {
-    fn from(fee_flow: FeeFlow) -> Self {
-        match fee_flow {
-            FeeFlow::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
-            FeeFlow::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
-            FeeFlow::Nein => CompleteFee::Nein,
+impl From<model::CompleteFee> for CompleteFee {
+    fn from(complete_fee: model::CompleteFee) -> Self {
+        match complete_fee {
+            model::CompleteFee::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
+            model::CompleteFee::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
+            model::CompleteFee::None => CompleteFee::Nein,
         }
     }
 }
 
-impl From<CompleteFee> for FeeFlow {
-    fn from(fee_flow: CompleteFee) -> Self {
-        match fee_flow {
-            CompleteFee::LongPaysShort(a) => FeeFlow::LongPaysShort(a),
-            CompleteFee::ShortPaysLong(a) => FeeFlow::ShortPaysLong(a),
-            CompleteFee::Nein => FeeFlow::Nein,
+impl From<CompleteFee> for model::CompleteFee {
+    fn from(complete_fee: CompleteFee) -> Self {
+        match complete_fee {
+            CompleteFee::LongPaysShort(a) => model::CompleteFee::LongPaysShort(a),
+            CompleteFee::ShortPaysLong(a) => model::CompleteFee::ShortPaysLong(a),
+            CompleteFee::Nein => model::CompleteFee::None,
         }
     }
 }

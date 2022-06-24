@@ -41,8 +41,8 @@ use maia_deprecated::spending_tx_sighash;
 use model::calculate_payouts;
 use model::olivia;
 use model::Cet;
+use model::CompleteFee;
 use model::Dlc;
-use model::FeeFlow;
 use model::Position;
 use model::RevokedCommit;
 use model::Role;
@@ -376,7 +376,7 @@ pub async fn roll_over(
     our_position: Position,
     dlc: Dlc,
     n_payouts: usize,
-    complete_fee: FeeFlow,
+    complete_fee: CompleteFee,
 ) -> Result<Dlc> {
     let sk = dlc.identity;
     let pk =
@@ -647,6 +647,10 @@ pub async fn roll_over(
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
+        // We don't allow the taker to rollover from a specific commit-tx in the deprecated version
+        // because we cannot be sure this works side effect free.
+        settlement_event_id: None,
+        complete_fee: None,
     });
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC

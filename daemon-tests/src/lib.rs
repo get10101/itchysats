@@ -6,6 +6,7 @@ use daemon::auto_rollover;
 use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
+use daemon::bdk::bitcoin::Txid;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::libp2p_utils::create_connect_multiaddr;
@@ -19,6 +20,8 @@ use daemon::Environment;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use model::libp2p::PeerId;
+use model::olivia::Announcement;
+use model::olivia::BitMexPriceEventId;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
@@ -172,6 +175,17 @@ impl Maker {
             .first()
             .unwrap()
             .clone()
+    }
+
+    pub fn latest_commit_txid(&mut self) -> Txid {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .commit
+            .0
+            .txid()
     }
 
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
@@ -332,6 +346,17 @@ impl Taker {
             .clone()
     }
 
+    pub fn latest_commit_txid(&mut self) -> Txid {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .commit
+            .0
+            .txid()
+    }
+
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
         &mut self.feeds.offers
     }
@@ -426,12 +451,33 @@ impl Taker {
         }
     }
 
-    pub async fn trigger_rollover(&self, id: OrderId) {
+    pub async fn trigger_rollover_with_latest_dlc_params(&mut self, id: OrderId) {
+        let latest_dlc = self.first_cfd().aggregated().latest_dlc().clone().unwrap();
         self.system
             .auto_rollover_actor
             .send(auto_rollover::Rollover {
                 order_id: id,
                 maker_peer_id: Some(self.maker_peer_id),
+                from_commit_txid: latest_dlc.commit.0.txid(),
+                from_settlement_event_id: latest_dlc.settlement_event_id,
+            })
+            .await
+            .unwrap();
+    }
+
+    pub async fn trigger_rollover_with_specific_params(
+        &mut self,
+        id: OrderId,
+        from_commit_txid: Txid,
+        from_settlement_event_id: BitMexPriceEventId,
+    ) {
+        self.system
+            .auto_rollover_actor
+            .send(auto_rollover::Rollover {
+                order_id: id,
+                maker_peer_id: Some(self.maker_peer_id),
+                from_commit_txid,
+                from_settlement_event_id,
             })
             .await
             .unwrap();
@@ -539,4 +585,19 @@ pub fn init_tracing() -> DefaultGuard {
         .with_env_filter(filter)
         .with_test_writer()
         .set_default()
+}
+
+pub async fn mock_oracle_announcements(
+    maker: &mut Maker,
+    taker: &mut Taker,
+    announcement: Announcement,
+) {
+    taker
+        .mocks
+        .mock_oracle_announcement_with(announcement.clone())
+        .await;
+    maker
+        .mocks
+        .mock_oracle_announcement_with(announcement)
+        .await;
 }
