@@ -7,7 +7,6 @@ use model::olivia;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
-
 pub mod monitor;
 pub mod oracle;
 pub mod price_feed;
