@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Allow maker to provide extended private key as argument when starting. This key will be used to derive the internal wallet according to (Bip84)[https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki]
 - Added new HTTP endpoint to manually trigger a wallet sync under `/api/sync`
+- Added manual wallet sync button to the UI to allow the user to trigger a manual sync
 - Added new endpoint to maker and taker to get the daemon version under `/api/version`
 - Added an info box in taker-ui to show if a new version is available
 
@@ -20,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrate away from JSON blobs in the DB to a more normalized database for RolloverCompleted events
 - Use sled database for wallet. The wallet file is stored in your data-dir as either `maker-wallet` for the maker and `taker-wallet` for the taker respectively
+- Rollover using the `libp2p` connection
+- Improve the rollover protocol for resilience. Allow rollovers from a previous `commit-txid` and record a snapshot of the complete fee after each rollover
+- Collaborative settlement using the `libp2p` connection
+- Improve the collaborative settlement protocol for resilience. Exchange signatures to allow the taker to publish the collaborative settlement transaction at the end of the protocol.
+
+### Fixed
+
+- An issue where the stored revoke commit adaptor signature was not stored correctly. We now correctly pick the adaptor signature from the previous `Dlc`.
 
 ## [0.4.20] - 2022-05-26
 
