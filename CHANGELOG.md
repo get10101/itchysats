@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.21] - 2022-06-27
+
 ### Added
 
 - Allow maker to provide extended private key as argument when starting. This key will be used to derive the internal wallet according to (Bip84)[https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki]
@@ -203,7 +205,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.20...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.21...HEAD
+[0.4.21]: https://github.com/itchysats/itchysats/compare/0.4.20...0.4.21
 [0.4.20]: https://github.com/itchysats/itchysats/compare/0.4.19...0.4.20
 [0.4.19]: https://github.com/itchysats/itchysats/compare/0.4.17...0.4.19
 [0.4.17]: https://github.com/itchysats/itchysats/compare/0.4.16...0.4.17
