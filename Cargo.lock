@@ -234,7 +234,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b25d992356d2eb0ed82172f5248873db5560c4721f564b13cb5193bda5e668e"
 dependencies = [
- "byteorder",
+ "byteorder 1.4.3",
 ]
 
 [[package]]
@@ -249,7 +249,7 @@ version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a8d4d2746f89841e49230dd26917df1876050f95abafafbe34f47cb534b88d7"
 dependencies = [
- "byteorder",
+ "byteorder 1.4.3",
 ]
 
 [[package]]
@@ -279,7 +279,7 @@ dependencies = [
  "anyhow",
  "bdk",
  "rand 0.6.5",
- "secp256k1",
+ "secp256k1 0.23.1",
  "tempfile",
 ]
 
@@ -321,7 +321,7 @@ dependencies = [
  "base64-compat",
  "bech32",
  "bitcoin_hashes 0.10.0",
- "secp256k1",
+ "secp256k1 0.20.3",
  "serde",
 ]
 
@@ -415,6 +415,12 @@ checksum = "72957246c41db82b8ef88a5486143830adeb8227ef9837740bdec67724cf2c5b"
 
 [[package]]
 name = "byteorder"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc10e8cc6b2580fda3f36eb6dc5316657f812a3df879a44a66fc9f0fdbc4855"
+
+[[package]]
+name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
@@ -438,6 +444,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d231959e9442d4c614ecc961178c44fce85d494484281d8055167d87993e61b"
 dependencies = [
  "spin 0.7.1",
+]
+
+[[package]]
+name = "cbor"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e56053652b4b5c0ded5ae6183c7cd547ad2dd6bcce149658bef052a4995533bd"
+dependencies = [
+ "byteorder 0.5.3",
+ "rustc-serialize",
 ]
 
 [[package]]
@@ -769,7 +785,7 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b9fdf9972b2bd6af2d913799d9ebc165ea4d2e65878e329d9c6b372c4491b61"
 dependencies = [
- "byteorder",
+ "byteorder 1.4.3",
  "digest 0.9.0",
  "rand_core 0.5.1",
  "subtle",
@@ -782,7 +798,7 @@ version = "4.0.0-pre.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4033478fbf70d6acf2655ac70da91ee65852d69daf7a67bf7a2f518fb47aafcf"
 dependencies = [
- "byteorder",
+ "byteorder 1.4.3",
  "digest 0.9.0",
  "rand_core 0.6.3",
  "subtle",
@@ -1292,7 +1308,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
- "byteorder",
+ "byteorder 1.4.3",
 ]
 
 [[package]]
@@ -2108,7 +2124,7 @@ checksum = "3c580bfdd8803cce319b047d239559a22f809094aaea4ac13902a1fdcfcd4261"
 dependencies = [
  "arrayref",
  "bs58",
- "byteorder",
+ "byteorder 1.4.3",
  "data-encoding",
  "multihash",
  "percent-encoding",
@@ -2796,7 +2812,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0d9cc07f18492d879586c92b485def06bc850da3118075cd45d50e9c95b0e5"
 dependencies = [
  "bitflags",
- "byteorder",
+ "byteorder 1.4.3",
  "lazy_static",
  "num-traits",
  "quick-error",
@@ -3403,6 +3419,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc-serialize"
+version = "0.3.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcf128d1287d2ea9d80910b5f1120d0b8eede3fbf1abe91c40d39ea7d51e6fda"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3561,8 +3583,19 @@ checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
 dependencies = [
  "bitcoin_hashes 0.9.7",
  "rand 0.6.5",
- "secp256k1-sys",
+ "secp256k1-sys 0.4.1",
  "serde",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48390a9cf97f47ec99f121301eafd1061ea23ed86934bf9f922a895b608772e0"
+dependencies = [
+ "cbor",
+ "rand 0.8.4",
+ "secp256k1-sys 0.6.0",
 ]
 
 [[package]]
@@ -3575,13 +3608,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "secp256k1-sys"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7058dc8eaf3f2810d7828680320acda0b25a288f6d288e19278e249bbf74226b"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "secp256k1-zkp"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72e2709b09561dfb584b366bd418ee5549a858873baa707ed83d3eb986e34abf"
 dependencies = [
  "rand 0.6.5",
- "secp256k1",
+ "secp256k1 0.20.3",
  "secp256k1-zkp-sys",
  "serde",
 ]
@@ -3593,7 +3635,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90c48e70d04fdd871498db6ac3b35eeae0a339ab1cd06af483fe8a6835d36def"
 dependencies = [
  "cc",
- "secp256k1-sys",
+ "secp256k1-sys 0.4.1",
 ]
 
 [[package]]
@@ -3886,7 +3928,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30f86c7635fadf2814201a4f67efefb0007588ae7422ce299f354ab5c97f61ae"
 dependencies = [
- "byteorder",
+ "byteorder 1.4.3",
  "libc",
  "winapi 0.2.8",
  "ws2_32-sys",
@@ -3982,7 +4024,7 @@ dependencies = [
  "ahash",
  "atoi",
  "bitflags",
- "byteorder",
+ "byteorder 1.4.3",
  "bytes",
  "crc",
  "crossbeam-queue",
@@ -4553,7 +4595,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0b2d8558abd2e276b0a8df5c05a2ec762609344191e5fd23e292c910e9165b5"
 dependencies = [
  "base64 0.13.0",
- "byteorder",
+ "byteorder 1.4.3",
  "bytes",
  "http",
  "httparse",
