@@ -151,7 +151,6 @@ mod tests {
     use std::time::Duration;
     use tokio_tasks::Tasks;
     use xtra::Context;
-    use xtra::KeepRunning;
 
     #[tokio::test]
     async fn gc_removes_address_if_actor_returns_stop_all() {

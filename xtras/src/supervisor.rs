@@ -404,7 +404,7 @@ mod tests {
     #[xtra_productivity]
     impl RemoteShutdown {
         fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-            ctx.stop_all()
+            ctx.stop_self()
         }
 
         fn handle(&mut self, msg: SayHello) -> String {
