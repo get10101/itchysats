@@ -131,6 +131,7 @@ mod tests {
         db.insert_cfd(&cfd).await?;
 
         let timestamp = Timestamp::now();
+
         let event = std::fs::read_to_string("./src/test_events/rollover_completed.json")?;
         let event = serde_json::from_str::<EventKind>(&event)?;
 
@@ -154,19 +155,22 @@ mod tests {
 
         let mut transaction = connection.begin().await?;
 
-        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd_row_id, 1)
-            .await?
-            .context("Expect to find data")?;
+        let (loaded_dlc, loaded_funding_fee, loaded_complete_fee) =
+            load(&mut transaction, cfd_row_id, 1)
+                .await?
+                .context("Expect to find data")?;
 
         match rollover_completed.event {
             EventKind::RolloverCompleted {
                 dlc: Some(dlc),
                 funding_fee,
+                complete_fee,
             } => {
                 // dlc does not implement eq hence we only assert on the event id which is
                 // sufficient because we only expect to have 1 item in the db
                 assert_eq!(loaded_dlc.settlement_event_id, dlc.settlement_event_id);
                 assert_eq!(loaded_funding_fee, funding_fee);
+                assert_eq!(loaded_complete_fee, complete_fee)
             }
             _ => {
                 bail!("We should always have a RolloverCompletedEvent")
@@ -219,19 +223,22 @@ mod tests {
             .unwrap();
 
         let mut transaction = connection.begin().await?;
-        let (loaded_dlc, loaded_funding_fee) = load(&mut transaction, cfd_row_id, 2)
-            .await?
-            .context("Expect to find data")?;
+        let (loaded_dlc, loaded_funding_fee, loaded_complete_fee) =
+            load(&mut transaction, cfd_row_id, 2)
+                .await?
+                .context("Expect to find data")?;
 
         match second_rollover_completed_event.event {
             EventKind::RolloverCompleted {
                 dlc: Some(dlc),
                 funding_fee,
+                complete_fee,
             } => {
                 // dlc does not implement eq hence we only assert on the event id which is
                 // sufficient because we only expect to have 1 item in the db
                 assert_eq!(loaded_dlc.settlement_event_id, dlc.settlement_event_id);
                 assert_eq!(loaded_funding_fee, funding_fee);
+                assert_eq!(loaded_complete_fee, complete_fee);
             }
             _ => {
                 bail!("We should always have a RolloverCompletedEvent")
@@ -275,6 +282,7 @@ mod tests {
             EventKind::RolloverCompleted {
                 dlc: Some(mut dlc),
                 funding_fee,
+                complete_fee,
             } => {
                 dlc.settlement_event_id =
                     BitMexPriceEventId::with_20_digits(settlement_event_timestamp);
@@ -285,6 +293,7 @@ mod tests {
                     event: EventKind::RolloverCompleted {
                         dlc: Some(dlc),
                         funding_fee,
+                        complete_fee,
                     },
                 })
             }

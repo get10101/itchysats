@@ -751,11 +751,13 @@ impl FundingFee {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum FeeFlow {
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CompleteFee {
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     LongPaysShort(Amount),
+    #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     ShortPaysLong(Amount),
-    Nein,
+    None,
 }
 
 /// Our own accumulated fees
@@ -779,18 +781,18 @@ impl FeeAccount {
         }
     }
 
-    pub fn settle(&self) -> FeeFlow {
+    pub fn settle(&self) -> CompleteFee {
         let absolute = self.balance.as_sat().unsigned_abs();
         let absolute = Amount::from_sat(absolute);
 
         if self.balance == SignedAmount::ZERO {
-            FeeFlow::Nein
+            CompleteFee::None
         } else if (self.position == Position::Long && self.balance.is_positive())
             || (self.position == Position::Short && self.balance.is_negative())
         {
-            FeeFlow::LongPaysShort(absolute)
+            CompleteFee::LongPaysShort(absolute)
         } else {
-            FeeFlow::ShortPaysLong(absolute)
+            CompleteFee::ShortPaysLong(absolute)
         }
     }
 
@@ -845,6 +847,42 @@ impl FeeAccount {
             balance: sum,
             position: self.position,
             role: self.role,
+        }
+    }
+
+    #[must_use]
+    pub fn from_complete_fee(self, fee_flow: CompleteFee) -> Self {
+        match fee_flow {
+            CompleteFee::LongPaysShort(amount) => {
+                let fee: i64 = amount.as_sat().try_into().expect("not to overflow");
+
+                let fee = match self.position {
+                    Position::Long => fee,
+                    Position::Short => -fee,
+                };
+
+                Self {
+                    balance: SignedAmount::from_sat(fee),
+                    ..self
+                }
+            }
+            CompleteFee::ShortPaysLong(amount) => {
+                let fee: i64 = amount.as_sat().try_into().expect("not to overflow");
+
+                let fee = match self.position {
+                    Position::Long => -fee,
+                    Position::Short => fee,
+                };
+
+                Self {
+                    balance: SignedAmount::from_sat(fee),
+                    ..self
+                }
+            }
+            CompleteFee::None => Self {
+                balance: SignedAmount::ZERO,
+                ..self
+            },
         }
     }
 }
@@ -1172,8 +1210,14 @@ mod tests {
             .add_opening_fee(opening_fee)
             .settle();
 
-        assert_eq!(long_taker, FeeFlow::LongPaysShort(Amount::from_sat(500)));
-        assert_eq!(short_maker, FeeFlow::LongPaysShort(Amount::from_sat(500)));
+        assert_eq!(
+            long_taker,
+            CompleteFee::LongPaysShort(Amount::from_sat(500))
+        );
+        assert_eq!(
+            short_maker,
+            CompleteFee::LongPaysShort(Amount::from_sat(500))
+        );
     }
 
     #[test]
@@ -1187,8 +1231,14 @@ mod tests {
             .add_opening_fee(opening_fee)
             .settle();
 
-        assert_eq!(short_taker, FeeFlow::ShortPaysLong(Amount::from_sat(500)));
-        assert_eq!(long_maker, FeeFlow::ShortPaysLong(Amount::from_sat(500)));
+        assert_eq!(
+            short_taker,
+            CompleteFee::ShortPaysLong(Amount::from_sat(500))
+        );
+        assert_eq!(
+            long_maker,
+            CompleteFee::ShortPaysLong(Amount::from_sat(500))
+        );
     }
 
     #[test]
@@ -1207,8 +1257,14 @@ mod tests {
             .add_funding_fee(funding_fee)
             .settle();
 
-        assert_eq!(long_taker, FeeFlow::LongPaysShort(Amount::from_sat(1000)));
-        assert_eq!(short_maker, FeeFlow::LongPaysShort(Amount::from_sat(1000)));
+        assert_eq!(
+            long_taker,
+            CompleteFee::LongPaysShort(Amount::from_sat(1000))
+        );
+        assert_eq!(
+            short_maker,
+            CompleteFee::LongPaysShort(Amount::from_sat(1000))
+        );
     }
 
     #[test]
@@ -1231,8 +1287,8 @@ mod tests {
             .add_funding_fee(funding_fee_with_negative_rate)
             .settle();
 
-        assert_eq!(long_taker, FeeFlow::Nein);
-        assert_eq!(short_maker, FeeFlow::Nein);
+        assert_eq!(long_taker, CompleteFee::None);
+        assert_eq!(short_maker, CompleteFee::None);
     }
 
     #[test]
@@ -1251,8 +1307,14 @@ mod tests {
             .add_funding_fee(funding_fee)
             .settle();
 
-        assert_eq!(long_taker, FeeFlow::ShortPaysLong(Amount::from_sat(1000)));
-        assert_eq!(short_maker, FeeFlow::ShortPaysLong(Amount::from_sat(1000)));
+        assert_eq!(
+            long_taker,
+            CompleteFee::ShortPaysLong(Amount::from_sat(1000))
+        );
+        assert_eq!(
+            short_maker,
+            CompleteFee::ShortPaysLong(Amount::from_sat(1000))
+        );
     }
 
     #[test]
@@ -1276,11 +1338,11 @@ mod tests {
 
         assert_eq!(
             long_taker.settle(),
-            FeeFlow::LongPaysShort(Amount::from_sat(600))
+            CompleteFee::LongPaysShort(Amount::from_sat(600))
         );
         assert_eq!(
             short_maker.settle(),
-            FeeFlow::LongPaysShort(Amount::from_sat(600))
+            CompleteFee::LongPaysShort(Amount::from_sat(600))
         );
 
         let long_taker = long_taker.add_funding_fee(funding_fee_with_negative_rate);
@@ -1288,11 +1350,11 @@ mod tests {
 
         assert_eq!(
             long_taker.settle(),
-            FeeFlow::LongPaysShort(Amount::from_sat(100))
+            CompleteFee::LongPaysShort(Amount::from_sat(100))
         );
         assert_eq!(
             short_maker.settle(),
-            FeeFlow::LongPaysShort(Amount::from_sat(100))
+            CompleteFee::LongPaysShort(Amount::from_sat(100))
         );
 
         let long_taker = long_taker.add_funding_fee(funding_fee_with_negative_rate);
@@ -1300,11 +1362,11 @@ mod tests {
 
         assert_eq!(
             long_taker.settle(),
-            FeeFlow::ShortPaysLong(Amount::from_sat(400))
+            CompleteFee::ShortPaysLong(Amount::from_sat(400))
         );
         assert_eq!(
             short_maker.settle(),
-            FeeFlow::ShortPaysLong(Amount::from_sat(400))
+            CompleteFee::ShortPaysLong(Amount::from_sat(400))
         );
     }
 
@@ -1329,11 +1391,11 @@ mod tests {
 
         assert_eq!(
             long_maker.settle(),
-            FeeFlow::LongPaysShort(Amount::from_sat(400))
+            CompleteFee::LongPaysShort(Amount::from_sat(400))
         );
         assert_eq!(
             short_taker.settle(),
-            FeeFlow::LongPaysShort(Amount::from_sat(400))
+            CompleteFee::LongPaysShort(Amount::from_sat(400))
         );
 
         let long_maker = long_maker.add_funding_fee(funding_fee_with_negative_rate);
@@ -1341,11 +1403,11 @@ mod tests {
 
         assert_eq!(
             long_maker.settle(),
-            FeeFlow::ShortPaysLong(Amount::from_sat(100))
+            CompleteFee::ShortPaysLong(Amount::from_sat(100))
         );
         assert_eq!(
             short_taker.settle(),
-            FeeFlow::ShortPaysLong(Amount::from_sat(100))
+            CompleteFee::ShortPaysLong(Amount::from_sat(100))
         );
 
         let long_maker = long_maker.add_funding_fee(funding_fee_with_negative_rate);
@@ -1353,11 +1415,11 @@ mod tests {
 
         assert_eq!(
             long_maker.settle(),
-            FeeFlow::ShortPaysLong(Amount::from_sat(600))
+            CompleteFee::ShortPaysLong(Amount::from_sat(600))
         );
         assert_eq!(
             short_taker.settle(),
-            FeeFlow::ShortPaysLong(Amount::from_sat(600))
+            CompleteFee::ShortPaysLong(Amount::from_sat(600))
         );
     }
 
@@ -1513,6 +1575,67 @@ mod tests {
         let relative = funding_fee.compute_relative(short);
 
         assert!(relative.is_positive())
+    }
+
+    #[test]
+    fn given_long_fee_account_when_long_pays_short_from_complete_fee_then_same_after_settle() {
+        let fee_account = FeeAccount::new(Position::Long, Role::Taker);
+
+        let complete_fee = CompleteFee::LongPaysShort(Amount::from_sat(100));
+        let fee_account = fee_account.from_complete_fee(complete_fee);
+
+        let expected_complete_fee = fee_account.settle();
+
+        assert_eq!(complete_fee, expected_complete_fee)
+    }
+
+    #[test]
+    fn given_long_fee_account_when_short_pays_long_from_complete_fee_then_same_after_settle() {
+        let fee_account = FeeAccount::new(Position::Long, Role::Taker);
+
+        let complete_fee = CompleteFee::ShortPaysLong(Amount::from_sat(100));
+        let fee_account = fee_account.from_complete_fee(complete_fee);
+
+        let expected_complete_fee = fee_account.settle();
+
+        assert_eq!(complete_fee, expected_complete_fee)
+    }
+
+    #[test]
+    fn given_short_fee_account_when_long_pays_short_from_complete_fee_then_same_after_settle() {
+        let fee_account = FeeAccount::new(Position::Short, Role::Taker);
+
+        let complete_fee = CompleteFee::LongPaysShort(Amount::from_sat(100));
+        let fee_account = fee_account.from_complete_fee(complete_fee);
+
+        let expected_complete_fee = fee_account.settle();
+
+        assert_eq!(complete_fee, expected_complete_fee)
+    }
+
+    #[test]
+    fn given_short_fee_account_when_short_pays_long_from_complete_fee_then_same_after_settle() {
+        let fee_account = FeeAccount::new(Position::Short, Role::Taker);
+
+        let complete_fee = CompleteFee::ShortPaysLong(Amount::from_sat(100));
+        let fee_account = fee_account.from_complete_fee(complete_fee);
+
+        let expected_complete_fee = fee_account.settle();
+
+        assert_eq!(complete_fee, expected_complete_fee)
+    }
+
+    #[test]
+    fn given_fee_account_that_contains_funds_when_from_complete_fee_then_complete_fee() {
+        let fee_account = FeeAccount::new(Position::Short, Role::Taker)
+            .add_opening_fee(OpeningFee::new(Amount::from_sat(100)));
+
+        let complete_fee = CompleteFee::ShortPaysLong(Amount::from_sat(100));
+        let fee_account = fee_account.from_complete_fee(complete_fee);
+
+        let expected_complete_fee = fee_account.settle();
+
+        assert_eq!(complete_fee, expected_complete_fee)
     }
 
     fn dummy_amount() -> Amount {

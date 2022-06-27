@@ -901,3 +901,138 @@ impl From<Settlement> for model::Settlement {
         }
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, sqlx::Type)]
+pub enum FeeFlow {
+    LongPaysShort,
+    ShortPaysLong,
+    None,
+}
+
+pub fn into_complete_fee(
+    complete_fee_flow: Option<FeeFlow>,
+    complete_fee: Option<i64>,
+) -> Option<model::CompleteFee> {
+    match (complete_fee_flow, complete_fee) {
+        (Some(fee_flow), Some(sats)) => match fee_flow {
+            FeeFlow::LongPaysShort => Some(model::CompleteFee::LongPaysShort(Amount::from_sat(
+                sats as u64,
+            ))),
+            FeeFlow::ShortPaysLong => Some(model::CompleteFee::ShortPaysLong(Amount::from_sat(
+                sats as u64,
+            ))),
+            FeeFlow::None => Some(model::CompleteFee::None),
+        },
+        (None, None) => None,
+        (complete_fee_flow, complete_fee) => {
+            tracing::warn!(
+                ?complete_fee_flow,
+                ?complete_fee,
+                "Weird combination of complete_fee in database"
+            );
+            None
+        }
+    }
+}
+
+pub fn into_complete_fee_and_flow(
+    complete_fee: Option<model::CompleteFee>,
+) -> (Option<i64>, Option<FeeFlow>) {
+    match complete_fee {
+        None => (None, None),
+        Some(complete_fee) => match complete_fee {
+            model::CompleteFee::LongPaysShort(amount) => {
+                (Some(amount.as_sat() as i64), Some(FeeFlow::LongPaysShort))
+            }
+            model::CompleteFee::ShortPaysLong(amount) => {
+                (Some(amount.as_sat() as i64), Some(FeeFlow::ShortPaysLong))
+            }
+            model::CompleteFee::None => (Some(0), Some(FeeFlow::None)),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn into_complete_fee_and_flow_long_pays_short() {
+        let model_complete_fee = model::CompleteFee::LongPaysShort(Amount::from_sat(1000));
+        let (complete_fee, complete_fee_flow) =
+            into_complete_fee_and_flow(Some(model_complete_fee));
+
+        assert_eq!(complete_fee_flow, Some(FeeFlow::LongPaysShort));
+        assert_eq!(complete_fee, Some(1000));
+    }
+
+    #[test]
+    fn into_complete_fee_and_flow_short_pays_long() {
+        let model_complete_fee = model::CompleteFee::ShortPaysLong(Amount::from_sat(1000));
+        let (complete_fee, complete_fee_flow) =
+            into_complete_fee_and_flow(Some(model_complete_fee));
+
+        assert_eq!(complete_fee_flow, Some(FeeFlow::ShortPaysLong));
+        assert_eq!(complete_fee, Some(1000));
+    }
+
+    #[test]
+    fn into_complete_fee_and_flow_none_fee_flow() {
+        let model_complete_fee = model::CompleteFee::None;
+        let (complete_fee, complete_fee_flow) =
+            into_complete_fee_and_flow(Some(model_complete_fee));
+
+        assert_eq!(complete_fee_flow, Some(FeeFlow::None));
+        assert_eq!(complete_fee, Some(0));
+    }
+
+    #[test]
+    fn into_complete_fee_and_flow_none_fee_none() {
+        let (complete_fee, complete_fee_flow) = into_complete_fee_and_flow(None);
+
+        assert_eq!(complete_fee_flow, None);
+        assert_eq!(complete_fee, None);
+    }
+
+    #[test]
+    fn into_complete_fee_long_pays_short() {
+        let complete_fee = into_complete_fee(Some(FeeFlow::LongPaysShort), Some(1000));
+        assert_eq!(
+            complete_fee,
+            Some(model::CompleteFee::LongPaysShort(Amount::from_sat(1000)))
+        );
+    }
+
+    #[test]
+    fn into_complete_fee_short_pays_long() {
+        let complete_fee = into_complete_fee(Some(FeeFlow::LongPaysShort), Some(1000));
+        assert_eq!(
+            complete_fee,
+            Some(model::CompleteFee::LongPaysShort(Amount::from_sat(1000)))
+        );
+    }
+
+    #[test]
+    fn into_complete_fee_none_fee_flow() {
+        let complete_fee = into_complete_fee(Some(FeeFlow::None), Some(0));
+        assert_eq!(complete_fee, Some(model::CompleteFee::None));
+    }
+
+    #[test]
+    fn into_complete_fee_none() {
+        let complete_fee = into_complete_fee(None, None);
+        assert_eq!(complete_fee, None);
+    }
+
+    #[test]
+    fn given_weird_combination_some_none_in_database_then_none() {
+        let complete_fee = into_complete_fee(Some(FeeFlow::None), None);
+        assert_eq!(complete_fee, None);
+    }
+
+    #[test]
+    fn given_weird_combination_none_some_in_database_then_none() {
+        let complete_fee = into_complete_fee(None, Some(0));
+        assert_eq!(complete_fee, None);
+    }
+}

@@ -4,6 +4,7 @@ use crate::oracle;
 use crate::rollover;
 use crate::rollover::protocol::*;
 use crate::shared_protocol::format_expect_msg_within;
+use crate::Txid;
 use anyhow::Context;
 use async_trait::async_trait;
 use bdk_ext::keypair;
@@ -11,7 +12,9 @@ use futures::SinkExt;
 use futures::StreamExt;
 use maia_core::secp256k1_zkp::schnorrsig;
 use model::libp2p::PeerId;
-use model::{Dlc, olivia};
+use model::olivia::BitMexPriceEventId;
+use model::olivia;
+use model::Dlc;
 use model::OrderId;
 use model::Role;
 use model::Timestamp;
@@ -52,6 +55,8 @@ impl xtra::Actor for Actor {
 pub struct ProposeRollover {
     pub order_id: OrderId,
     pub maker_peer_id: PeerId,
+    pub from_commit_txid: Txid,
+    pub from_settlement_event_id: BitMexPriceEventId,
 }
 
 impl Actor {
@@ -93,6 +98,8 @@ impl Actor {
         let ProposeRollover {
             order_id,
             maker_peer_id,
+            from_commit_txid,
+            from_settlement_event_id,
         } = msg;
 
         let substream = match self.open_substream(maker_peer_id).await {
@@ -117,13 +124,14 @@ impl Actor {
                     );
 
                     executor
-                        .execute(order_id, |cfd| cfd.start_rollover())
+                        .execute(order_id, |cfd| cfd.start_rollover_taker())
                         .await?;
 
                     framed
                         .send(DialerMessage::Propose(Propose {
                             order_id,
                             timestamp: Timestamp::now(),
+                            from_commit_txid,
                         }))
                         .await
                         .context("Failed to send Msg0")?;
@@ -151,7 +159,11 @@ impl Actor {
                         }) => {
                             let (rollover_params, dlc, position) = executor
                                 .execute(order_id, |cfd| {
-                                    cfd.handle_rollover_accepted_taker(tx_fee_rate, funding_rate)
+                                    cfd.handle_rollover_accepted_taker(
+                                        tx_fee_rate,
+                                        funding_rate,
+                                        from_settlement_event_id,
+                                    )
                                 })
                                 .await?;
 
@@ -164,6 +176,8 @@ impl Actor {
                             tracing::info!(%order_id, "Rollover proposal got accepted");
 
                             let funding_fee = *rollover_params.funding_fee();
+                            let complete_fee_before_rollover =
+                                rollover_params.complete_fee_before_rollover();
                             let our_role = Role::Taker;
                             let our_position = position;
 
@@ -267,26 +281,12 @@ impl Actor {
                                 .into_rollover_msg()?
                                 .try_into_msg2()?;
 
-                            let revoked_commit =
-                                finalize_revoked_commits(&dlc, own_cfd_txs.commit.1, msg2)?;
-
-                            framed
-                                .send(DialerMessage::RolloverMsg(Box::new(RolloverMsg::Msg3(
-                                    RolloverMsg3,
-                                ))))
-                                .await
-                                .context("Failed to send Msg3")?;
-                            let _msg3 = framed
-                                .next()
-                                .timeout(ROLLOVER_MSG_TIMEOUT)
-                                .await
-                                .with_context(|| {
-                                    format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT)
-                                })?
-                                .context("Empty stream instead of Msg3")?
-                                .context("Unable to decode listener Msg3")?
-                                .into_rollover_msg()?
-                                .try_into_msg3()?;
+                            let revoked_commit = finalize_revoked_commits(
+                                &dlc,
+                                dlc.commit.1,
+                                msg2,
+                                complete_fee_before_rollover,
+                            )?;
 
                             let dlc = Dlc {
                                 identity: dlc.identity,
@@ -312,7 +312,14 @@ impl Actor {
                                 refund_timelock: rollover_params.refund_timelock,
                             };
 
-                            emit_completed(order_id, dlc, funding_fee, &executor).await;
+                            emit_completed(
+                                order_id,
+                                dlc,
+                                funding_fee,
+                                complete_fee.into(),
+                                &executor,
+                            )
+                            .await;
                         }
                         Decision::Reject(_) => {
                             emit_rejected(order_id, &executor).await;

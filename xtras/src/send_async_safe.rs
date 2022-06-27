@@ -87,7 +87,6 @@ where
                 Ok(Ok(())) => return,
             };
 
-            panic!("Nee man {e:#}");
             tracing::warn!("Async message invocation failed: {e:#}")
         });
 

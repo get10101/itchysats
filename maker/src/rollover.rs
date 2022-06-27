@@ -110,7 +110,7 @@ impl Actor {
         if let Err(e) = self
             .executor
             .execute(self.order_id, |cfd| {
-                Ok(cfd.complete_rollover(dlc, funding_fee))
+                Ok(cfd.complete_rollover(dlc, funding_fee, None))
             })
             .await
         {
@@ -170,7 +170,7 @@ impl Actor {
                 };
 
                 let (event, params, dlc, position, event_id) =
-                    cfd.accept_rollover_proposal(tx_fee_rate, funding_rate, self.version)?;
+                    cfd.accept_rollover_proposal(tx_fee_rate, funding_rate, None, self.version)?;
                 Ok((event, params, dlc, position, event_id, funding_rate))
             })
             .await?;
@@ -309,7 +309,7 @@ impl xtra::Actor for Actor {
                 .await?;
 
             self.executor
-                .execute(self.order_id, |cfd| cfd.start_rollover())
+                .execute(self.order_id, |cfd| cfd.start_rollover_deprecated())
                 .await?;
 
             anyhow::Ok(())

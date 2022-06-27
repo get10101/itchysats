@@ -6,8 +6,8 @@ use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
 use crate::rollover;
 use crate::rollover::RolloverParams;
+use crate::CompleteFee;
 use crate::FeeAccount;
-use crate::FeeFlow;
 use crate::FundingFee;
 use crate::FundingRate;
 use crate::Identity;
@@ -443,6 +443,10 @@ pub enum EventKind {
         #[serde(skip_serializing)]
         dlc: Option<Dlc>,
         funding_fee: FundingFee,
+
+        /// If the complete fee is available we can use it instead of accumulating fees from
+        /// `funding_fee`
+        complete_fee: Option<CompleteFee>,
     },
     RolloverFailed,
 
@@ -780,7 +784,10 @@ impl Cfd {
         self.commit_tx.is_some()
     }
 
-    pub fn can_auto_rollover_taker(&self, now: OffsetDateTime) -> Result<(), NoRolloverReason> {
+    pub fn can_auto_rollover_taker(
+        &self,
+        now: OffsetDateTime,
+    ) -> Result<(Txid, BitMexPriceEventId), NoRolloverReason> {
         let expiry_timestamp = self.expiry_timestamp().ok_or(NoRolloverReason::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
@@ -789,7 +796,9 @@ impl Cfd {
 
         self.can_rollover()?;
 
-        Ok(())
+        let dlc = self.dlc.as_ref().ok_or(NoRolloverReason::NoDlc)?;
+
+        Ok((dlc.commit.0.txid(), dlc.settlement_event_id))
     }
 
     fn can_rollover(&self) -> Result<(), NoRolloverReason> {
@@ -884,7 +893,7 @@ impl Cfd {
         ))
     }
 
-    pub fn start_rollover(&self) -> Result<CfdEvent> {
+    pub fn start_rollover_deprecated(&self) -> Result<CfdEvent> {
         if self.during_rollover {
             bail!("The CFD is already being rolled over")
         };
@@ -894,10 +903,74 @@ impl Cfd {
         Ok(CfdEvent::new(self.id, EventKind::RolloverStarted))
     }
 
+    pub fn start_rollover_taker(&self) -> Result<CfdEvent> {
+        if self.during_rollover {
+            bail!("The CFD is already being rolled over")
+        };
+
+        self.can_rollover()?;
+
+        let event = CfdEvent::new(self.id, EventKind::RolloverStarted);
+
+        Ok(event)
+    }
+
+    pub fn start_rollover_maker(
+        &self,
+        from_tx_id_proposed: Txid,
+    ) -> Result<(CfdEvent, BitMexPriceEventId, CompleteFee)> {
+        if self.during_rollover {
+            bail!("The CFD is already being rolled over")
+        };
+
+        self.can_rollover()?;
+
+        let dlc = self
+            .dlc
+            .as_ref()
+            .context("No DLC available when starting a rollover")?;
+
+        let current_commit_txid = dlc.commit.0.txid();
+
+        let (from_event_id, from_complete_fee) = if current_commit_txid == from_tx_id_proposed {
+            (dlc.settlement_event_id, self.fee_account.settle())
+        } else {
+            let (from_event_id, from_complete_fee) = match dlc
+                .revoked_commit
+                .iter()
+                .find(|revoke_commit| revoke_commit.txid == from_tx_id_proposed)
+            {
+                Some(revoke_commit) => {
+                    let from_event_id = revoke_commit.settlement_event_id.ok_or_else(|| anyhow!(
+                    "Proposed commit-txid {} not eligible for rollover because no event-id attached", from_tx_id_proposed
+                    ))?;
+                    let from_complete_fee = revoke_commit.complete_fee.ok_or_else(|| anyhow!(
+                        "Proposed commit-txid {} not eligible for rollover because no complete_fee attached", from_tx_id_proposed
+                    ))?;
+
+                    (from_event_id, from_complete_fee)
+                }
+                None => bail!(
+                    "Unknown commit-txid {} proposed by taker",
+                    from_tx_id_proposed
+                ),
+            };
+
+            tracing::info!(order_id=%self.id, commit_txid=%from_tx_id_proposed, %from_event_id, "Starting rollover from previous commit-txid");
+
+            (from_event_id, from_complete_fee)
+        };
+
+        let event = CfdEvent::new(self.id, EventKind::RolloverStarted);
+
+        Ok((event, from_event_id, from_complete_fee))
+    }
+
     pub fn accept_rollover_proposal(
         self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
+        from_params: Option<(BitMexPriceEventId, CompleteFee)>,
         version: rollover::Version,
     ) -> Result<(CfdEvent, RolloverParams, Dlc, Position, BitMexPriceEventId)> {
         if !self.during_rollover {
@@ -909,13 +982,34 @@ impl Cfd {
         }
 
         let now = OffsetDateTime::now_utc();
+        let to_event_id = olivia::next_announcement_after(now + self.settlement_interval);
 
-        let candidate_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+        // If a `from_event_id` was specified we use it, otherwise we use the
+        // `settlement_event_id` of the current dlc to calculate the costs.
+        let (from_event_id, rollover_fee_account) = match from_params {
+            None => {
+                let from_event_id = self
+                    .dlc
+                    .as_ref()
+                    .context("Cannot roll over without DLC")?
+                    .settlement_event_id;
+
+                (from_event_id, self.fee_account)
+            }
+            Some((from_event_id, from_complete_fee)) => {
+                // If we have rollover params we make sure to use the complete_fee as decided by the
+                // params
+                let rollover_fee_account =
+                    FeeAccount::new(self.position, self.role).from_complete_fee(from_complete_fee);
+                (from_event_id, rollover_fee_account)
+            }
+        };
+
         let hours_to_charge = match version {
             rollover::Version::V1 => 1,
             rollover::Version::V2 => self.hours_to_extend_in_rollover(now)?,
             rollover::Version::V3 => {
-                self.hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)?
+                self.hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)?
             }
         };
 
@@ -945,13 +1039,13 @@ impl Cfd {
                 self.short_leverage,
                 self.refund_timelock_in_blocks(),
                 tx_fee_rate,
-                self.fee_account,
+                rollover_fee_account,
                 funding_fee,
                 version,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,
-            candidate_event_id,
+            to_event_id,
         ))
     }
 
@@ -959,6 +1053,7 @@ impl Cfd {
         &self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
+        from_event_id: BitMexPriceEventId,
     ) -> Result<(CfdEvent, RolloverParams, Dlc, Position)> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
@@ -972,9 +1067,13 @@ impl Cfd {
 
         let now = OffsetDateTime::now_utc();
 
-        let candidate_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+        let to_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+
+        // TODO: This should not be calculated here but we should just rely on `complete_fee`
+        //  This requires more refactoring because the `RolloverCompleted` event currently depends
+        //  on the `funding_fee` from the `RolloverParams`.
         let hours_to_charge =
-            self.hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)?;
+            self.hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)?;
         let funding_fee = FundingFee::calculate(
             self.initial_price,
             self.quantity,
@@ -1217,7 +1316,12 @@ impl Cfd {
         self.event(EventKind::ContractSetupFailed)
     }
 
-    pub fn complete_rollover(self, dlc: Dlc, funding_fee: FundingFee) -> CfdEvent {
+    pub fn complete_rollover(
+        self,
+        dlc: Dlc,
+        funding_fee: FundingFee,
+        complete_fee: Option<CompleteFee>,
+    ) -> CfdEvent {
         match self.can_rollover() {
             Ok(_) => {
                 tracing::info!(order_id = %self.id, "Rollover was completed");
@@ -1225,6 +1329,7 @@ impl Cfd {
                 self.event(EventKind::RolloverCompleted {
                     dlc: Some(dlc),
                     funding_fee,
+                    complete_fee,
                 })
             }
             Err(e) => self.fail_rollover(e.into()),
@@ -1522,13 +1627,13 @@ impl Cfd {
 
     fn hours_to_extend_in_rollover_based_on_event(
         &self,
-        candidate_event_id: BitMexPriceEventId,
+        to_event_id: BitMexPriceEventId,
         now: OffsetDateTime,
+        from_event_id: BitMexPriceEventId,
     ) -> Result<u64> {
-        let dlc = self.dlc.as_ref().context("Cannot roll over without DLC")?;
-        let current_settlement_time = dlc.settlement_event_id.timestamp();
+        let from_settlement_time = from_event_id.timestamp();
 
-        let hours_left = current_settlement_time - now;
+        let hours_left = from_settlement_time - now;
 
         tracing::trace!(target = "cfd", time_left_in_cfd = %hours_left, "Calculating hours to extend in rollover");
 
@@ -1538,15 +1643,15 @@ impl Cfd {
             return Ok(SETTLEMENT_INTERVAL.whole_hours() as u64);
         }
 
-        let candidate_settlement_time = candidate_event_id.timestamp();
-        let time_to_extend = candidate_settlement_time - current_settlement_time;
+        let to_settlement_time = to_event_id.timestamp();
+        let time_to_extend = to_settlement_time - from_settlement_time;
 
         let hours_to_extend = time_to_extend.whole_hours();
 
         if !hours_to_extend.is_positive() {
             bail!(
-                "Cannot rollover if candidate event ID is no later than current event ID:
-                 {candidate_settlement_time} <= {current_settlement_time}",
+                "Cannot rollover if to event ID is not later than from event ID:
+                 {to_settlement_time} <= {from_settlement_time}",
             );
         }
 
@@ -1586,10 +1691,20 @@ impl Cfd {
                 self.during_rollover = true;
             }
             RolloverAccepted => {}
-            RolloverCompleted { dlc, funding_fee } => {
+            RolloverCompleted {
+                dlc,
+                funding_fee,
+                complete_fee,
+            } => {
                 self.dlc = dlc;
                 self.during_rollover = false;
-                self.fee_account = self.fee_account.add_funding_fee(funding_fee);
+
+                // If the complete fee is available then we just set it, otherwise we accumulate the
+                // fees
+                self.fee_account = match complete_fee {
+                    None => self.fee_account.add_funding_fee(funding_fee),
+                    Some(complete_fee) => self.fee_account.from_complete_fee(complete_fee),
+                };
             }
             RolloverFailed { .. } => {
                 self.during_rollover = false;
@@ -2216,6 +2331,17 @@ pub struct RevokedCommit {
     // To monitor revoked commit transaction
     pub txid: Txid,
     pub script_pubkey: Script,
+
+    /// The settlement_event_id that was associated to this commit tx
+    ///
+    /// This is used to enable triggering rollovers from `settlement_event_id` and `complete_fee`.
+    pub settlement_event_id: Option<BitMexPriceEventId>,
+
+    /// The complete fee that was associated to this commit tx
+    ///
+    /// This represents the accumulated fees at the time when the commit was active.
+    /// This is used to enable triggering rollovers from `settlement_event_id` and `complete_fee`.
+    pub complete_fee: Option<CompleteFee>,
 }
 
 /// Used when transactions (e.g. collaborative close) are recorded as a part of
@@ -2274,7 +2400,7 @@ pub fn calculate_payouts(
     long_leverage: Leverage,
     short_leverage: Leverage,
     n_payouts: usize,
-    fee: FeeFlow,
+    fee: CompleteFee,
 ) -> Result<Vec<Payout>> {
     let payouts = payout_curve::calculate(
         price,
@@ -2686,6 +2812,7 @@ mod tests {
         let (rollover_event_name, _) = EventKind::RolloverCompleted {
             dlc: Some(Dlc::dummy(None)),
             funding_fee: FundingFee::new(Amount::ZERO, FundingRate::default()),
+            complete_fee: Some(CompleteFee::None),
         }
         .to_json();
 
@@ -2887,7 +3014,7 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price, maker_cfd);
 
-        let result = cfd.start_rollover();
+        let result = cfd.start_rollover_deprecated();
 
         let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
         assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
@@ -2920,7 +3047,7 @@ mod tests {
             .with_lock(taker_keys, maker_keys)
             .dummy_collab_settlement_taker(opening_price, maker_cfd);
 
-        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy(), None);
 
         assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
@@ -2937,7 +3064,7 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy());
+        let rollover_event = cfd.complete_rollover(Dlc::dummy(None), FundingFee::dummy(), None);
 
         assert_eq!(rollover_event.event, EventKind::RolloverFailed);
     }
@@ -2948,7 +3075,7 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let result = cfd.start_rollover();
+        let result = cfd.start_rollover_deprecated();
 
         let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
         assert_eq!(
@@ -2960,7 +3087,7 @@ mod tests {
             .dummy_open(dummy_event_id())
             .dummy_start_collab_settlement();
 
-        let result = cfd.start_rollover();
+        let result = cfd.start_rollover_deprecated();
 
         let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
         assert_eq!(
@@ -3345,15 +3472,15 @@ mod tests {
     #[test]
     fn given_current_settlement_in_12_hours_and_candidate_in_19_then_7_hour_extension() {
         for now in common_time_boundaries() {
-            let current_event_id = BitMexPriceEventId::with_20_digits(now + 12.hours());
-            let candidate_event_id = BitMexPriceEventId::with_20_digits(now + 19.hours());
+            let from_event_id = BitMexPriceEventId::with_20_digits(now + 12.hours());
+            let to_event_id = BitMexPriceEventId::with_20_digits(now + 19.hours());
 
-            let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
-            let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
+            let taker = Cfd::dummy_taker_long().dummy_open(from_event_id);
+            let maker = Cfd::dummy_maker_short().dummy_open(from_event_id);
 
             assert_eq!(
                 taker
-                    .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
+                    .hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)
                     .unwrap(),
                 7,
                 "Failed with now {}",
@@ -3362,7 +3489,7 @@ mod tests {
 
             assert_eq!(
                 maker
-                    .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
+                    .hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)
                     .unwrap(),
                 7,
                 "Failed with now {}",
@@ -3377,31 +3504,28 @@ mod tests {
         for now in common_time_boundaries() {
             let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
 
-            let candidate_event_id =
-                BitMexPriceEventId::with_20_digits(now + settlement_interval.hours());
+            let to_event_id = BitMexPriceEventId::with_20_digits(now + settlement_interval.hours());
 
             for hour in 0..settlement_interval {
-                let current_event_id = BitMexPriceEventId::with_20_digits(now + hour.hours());
+                let from_event_id = BitMexPriceEventId::with_20_digits(now + hour.hours());
 
-                let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
-                let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
+                let taker = Cfd::dummy_taker_long().dummy_open(from_event_id);
+                let maker = Cfd::dummy_maker_short().dummy_open(from_event_id);
 
                 assert_eq!(
                     taker
-                        .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
+                        .hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)
                         .unwrap(),
-                    (candidate_event_id.timestamp() - current_event_id.timestamp()).whole_hours()
-                        as u64,
+                    (to_event_id.timestamp() - from_event_id.timestamp()).whole_hours() as u64,
                     "Failed with now {}",
                     now
                 );
 
                 assert_eq!(
                     maker
-                        .hours_to_extend_in_rollover_based_on_event(candidate_event_id, now)
+                        .hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)
                         .unwrap(),
-                    (candidate_event_id.timestamp() - current_event_id.timestamp()).whole_hours()
-                        as u64,
+                    (to_event_id.timestamp() - from_event_id.timestamp()).whole_hours() as u64,
                     "Failed with now {}",
                     now
                 );
@@ -3422,7 +3546,11 @@ mod tests {
 
             assert_eq!(
                 taker
-                    .hours_to_extend_in_rollover_based_on_event(event_id_in_24_hours, now)
+                    .hours_to_extend_in_rollover_based_on_event(
+                        event_id_in_24_hours,
+                        now,
+                        event_id_1_hour_ago
+                    )
                     .unwrap(),
                 SETTLEMENT_INTERVAL.whole_hours() as u64,
                 "Failed with now {}",
@@ -3431,7 +3559,11 @@ mod tests {
 
             assert_eq!(
                 maker
-                    .hours_to_extend_in_rollover_based_on_event(event_id_in_24_hours, now)
+                    .hours_to_extend_in_rollover_based_on_event(
+                        event_id_in_24_hours,
+                        now,
+                        event_id_1_hour_ago
+                    )
                     .unwrap(),
                 SETTLEMENT_INTERVAL.whole_hours() as u64,
                 "Failed with now {}",
@@ -3444,17 +3576,17 @@ mod tests {
     fn given_candidate_settlement_before_current_settlement_then_fails_to_calculate_hours_to_extend_based_on_event(
     ) {
         for now in common_time_boundaries() {
-            let current_event_id = BitMexPriceEventId::with_20_digits(now + 2.hours());
+            let from_event_id = BitMexPriceEventId::with_20_digits(now + 2.hours());
             let earlier_event_id = BitMexPriceEventId::with_20_digits(now + 1.hours());
 
-            let taker = Cfd::dummy_taker_long().dummy_open(current_event_id);
-            let maker = Cfd::dummy_maker_short().dummy_open(current_event_id);
+            let taker = Cfd::dummy_taker_long().dummy_open(from_event_id);
+            let maker = Cfd::dummy_maker_short().dummy_open(from_event_id);
 
             taker
-                .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now)
+                .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now, from_event_id)
                 .unwrap_err();
             maker
-                .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now)
+                .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now, from_event_id)
                 .unwrap_err();
         }
     }
@@ -3807,6 +3939,7 @@ mod tests {
                             fee: Amount::from_sat(fee_sat),
                             rate: FundingRate::new(funding_rate).unwrap(),
                         },
+                        complete_fee: None,
                     },
                 },
             ]

@@ -15,6 +15,7 @@ use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Transaction;
+use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
 use maia::commit_descriptor;
@@ -29,7 +30,6 @@ use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::Cet;
 use model::Dlc;
-use model::FeeFlow;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
@@ -125,6 +125,7 @@ impl ListenerMessage {
 pub struct Propose {
     pub order_id: OrderId,
     pub timestamp: Timestamp,
+    pub from_commit_txid: Txid,
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -147,7 +148,6 @@ pub(crate) enum RolloverMsg {
     Msg0(RolloverMsg0),
     Msg1(RolloverMsg1),
     Msg2(RolloverMsg2),
-    Msg3(RolloverMsg3),
 }
 
 impl RolloverMsg {
@@ -172,14 +172,6 @@ impl RolloverMsg {
             Ok(v)
         } else {
             bail!("Not Msg2")
-        }
-    }
-
-    pub fn try_into_msg3(self) -> Result<RolloverMsg3> {
-        if let Self::Msg3(v) = self {
-            Ok(v)
-        } else {
-            bail!("Not Msg3")
         }
     }
 }
@@ -241,22 +233,22 @@ pub enum CompleteFee {
     Nein,
 }
 
-impl From<FeeFlow> for CompleteFee {
-    fn from(fee_flow: FeeFlow) -> Self {
-        match fee_flow {
-            FeeFlow::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
-            FeeFlow::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
-            FeeFlow::Nein => CompleteFee::Nein,
+impl From<model::CompleteFee> for CompleteFee {
+    fn from(complete_fee: model::CompleteFee) -> Self {
+        match complete_fee {
+            model::CompleteFee::LongPaysShort(a) => CompleteFee::LongPaysShort(a),
+            model::CompleteFee::ShortPaysLong(a) => CompleteFee::ShortPaysLong(a),
+            model::CompleteFee::None => CompleteFee::Nein,
         }
     }
 }
 
-impl From<CompleteFee> for FeeFlow {
-    fn from(fee_flow: CompleteFee) -> Self {
-        match fee_flow {
-            CompleteFee::LongPaysShort(a) => FeeFlow::LongPaysShort(a),
-            CompleteFee::ShortPaysLong(a) => FeeFlow::ShortPaysLong(a),
-            CompleteFee::Nein => FeeFlow::Nein,
+impl From<CompleteFee> for model::CompleteFee {
+    fn from(complete_fee: CompleteFee) -> Self {
+        match complete_fee {
+            CompleteFee::LongPaysShort(a) => model::CompleteFee::LongPaysShort(a),
+            CompleteFee::ShortPaysLong(a) => model::CompleteFee::ShortPaysLong(a),
+            CompleteFee::Nein => model::CompleteFee::None,
         }
     }
 }
@@ -265,10 +257,13 @@ pub(crate) async fn emit_completed(
     order_id: OrderId,
     dlc: Dlc,
     funding_fee: FundingFee,
+    complete_fee: model::CompleteFee,
     executor: &command::Executor,
 ) {
     if let Err(e) = executor
-        .execute(order_id, |cfd| Ok(cfd.complete_rollover(dlc, funding_fee)))
+        .execute(order_id, |cfd| {
+            Ok(cfd.complete_rollover(dlc, funding_fee, Some(complete_fee)))
+        })
         .await
     {
         tracing::error!(%order_id, "Failed to execute rollover completed: {e:#}")
@@ -369,7 +364,7 @@ pub(crate) async fn build_own_cfd_transactions(
     oracle_pk: schnorrsig::PublicKey,
     our_position: Position,
     n_payouts: usize,
-    complete_fee: FeeFlow,
+    complete_fee: model::CompleteFee,
     punish_params: PunishParams,
 ) -> Result<CfdTransactions> {
     let sk = dlc.identity;
@@ -582,6 +577,7 @@ pub(crate) fn finalize_revoked_commits(
     dlc: &Dlc,
     commit_tx_adaptor_sig: EcdsaAdaptorSignature,
     msg2: RolloverMsg2,
+    complete_fee_before_rollover: model::CompleteFee,
 ) -> Result<Vec<RevokedCommit>> {
     let revocation_sk_theirs = msg2.revocation_sk;
 
@@ -604,6 +600,8 @@ pub(crate) fn finalize_revoked_commits(
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: transaction.txid(),
         script_pubkey: dlc.commit.2.script_pubkey(),
+        settlement_event_id: Some(dlc.settlement_event_id),
+        complete_fee: Some(complete_fee_before_rollover),
     });
 
     Ok(revoked_commit)

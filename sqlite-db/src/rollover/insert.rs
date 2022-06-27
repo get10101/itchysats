@@ -1,8 +1,10 @@
 use crate::models;
+use crate::models::into_complete_fee_and_flow;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
 use model::Cet;
 use model::CfdEvent;
+use model::CompleteFee;
 use model::Dlc;
 use model::EventKind;
 use model::FundingFee;
@@ -23,6 +25,7 @@ pub async fn insert(
         EventKind::RolloverCompleted {
             dlc: Some(dlc),
             funding_fee,
+            complete_fee,
         } => {
             let mut inner_transaction = connection.begin().await?;
 
@@ -33,6 +36,7 @@ pub async fn insert(
                 event_id,
                 &dlc,
                 funding_fee,
+                complete_fee,
                 event.id.into(),
             )
             .await?;
@@ -75,6 +79,7 @@ async fn insert_rollover_completed_event_data(
     event_id: i64,
     dlc: &Dlc,
     funding_fee: FundingFee,
+    complete_fee: Option<CompleteFee>,
     offer_id: models::OrderId,
 ) -> Result<()> {
     let (lock_tx, lock_tx_descriptor) = dlc.lock.clone();
@@ -109,6 +114,8 @@ async fn insert_rollover_completed_event_data(
     let rate = models::FundingRate::from(funding_fee.rate);
     let settlement_event_id = models::BitMexPriceEventId::from(dlc.settlement_event_id);
 
+    let (complete_fee, complete_fee_flow) = into_complete_fee_and_flow(complete_fee);
+
     let query_result = sqlx::query!(
         r#"
             insert into rollover_completed_event_data (
@@ -134,10 +141,12 @@ async fn insert_rollover_completed_event_data(
                 commit_adaptor_signature,
                 commit_descriptor,
                 refund_tx,
-                refund_signature
+                refund_signature,
+                complete_fee,
+                complete_fee_flow
             ) values ( 
             (select id from cfds where cfds.uuid = $1),
-            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
             )
         "#,
         offer_id,
@@ -163,6 +172,8 @@ async fn insert_rollover_completed_event_data(
         commit_tx_descriptor,
         refund_tx,
         refund_signature,
+        complete_fee,
+        complete_fee_flow,
     )
     .execute(&mut *inner_transaction)
     .await?;
@@ -183,6 +194,12 @@ async fn insert_revoked_commit_transaction(
     let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
     let encsig_ours = models::AdaptorSignature::from(revoked.encsig_ours);
     let txid = models::Txid::from(revoked.txid);
+    let settlement_event_id = revoked
+        .settlement_event_id
+        .map(models::BitMexPriceEventId::from);
+
+    let (complete_fee, complete_fee_flow) = into_complete_fee_and_flow(revoked.complete_fee);
+
     let query_result = sqlx::query!(
         r#"
                 insert into revoked_commit_transactions (
@@ -191,15 +208,21 @@ async fn insert_revoked_commit_transaction(
                     publication_pk_theirs,
                     revocation_sk_theirs,
                     script_pubkey,
-                    txid
-                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6 )
+                    txid,
+                    settlement_event_id,
+                    complete_fee,
+                    complete_fee_flow
+                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7, $8, $9 )
             "#,
         offer_id,
         encsig_ours,
         publication_pk_theirs,
         revocation_secret,
         revoked_tx_script_pubkey,
-        txid
+        txid,
+        settlement_event_id,
+        complete_fee,
+        complete_fee_flow,
     )
     .execute(&mut *inner_transaction)
     .await?;
