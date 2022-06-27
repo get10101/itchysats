@@ -22,7 +22,7 @@ members = [
 resolver = "2"
 
 [patch.crates-io]
-xtra = { path = "../xtra" }
+xtra = { git = "https://github.com/Restioson/xtra", rev = "40508b43555474700c6e9509565a5c9a9a22267f" }
 maia = { git = "https://github.com/comit-network/maia", rev = "a963084189e1598ca622abe206a78015ab6b8466" } # Unreleased
 maia-core = { git = "https://github.com/comit-network/maia", rev = "e419cb2cf19bed6ec53eaa3672408a6205a9b705", package = "maia-core" } # Unreleased version, pinned before maia's breaking change
 xtra_productivity = { path = "../xtra-productivity" }
