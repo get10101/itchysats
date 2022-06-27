@@ -858,7 +858,8 @@ async fn taker_notices_lack_of_maker() {
 
     let maker_config = MakerConfig::default()
         .with_heartbeat_interval(short_interval)
-        .with_dedicated_port(35123); // set a fixed port so the taker can reconnect
+        .with_dedicated_port(35123)
+        .with_dedicated_libp2p_port(35124); // set fixed ports so the taker can reconnect
     let maker = Maker::start(&maker_config).await;
 
     let taker_config = TakerConfig::default().with_heartbeat_interval(short_interval);
