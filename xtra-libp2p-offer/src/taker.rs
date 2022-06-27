@@ -35,7 +35,7 @@ impl Actor {
         let task = async move {
             let offers = protocol::recv(stream).await?;
 
-            tracing::trace!(%peer, "Received offers");
+            tracing::debug!(%peer, ?offers, "Received offers");
 
             maker_offers.send(LatestMakerOffers(offers)).await?;
 

@@ -40,7 +40,7 @@ impl Actor {
         let offers = self.latest_offers.clone();
 
         let task = async move {
-            tracing::trace!(%peer, "Sending offers");
+            tracing::debug!(%peer, ?offers, "Sending offers");
 
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
