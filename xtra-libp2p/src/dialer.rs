@@ -47,7 +47,7 @@ impl Actor {
     }
 
     fn stop_with_error(&mut self, e: Error, ctx: &mut xtra::Context<Self>) {
-        tracing::debug!("Stopping dialer with an error: {e:#}");
+        tracing::debug!("Stopping dialer with an error: {e:?}");
         self.stop_reason = Some(e);
         ctx.stop_all(); // TODO
     }
@@ -72,7 +72,11 @@ impl xtra::Actor for Actor {
         }
 
         let this = ctx.address().expect("self to be alive");
-        this.send_async_safe(Dial).await.expect("self to be alive");
+        // TODO(restioson) crash is either above or below depending
+        let fut = this.send_async_safe(Dial);
+        let res = fut.await;
+        res.expect("self to be alive");
+        println!("worked fine");
     }
 
     async fn stopped(self) -> Self::Stop {

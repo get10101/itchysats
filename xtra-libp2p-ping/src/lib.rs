@@ -13,7 +13,6 @@ mod tests {
     use futures::Future;
     use futures::FutureExt;
     use std::time::Duration;
-    use xtra::message_channel::StrongMessageChannel;
     use xtra::spawn::TokioGlobalSpawnExt;
     use xtra::Actor as _;
     use xtra::Address;
@@ -94,14 +93,10 @@ mod tests {
             Box::new(MemoryTransport::default),
             id.clone(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, pong_address.clone_channel())],
+            [(PROTOCOL_NAME, pong_address.clone().into())],
             Subscribers::new(
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &ping_address,
-                )],
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &ping_address,
-                )],
+                vec![ping_address.clone().into()],
+                vec![ping_address.clone().into()],
                 vec![],
                 vec![],
             ),

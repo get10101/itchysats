@@ -26,7 +26,7 @@ const INITIATE_TIMEOUT: Duration = Duration::from_secs(60 * 5);
 pub struct Actor {
     proposal: SettlementProposal,
     taker_id: Identity,
-    connections: Box<dyn MessageChannel<connection::settlement::Response, Return = Result<()>>>,
+    connections: MessageChannel<connection::settlement::Response, Result<()>>,
     has_accepted: bool,
     is_initiated: bool,
     n_payouts: usize,
@@ -144,7 +144,7 @@ impl Actor {
     pub fn new(
         proposal: SettlementProposal,
         taker_id: Identity,
-        connections: &(impl MessageChannel<connection::settlement::Response, Return = Result<()>> + 'static),
+        connections: MessageChannel<connection::settlement::Response, Result<()>>,
         process_manager: xtra::Address<process_manager::Actor>,
         db: sqlite_db::Connection,
         n_payouts: usize,
@@ -152,7 +152,7 @@ impl Actor {
         Self {
             proposal,
             taker_id,
-            connections: connections.clone_channel(),
+            connections: connections.clone().into(),
             has_accepted: false,
             n_payouts,
             executor: command::Executor::new(db.clone(), process_manager),

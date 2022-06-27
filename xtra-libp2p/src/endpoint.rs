@@ -28,7 +28,6 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
-use xtra::message_channel::StrongMessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
@@ -54,7 +53,7 @@ pub struct Endpoint {
     tasks: Tasks,
     controls: HashMap<PeerId, (yamux::Control, Tasks)>,
     inbound_substream_channels:
-        HashMap<&'static str, Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>>,
+        HashMap<&'static str, MessageChannel<NewInboundSubstream, ()>>,
     listen_addresses: HashSet<Multiaddr>,
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
@@ -172,18 +171,18 @@ pub enum Error {
 /// established or dropped as well as listening addresses being added or removed.
 #[derive(Default)]
 pub struct Subscribers {
-    connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished, Return = ()>>>,
-    connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped, Return = ()>>>,
-    listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded, Return = ()>>>,
-    listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved, Return = ()>>>,
+    connection_established: Vec<MessageChannel<ConnectionEstablished, ()>>,
+    connection_dropped: Vec<MessageChannel<ConnectionDropped, ()>>,
+    listen_address_added: Vec<MessageChannel<ListenAddressAdded, ()>>,
+    listen_address_removed: Vec<MessageChannel<ListenAddressRemoved, ()>>,
 }
 
 impl Subscribers {
     pub fn new(
-        connection_established: Vec<Box<dyn MessageChannel<ConnectionEstablished, Return = ()>>>,
-        connection_dropped: Vec<Box<dyn MessageChannel<ConnectionDropped, Return = ()>>>,
-        listen_address_added: Vec<Box<dyn MessageChannel<ListenAddressAdded, Return = ()>>>,
-        listen_address_removed: Vec<Box<dyn MessageChannel<ListenAddressRemoved, Return = ()>>>,
+        connection_established: Vec<MessageChannel<ConnectionEstablished, ()>>,
+        connection_dropped: Vec<MessageChannel<ConnectionDropped, ()>>,
+        listen_address_added: Vec<MessageChannel<ListenAddressAdded, ()>>,
+        listen_address_removed: Vec<MessageChannel<ListenAddressRemoved, ()>>,
     ) -> Self {
         Self {
             connection_established,
@@ -212,7 +211,7 @@ impl Endpoint {
         connection_timeout: Duration,
         inbound_substream_handlers: [(
             &'static str,
-            Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>,
+            MessageChannel<NewInboundSubstream, ()>,
         ); N],
         subscribers: Subscribers,
     ) -> Self
@@ -318,7 +317,7 @@ impl Endpoint {
                     .map(|(proto, channel)| {
                         (
                             proto.to_owned(),
-                            StrongMessageChannel::clone_channel(channel.as_ref()),
+                            channel.clone()
                         )
                     })
                     .collect::<HashMap<_, _>>();
@@ -603,8 +602,8 @@ impl Endpoint {
 }
 
 fn verify_unique_handlers<const N: usize>(
-    inbound_substream_handlers: [(&str, Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>); N],
-) -> HashMap<&str, Box<dyn StrongMessageChannel<NewInboundSubstream, Return = ()>>> {
+    inbound_substream_handlers: [(&str, MessageChannel<NewInboundSubstream, ()>); N],
+) -> HashMap<&str, MessageChannel<NewInboundSubstream, ()>> {
     let mut map = HashMap::with_capacity(inbound_substream_handlers.len());
 
     for (protocol, handler) in inbound_substream_handlers {

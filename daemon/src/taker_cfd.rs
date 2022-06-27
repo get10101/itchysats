@@ -49,7 +49,7 @@ pub struct ProposeSettlement {
     pub quote_timestamp: String,
 }
 
-pub struct Actor<O: 'static, W: 'static> {
+pub struct Actor<O, W> {
     db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
     oracle_pk: schnorrsig::PublicKey,
@@ -243,8 +243,8 @@ where
                 self.n_payouts,
             ),
             (self.oracle_pk, announcement),
-            &self.wallet,
-            &self.wallet,
+            self.wallet.clone().into(),
+            self.wallet.clone().into(),
             self.conn_actor.clone(),
         )
         .create(None)

@@ -8,7 +8,7 @@ use std::hash::Hash;
 use xtra::Address;
 use xtra::Handler;
 
-pub struct AddressMap<K, A: 'static> {
+pub struct AddressMap<K, A> {
     inner: HashMap<K, Address<A>>,
 }
 
@@ -128,7 +128,7 @@ impl NotConnected {
 #[error("The address is still connected")]
 pub struct StillConnected;
 
-pub struct Disconnected<'a, K, A: 'static> {
+pub struct Disconnected<'a, K, A> {
     entry: Entry<'a, K, Address<A>>,
 }
 
@@ -179,10 +179,6 @@ mod tests {
     impl xtra::Actor for Dummy {
         type Stop = ();
 
-        async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
-            KeepRunning::StopAll
-        }
-
         async fn stopped(self) -> Self::Stop {}
     }
 
@@ -191,7 +187,7 @@ mod tests {
     #[xtra_productivity::xtra_productivity]
     impl Dummy {
         fn handle_shutdown(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-            ctx.stop()
+            ctx.stop_all()
         }
     }
 }

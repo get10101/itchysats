@@ -290,6 +290,7 @@ where
     O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
        + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
+       + xtra::Handler<connection::TakerMessageIgnoreErr, Return = ()>
        + xtra::Handler<connection::RegisterRollover, Return = ()>,
     W: 'static,
 {
@@ -302,12 +303,13 @@ where
         let rollover_actor_addr = rollover::Actor::new(
             order_id,
             self.n_payouts,
-            &self.takers,
+            self.takers.clone().into(),
+            self.takers.clone().into(),
             taker_id,
             self.oracle_pk,
-            &self.oracle,
+            self.oracle.clone().into(),
             self.process_manager.clone(),
-            &self.takers,
+            self.takers.clone().into(),
             self.db.clone(),
             version,
         )
@@ -326,6 +328,7 @@ where
         + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
+        + xtra::Handler<connection::TakerMessageIgnoreErr, Return = ()>
         + xtra::Handler<connection::BroadcastOffers, Return = ()>,
     W: xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
         + xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>,
@@ -419,9 +422,9 @@ where
             self.process_manager.clone(),
             (order_to_take.clone(), cfd.quantity(), self.n_payouts),
             (self.oracle_pk, announcement),
-            &self.wallet,
-            &self.wallet,
-            (&self.takers, &self.takers, taker_id),
+            self.wallet.clone().into(),
+            self.wallet.clone().into(),
+            (self.takers.clone().into(), self.takers.clone().into(), self.takers.clone().into(), taker_id),
             self.time_to_first_position.clone(),
         )
         .create(None)
@@ -721,7 +724,7 @@ where
         let addr = collab_settlement::Actor::new(
             proposal,
             taker_id,
-            &self.takers,
+            self.takers.clone().into(),
             self.process_manager.clone(),
             self.db.clone(),
             self.n_payouts,
@@ -742,6 +745,7 @@ where
         + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
+        + xtra::Handler<connection::TakerMessageIgnoreErr, Return = ()>
         + xtra::Handler<connection::BroadcastOffers, Return = ()>
         + xtra::Handler<connection::settlement::Response, Return = Result<()>>
         + xtra::Handler<connection::RegisterRollover, Return = ()>,

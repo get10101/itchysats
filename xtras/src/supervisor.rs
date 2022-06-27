@@ -15,7 +15,7 @@ use xtra_productivity::xtra_productivity;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on
 /// a given policy.
-pub struct Actor<T: 'static, R> {
+pub struct Actor<T, R> {
     context: Context<T>,
     ctor: Box<dyn Fn() -> T + Send + 'static>,
     tasks: Tasks,
@@ -404,7 +404,7 @@ mod tests {
     #[xtra_productivity]
     impl RemoteShutdown {
         fn handle(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-            ctx.stop()
+            ctx.stop_all()
         }
 
         fn handle(&mut self, msg: SayHello) -> String {

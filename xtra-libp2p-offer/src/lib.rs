@@ -26,7 +26,6 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::time::Duration;
     use time::macros::datetime;
-    use xtra::message_channel::StrongMessageChannel;
     use xtra::spawn::TokioGlobalSpawnExt;
     use xtra::Actor as _;
     use xtra::Address;
@@ -117,12 +116,8 @@ mod tests {
             Duration::from_secs(10),
             [],
             Subscribers::new(
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &offer_maker_addr,
-                )],
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &offer_maker_addr,
-                )],
+                vec![offer_maker_addr.clone().into()],
+                vec![offer_maker_addr.clone().into()],
                 vec![],
                 vec![],
             ),
@@ -137,7 +132,7 @@ mod tests {
     fn create_endpoint_with_offer_taker() -> (Address<OffersReceiver>, Address<Endpoint>) {
         let offers_receiver_addr = OffersReceiver::new().create(None).spawn_global();
 
-        let offer_taker_addr = crate::taker::Actor::new(&offers_receiver_addr)
+        let offer_taker_addr = crate::taker::Actor::new(offers_receiver_addr.clone().into())
             .create(None)
             .spawn_global();
 
@@ -145,7 +140,7 @@ mod tests {
             Box::new(MemoryTransport::default),
             Keypair::generate_ed25519(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, offer_taker_addr.clone_channel())],
+            [(PROTOCOL_NAME, offer_taker_addr.clone().into())],
             Subscribers::default(),
         )
         .create(None)

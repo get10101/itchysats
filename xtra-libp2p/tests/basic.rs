@@ -9,10 +9,10 @@ use libp2p_core::Multiaddr;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_tasks::Tasks;
-use xtra::message_channel::StrongMessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Address;
+use xtra::message_channel::MessageChannel;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::libp2p::identity::Keypair;
@@ -33,7 +33,7 @@ async fn hello_world() {
     let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-            xtra::message_channel::StrongMessageChannel::clone_channel(&alice_hello_world_handler),
+            alice_hello_world_handler.clone().into(),
         )],
         [],
     )
@@ -243,7 +243,7 @@ async fn chooses_first_protocol_in_list_of_multiple() {
     let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-            xtra::message_channel::StrongMessageChannel::clone_channel(&alice_hello_world_handler),
+           alice_hello_world_handler.clone().into(),
         )],
         [],
     )
@@ -273,11 +273,11 @@ async fn disallow_duplicate_handlers() {
     make_node([
         (
             "/hello-world/1.0.0",
-            xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_handler),
+            hello_world_handler.clone().into(),
         ),
         (
             "/hello-world/1.0.0",
-            xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_handler),
+            hello_world_handler.clone().into(),
         ),
     ]);
 }
@@ -288,7 +288,7 @@ async fn falls_back_to_next_protocol_if_unsupported() {
     let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-            xtra::message_channel::StrongMessageChannel::clone_channel(&alice_hello_world_handler),
+            alice_hello_world_handler.clone().into(),
         )],
         [],
     )
@@ -313,11 +313,11 @@ async fn falls_back_to_next_protocol_if_unsupported() {
 async fn alice_and_bob<const AN: usize, const BN: usize>(
     alice_inbound_substream_handlers: [(
         &'static str,
-        Box<dyn StrongMessageChannel<NewInboundSubstream>>,
+        MessageChannel<NewInboundSubstream, ()>,
     ); AN],
     bob_inbound_substream_handlers: [(
         &'static str,
-        Box<dyn StrongMessageChannel<NewInboundSubstream>>,
+        MessageChannel<NewInboundSubstream, ()>,
     ); BN],
 ) -> (Node, Node, Multiaddr) {
     let port = rand::random::<u16>();
@@ -358,7 +358,7 @@ struct Node {
 fn make_node<const N: usize>(
     substream_handlers: [(
         &'static str,
-        Box<dyn StrongMessageChannel<NewInboundSubstream>>,
+        MessageChannel<NewInboundSubstream, ()>,
     ); N],
 ) -> Node {
     let id = Keypair::generate_ed25519();
@@ -374,18 +374,11 @@ fn make_node<const N: usize>(
         Duration::from_secs(20),
         substream_handlers,
         Subscribers::new(
-            vec![xtra::message_channel::MessageChannel::clone_channel(
-                &subscriber_stats,
-            )],
-            vec![xtra::message_channel::MessageChannel::clone_channel(
-                &subscriber_stats,
-            )],
-            vec![xtra::message_channel::MessageChannel::clone_channel(
-                &subscriber_stats,
-            )],
-            vec![xtra::message_channel::MessageChannel::clone_channel(
-                &subscriber_stats,
-            )],
+            vec![
+                subscriber_stats.clone().into()],
+            vec![subscriber_stats.clone().into()],
+            vec![subscriber_stats.clone().into()],
+            vec![subscriber_stats.clone().into()],
         ),
     )
     .create(None)

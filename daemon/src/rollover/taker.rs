@@ -35,7 +35,7 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Actor {
     endpoint: Address<Endpoint>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
+    get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
     n_payouts: usize,
     tasks: Tasks,
     executor: command::Executor,
@@ -59,7 +59,7 @@ impl Actor {
         endpoint: Address<Endpoint>,
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
+        get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -107,7 +107,7 @@ impl Actor {
         self.tasks.add_fallible(
             {
                 let executor = self.executor.clone();
-                let get_announcement = self.get_announcement.clone_channel();
+                let get_announcement = self.get_announcement.clone();
                 let oracle_pk = self.oracle_pk;
                 let n_payouts = self.n_payouts;
                 async move {

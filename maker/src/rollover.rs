@@ -11,7 +11,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::{Dlc, olivia};
+use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
@@ -57,13 +57,14 @@ struct RolloverFailed {
 
 pub struct Actor {
     order_id: OrderId,
-    send_to_taker_actor: Box<dyn MessageChannel<connection::TakerMessage, Return = Result<(), NoConnection>>>,
+    send_to_taker_actor: MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+    send_to_taker_actor_ignore_err: MessageChannel<connection::TakerMessageIgnoreErr, ()>,
     n_payouts: usize,
     taker_id: Identity,
     oracle_pk: schnorrsig::PublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
-    oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>>,
-    register: Box<dyn MessageChannel<connection::RegisterRollover, Return = ()>>,
+    oracle_actor: MessageChannel<oracle::GetAnnouncement, Result<Announcement, NoAnnouncement>>,
+    register: MessageChannel<connection::RegisterRollover, ()>,
     tasks: Tasks,
     executor: command::Executor,
     version: RolloverVersion,
@@ -74,24 +75,26 @@ impl Actor {
     pub fn new(
         order_id: OrderId,
         n_payouts: usize,
-        send_to_taker_actor: &(impl MessageChannel<connection::TakerMessage, Return = Result<(), NoConnection>> + 'static),
+        send_to_taker_actor: MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+        send_to_taker_actor_ignore_err: MessageChannel<connection::TakerMessageIgnoreErr, ()>,
         taker_id: Identity,
         oracle_pk: schnorrsig::PublicKey,
-        oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>> + 'static),
+        oracle_actor: MessageChannel<oracle::GetAnnouncement, Result<Announcement, NoAnnouncement>>,
         process_manager: xtra::Address<process_manager::Actor>,
-        register: &(impl MessageChannel<connection::RegisterRollover, Return = ()> + 'static),
+        register: MessageChannel<connection::RegisterRollover, ()>,
         db: sqlite_db::Connection,
         version: RolloverVersion,
     ) -> Self {
         Self {
             order_id,
             n_payouts,
-            send_to_taker_actor: send_to_taker_actor.clone_channel(),
+            send_to_taker_actor: send_to_taker_actor.clone(),
+            send_to_taker_actor_ignore_err: send_to_taker_actor_ignore_err.clone(),
             taker_id,
             oracle_pk,
             sent_from_taker: None,
-            oracle_actor: oracle_actor.clone_channel(),
-            register: register.clone_channel(),
+            oracle_actor: oracle_actor.clone().into(),
+            register: register.clone().into(),
             executor: command::Executor::new(db, process_manager),
             tasks: Tasks::default(),
             version,
@@ -219,25 +222,22 @@ impl Actor {
 
         let funding_fee = *rollover_params.funding_fee();
 
-        // let rollover_fut = setup_contract_deprecated::roll_over(
-        //     // TODO(restioson) message channel sink
-        //     todo!(),
-        //     // self.send_to_taker_actor.sink().with(move |msg| {
-        //     //     future::ok(connection::TakerMessage {
-        //     //         taker_id,
-        //     //         msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
-        //     //     })
-        //     // }),
-        //     receiver,
-        //     (self.oracle_pk, announcement),
-        //     rollover_params,
-        //     Role::Maker,
-        //     position,
-        //     dlc,
-        //     self.n_payouts,
-        //     complete_fee,
-        // );
-        let rollover_fut = futures::future::pending::<Result<Dlc>>();
+        let rollover_fut = setup_contract_deprecated::roll_over(
+            self.send_to_taker_actor_ignore_err.clone().into_sink().with(move |msg| {
+                future::ok(connection::TakerMessageIgnoreErr(connection::TakerMessage {
+                    taker_id,
+                    msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
+                }))
+            }),
+            receiver,
+            (self.oracle_pk, announcement),
+            rollover_params,
+            Role::Maker,
+            position,
+            dlc,
+            self.n_payouts,
+            complete_fee,
+        );
 
         let this = ctx.address().expect("self to be alive");
 

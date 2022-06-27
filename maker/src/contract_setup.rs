@@ -34,10 +34,11 @@ pub struct Actor {
     n_payouts: usize,
     oracle_pk: schnorrsig::PublicKey,
     announcement: Announcement,
-    build_party_params: Box<dyn MessageChannel<wallet::BuildPartyParams, Return = Result<PartyParams>>>,
-    sign: Box<dyn MessageChannel<wallet::Sign, Return = Result<PartiallySignedTransaction>>>,
-    taker: Box<dyn MessageChannel<connection::TakerMessage, Return = Result<(), NoConnection>>>,
-    confirm_order: Box<dyn MessageChannel<connection::ConfirmOrder, Return = Result<()>>>,
+    build_party_params: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
+    sign: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
+    taker: MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+    taker_ignore_err: MessageChannel<connection::TakerMessageIgnoreErr, ()>,
+    confirm_order: MessageChannel<connection::ConfirmOrder, Result<()>>,
     taker_id: Identity,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
     tasks: Tasks,
@@ -52,11 +53,12 @@ impl Actor {
         process_manager: xtra::Address<process_manager::Actor>,
         (order, quantity, n_payouts): (Order, Usd, usize),
         (oracle_pk, announcement): (schnorrsig::PublicKey, Announcement),
-        build_party_params: &(impl MessageChannel<wallet::BuildPartyParams, Return = Result<PartyParams>> + 'static),
-        sign: &(impl MessageChannel<wallet::Sign, Return = Result<PartiallySignedTransaction>> + 'static),
-        (taker, confirm_order, taker_id): (
-            &(impl MessageChannel<connection::TakerMessage, Return = Result<(), NoConnection>> + 'static),
-            &(impl MessageChannel<connection::ConfirmOrder, Return = Result<()>> + 'static),
+        build_party_params: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
+        sign: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
+        (taker, taker_ignore_err, confirm_order, taker_id): (
+            MessageChannel<connection::TakerMessage, Result<(), NoConnection>>,
+            MessageChannel<connection::TakerMessageIgnoreErr, ()>,
+            MessageChannel<connection::ConfirmOrder, Result<()>>,
             Identity,
         ),
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
@@ -68,10 +70,11 @@ impl Actor {
             n_payouts,
             oracle_pk,
             announcement,
-            build_party_params: build_party_params.clone_channel(),
-            sign: sign.clone_channel(),
-            taker: taker.clone_channel(),
-            confirm_order: confirm_order.clone_channel(),
+            build_party_params: build_party_params.clone().into(),
+            sign: sign.clone().into(),
+            taker: taker.clone().into(),
+            taker_ignore_err: taker_ignore_err.clone().into(),
+            confirm_order: confirm_order.clone().into(),
             taker_id,
             setup_msg_sender: None,
             tasks: Tasks::default(),
@@ -94,24 +97,22 @@ impl Actor {
 
         let taker_id = setup_params.counterparty_identity();
 
-        /*let contract_future = setup_contract_deprecated::new(
-            todo!(), // TODO(restioson) message channel sink
-            // self.taker.clone().into_sink().with(move |msg| {
-            //     future::ok(connection::TakerMessage {
-            //         taker_id,
-            //         msg: wire::MakerToTaker::Protocol { order_id, msg },
-            //     })
-            // }),
+        let contract_future = setup_contract_deprecated::new(
+            self.taker_ignore_err.clone().into_sink().with(move |msg| {
+                future::ok(connection::TakerMessageIgnoreErr(connection::TakerMessage {
+                    taker_id,
+                    msg: wire::MakerToTaker::Protocol { order_id, msg },
+                }))
+            }),
             receiver,
             (self.oracle_pk, self.announcement.clone()),
             setup_params,
-            self.build_party_params.clone_channel(),
-            self.sign.clone_channel(),
+            self.build_party_params.clone().into(),
+            self.sign.clone().into(),
             Role::Maker,
             position,
             self.n_payouts,
-        );*/
-        let contract_future = futures::future::pending();
+        );
 
         self.tasks.add(async move {
             let _: Result<(), xtra::Error> = match contract_future.await {

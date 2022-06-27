@@ -1,3 +1,5 @@
+use xtra::refcount::RefCounter;
+use xtra::message_channel::MessageChannel;
 use async_trait::async_trait;
 use std::fmt;
 
@@ -20,9 +22,7 @@ where
     M: Send + 'static,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
-        todo!("split_receiver() should resolve to Result<Receiver<..>, Error>") // TODO(restioson)
-        // #[allow(clippy::disallowed_methods)]
-        // self.send(msg).split_receiver().await
+        self.send(msg).split_receiver().await.map(|_| ())
     }
 }
 
@@ -55,34 +55,22 @@ where
         Ok(())
     }
 }
-
 #[async_trait]
-impl<M> SendAsyncSafe<M, ()> for Box<dyn xtra::prelude::MessageChannel<M, Return = ()>>
+impl<M, Rc: RefCounter> SendAsyncSafe<M, ()> for MessageChannel<M, (), Rc>
     where M: Send + 'static
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
-        todo!("split_receiver() should resolve to Result<Receiver<..>, Error>")
-        // #[allow(clippy::disallowed_methods)]
-        // self.send(msg).split_receiver().await
+        #[allow(clippy::disallowed_methods)]
+        self.send(msg).split_receiver().await.map(|_| ())
     }
 }
 
 #[async_trait]
-impl<M> SendAsyncSafe<M, ()> for Box<dyn xtra::prelude::StrongMessageChannel<M, Return = ()>>
-    where M: Send + 'static
-{
-    async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
-        todo!("split_receiver() should resolve to Result<Receiver<..>, Error>")
-        // #[allow(clippy::disallowed_methods)]
-        // self.send(msg).split_receiver().await
-    }
-}
-
-#[async_trait]
-impl<M, E> SendAsyncSafe<M, Result<(), E>> for Box<dyn xtra::prelude::MessageChannel<M, Return = Result<(), E>>>
+impl<M, E, Rc> SendAsyncSafe<M, Result<(), E>> for MessageChannel<M, Result<(), E>, Rc>
 where
     E: fmt::Display + Send + 'static,
-    M: Send + 'static
+    M: Send + 'static,
+    Rc: RefCounter,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         if !self.is_connected() {
@@ -99,6 +87,7 @@ where
                 Ok(Ok(())) => return,
             };
 
+            panic!("Nee man {e:#}");
             tracing::warn!("Async message invocation failed: {e:#}")
         });
 

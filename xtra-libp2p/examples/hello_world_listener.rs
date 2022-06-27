@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
         Duration::from_secs(30),
         [(
             "/hello-world/1.0.0",
-            xtra::message_channel::StrongMessageChannel::clone_channel(&hello_world_addr),
+            hello_world_addr.clone().into(),
         )],
         Subscribers::default(),
     )

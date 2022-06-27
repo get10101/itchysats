@@ -32,7 +32,6 @@ use std::time::Duration;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use maia_core::PartyParams;
 use tokio_tasks::Tasks;
-use xtra::message_channel::MessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
@@ -123,13 +122,13 @@ where
         tasks.add(process_manager_ctx.run(process_manager::Actor::new(
             db.clone(),
             Role::Maker,
-            &projection_actor,
-            &position_metrics_actor,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &oracle_addr,
+            projection_actor.clone().into(),
+            position_metrics_actor.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            oracle_addr.clone().into(),
         )));
 
         let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
@@ -147,7 +146,7 @@ where
                 rollover::maker::Actor::new(
                     executor.clone(),
                     oracle_pk,
-                    xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+                    oracle_addr.clone().into(),
                     n_payouts,
                 )
             }
@@ -199,32 +198,28 @@ where
             [
                 (
                     daemon::rollover::PROTOCOL,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(
-                        &libp2p_rollover_addr,
-                    ),
+                    libp2p_rollover_addr.clone().into(),
                 ),
                 (
                     daemon::collab_settlement::PROTOCOL,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(
-                        &libp2p_collab_settlement_addr,
-                    ),
+                    libp2p_collab_settlement_addr.clone().into(),
                 ),
                 (
                     xtra_libp2p_ping::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
+                    pong_address.clone().into(),
                 ),
             ],
             endpoint::Subscribers::new(
                 vec![
-                    ping_address.clone_channel(),
-                    maker_offer_address.clone_channel(),
+                    ping_address.clone().into(),
+                    maker_offer_address.clone().into(),
                 ],
                 vec![
-                    ping_address.clone_channel(),
-                    maker_offer_address.clone_channel(),
+                    ping_address.clone().into(),
+                    maker_offer_address.clone().into(),
                 ],
                 vec![],
-                vec![listener_actor.clone_channel()],
+                vec![listener_actor.clone().into()],
             ),
         );
 
@@ -238,9 +233,9 @@ where
                 // TODO(restioson) timeout
                 //.with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
-                    Box::new(cfd_actor_addr.clone()),
-                    Box::new(cfd_actor_addr.clone()),
-                    Box::new(cfd_actor_addr.clone()),
+                    cfd_actor_addr.clone().into(),
+                    cfd_actor_addr.clone().into(),
+                    cfd_actor_addr.clone().into(),
                     identity.identity_sk,
                     heartbeat_interval,
                     p2p_socket,

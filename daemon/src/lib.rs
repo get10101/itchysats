@@ -83,7 +83,7 @@ pub const PING_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const N_PAYOUTS: usize = 200;
 
-pub struct TakerActorSystem<O: 'static, W: 'static, P: 'static> {
+pub struct TakerActorSystem<O, W, P> {
     pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
     pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
@@ -163,13 +163,13 @@ where
         tasks.add(process_manager_ctx.run(process_manager::Actor::new(
             db.clone(),
             Role::Taker,
-            &projection_actor,
-            &position_metrics_actor,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &oracle_addr,
+            projection_actor.clone().into(),
+            position_metrics_actor.into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            oracle_addr.clone().into(),
         )));
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
@@ -219,7 +219,7 @@ where
                     endpoint_addr.clone(),
                     executor.clone(),
                     oracle_pk,
-                    xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+                    oracle_addr.clone().into(),
                     n_payouts,
                 )
             }
@@ -258,7 +258,7 @@ where
 
         let (offers_supervisor, libp2p_offer_addr) = supervisor::Actor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
-            move || xtra_libp2p_offer::taker::Actor::new(&cfd_actor_addr)
+            move || xtra_libp2p_offer::taker::Actor::new(cfd_actor_addr.clone().into())
         });
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
@@ -269,18 +269,16 @@ where
             [
                 (
                     xtra_libp2p_ping::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
+                    pong_address.clone().into(),
                 ),
                 (
                     xtra_libp2p_offer::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&libp2p_offer_addr),
+                    libp2p_offer_addr.into(),
                 ),
             ],
             endpoint::Subscribers::new(
                 vec![],
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &dialer_actor,
-                )],
+                vec![dialer_actor.into()],
                 vec![],
                 vec![],
             ),

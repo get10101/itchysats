@@ -44,7 +44,7 @@ pub struct Actor {
     tasks: Tasks,
     protocol_tasks: HashMap<OrderId, Tasks>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
+    get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
     n_payouts: usize,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
     executor: command::Executor,
@@ -54,7 +54,7 @@ impl Actor {
     pub fn new(
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement, Return = Result<olivia::Announcement, NoAnnouncement>>>,
+        get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
         n_payouts: usize,
     ) -> Self {
         Self {
@@ -161,7 +161,7 @@ impl Actor {
         tasks.add_fallible(
             {
                 let executor = self.executor.clone();
-                let get_announcement = self.get_announcement.clone_channel();
+                let get_announcement = self.get_announcement.clone();
                 let oracle_pk = self.oracle_pk;
                 let n_payouts = self.n_payouts;
                 async move {
