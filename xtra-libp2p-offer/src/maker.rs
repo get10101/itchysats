@@ -78,16 +78,13 @@ impl Actor {
 #[xtra_productivity(message_impl = false)]
 impl Actor {
     async fn handle_connection_established(&mut self, msg: endpoint::ConnectionEstablished) {
-        tracing::trace!(
-            "Adding newly established connection to ping: {:?}",
-            msg.peer
-        );
+        tracing::trace!("Adding newly established connection: {:?}", msg.peer);
         self.connected_peers.insert(msg.peer);
         self.send_offers(msg.peer).await;
     }
 
     async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
-        tracing::trace!("Remove dropped connection from ping: {:?}", msg.peer);
+        tracing::trace!("Remove dropped connection: {:?}", msg.peer);
         self.connected_peers.remove(&msg.peer);
     }
 }
