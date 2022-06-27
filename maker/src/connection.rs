@@ -514,7 +514,7 @@ impl Actor {
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
         tracing::warn!("TCP listener failed: {:#}", msg.error);
-        ctx.stop_all(); // TODO(restioson) stop
+        ctx.stop_self(); // TODO(restioson) stop
     }
 
     async fn handle_rollover_proposed(&mut self, msg: RegisterRollover) {

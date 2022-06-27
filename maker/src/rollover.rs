@@ -117,7 +117,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop_all(); // TODO(restioson) stop
+        ctx.stop_self(); // TODO(restioson) stop
     }
 
     async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -129,7 +129,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop_all(); // TODO(restioson) stop
+        ctx.stop_self(); // TODO(restioson) stop
     }
 
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -141,7 +141,7 @@ impl Actor {
             tracing::warn!(order_id = %self.order_id, "{:#}", e)
         }
 
-        ctx.stop_all(); // TODO(restioson) stop
+        ctx.stop_self(); // TODO(restioson) stop
     }
 
     async fn accept(&mut self, msg: AcceptRollover, ctx: &mut xtra::Context<Self>) -> Result<()> {
@@ -266,7 +266,7 @@ impl Actor {
 
         self.emit_reject(anyhow::format_err!("unknown"), ctx).await;
 
-        ctx.stop_all(); // TODO(restioson) stop
+        ctx.stop_self(); // TODO(restioson) stop
 
         Ok(())
     }
