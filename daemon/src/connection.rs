@@ -22,8 +22,6 @@ use rand::thread_rng;
 use rand::Rng;
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::time::SystemTime;
-use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
@@ -32,7 +30,6 @@ use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
 use xtras::AddressMap;
-use xtras::SendInterval;
 
 /// Time between reconnection attempts
 pub const MAX_RECONNECT_INTERVAL_SECONDS: u64 = 60;
@@ -43,10 +40,6 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 #[allow(clippy::large_enum_variant)]
 enum State {
     Connected {
-        last_heartbeat: SystemTime,
-        /// Last pulse measurement time. Used for checking whether measuring
-        /// task is not lagging too much.
-        last_pulse: SystemTime,
         write: wire::Write<wire::MakerToTaker, wire::TakerToMaker>,
         _tasks: Tasks,
     },
@@ -78,83 +71,11 @@ impl State {
 
         Ok(())
     }
-
-    fn handle_incoming_heartbeat(&mut self) {
-        match self {
-            State::Connected { last_heartbeat, .. } => {
-                *last_heartbeat = SystemTime::now();
-            }
-            State::Disconnected => {
-                debug_assert!(false, "Received heartbeat in disconnected state")
-            }
-        }
-    }
-
-    /// Record the time of the last pulse measurement.
-    /// Returns the time difference between the last two pulses.
-    fn update_last_pulse_time(&mut self) -> Result<Duration> {
-        match self {
-            State::Connected { last_pulse, .. } => {
-                let new_pulse = SystemTime::now();
-                let time_delta = new_pulse
-                    .duration_since(*last_pulse)
-                    .expect("clock is monotonic");
-                *last_pulse = new_pulse;
-                Ok(time_delta)
-            }
-            State::Disconnected => {
-                bail!("Measuring pulse in disconnected state");
-            }
-        }
-    }
-
-    fn disconnect_if_last_heartbeat_older_than(&mut self, timeout: Duration) -> bool {
-        let duration_since_last_heartbeat = match self {
-            State::Connected { last_heartbeat, .. } => SystemTime::now()
-                .duration_since(*last_heartbeat)
-                .expect("clock is monotonic"),
-            State::Disconnected => return false,
-        };
-
-        if duration_since_last_heartbeat < timeout {
-            return false;
-        }
-
-        let heartbeat_timestamp = self
-            .last_heartbeat()
-            .map(|heartbeat| heartbeat.to_string())
-            .unwrap_or_else(|| "None".to_owned());
-        let seconds_since_heartbeat = duration_since_last_heartbeat.as_secs();
-        tracing::warn!(%seconds_since_heartbeat,
-            %heartbeat_timestamp,
-            "Disconnecting due to lack of heartbeat",
-        );
-
-        *self = State::Disconnected;
-
-        true
-    }
-
-    fn last_heartbeat(&self) -> Option<OffsetDateTime> {
-        match self {
-            State::Connected { last_heartbeat, .. } => Some((*last_heartbeat).into()),
-            State::Disconnected => None,
-        }
-    }
 }
 
 pub struct Actor {
-    status_sender: watch::Sender<ConnectionStatus>,
     identity_sk: x25519_dalek::StaticSecret,
     peer_id: PeerId,
-    /// How often we check ("measure pulse") for heartbeat
-    /// It should not be greater than maker's `heartbeat interval`
-    heartbeat_measuring_rate: Duration,
-    /// The interval of heartbeats from the maker
-    maker_heartbeat_interval: Duration,
-    /// Max duration since the last heartbeat until we die.
-    heartbeat_timeout: Duration,
-    /// TCP connection timeout
     connect_timeout: Duration,
     state: State,
     setup_actors: AddressMap<OrderId, setup_taker::Actor>,
@@ -170,9 +91,6 @@ pub struct Connect {
 pub struct MakerStreamMessage {
     pub item: Result<wire::MakerToTaker>,
 }
-
-/// Private message to measure the current pulse (i.e. check when we received the last heartbeat).
-struct MeasurePulse;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConnectionStatus {
@@ -206,21 +124,13 @@ pub struct TakeOrder {
 
 impl Actor {
     pub fn new(
-        status_sender: watch::Sender<ConnectionStatus>,
         identity_sk: x25519_dalek::StaticSecret,
         peer_id: PeerId,
-        maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
         environment: Environment,
     ) -> Self {
         Self {
-            status_sender,
             identity_sk,
-            heartbeat_measuring_rate: maker_heartbeat_interval.checked_div(2).expect("to divide"),
-            maker_heartbeat_interval,
-            heartbeat_timeout: maker_heartbeat_interval
-                .checked_mul(36)
-                .expect("to not overflow"),
             state: State::Disconnected,
             setup_actors: AddressMap::default(),
             connect_timeout,
@@ -310,15 +220,6 @@ impl Actor {
             Some(wire::MakerToTaker::Hello(actual_version)) => {
                 tracing::info!(%maker_identity, %actual_version, "Received Hello message from maker");
                 if proposed_version != actual_version {
-                    self.status_sender
-                        .send(ConnectionStatus::Offline {
-                            reason: Some(ConnectionCloseReason::VersionNegotiationFailed {
-                                proposed_version: proposed_version.clone(),
-                                actual_version: actual_version.clone(),
-                            }),
-                        })
-                        .expect("receiver to outlive the actor");
-
                     bail!(
                         "Network version mismatch, we proposed {proposed_version} but maker wants to use {actual_version}"
                     )
@@ -341,22 +242,12 @@ impl Actor {
         let this = ctx.address().expect("self to be alive");
 
         let mut tasks = Tasks::default();
-        tasks.add(
-            this.clone()
-                .attach_stream(read.map(move |item| MakerStreamMessage { item })),
-        );
-        tasks.add(this.send_interval(self.heartbeat_measuring_rate, || MeasurePulse));
+        tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
 
         self.state = State::Connected {
-            last_heartbeat: SystemTime::now(),
-            last_pulse: SystemTime::now(),
             write,
             _tasks: tasks,
         };
-        self.status_sender
-            .send(ConnectionStatus::Online)
-            .expect("receiver to outlive the actor");
-
         Ok(())
     }
 
@@ -378,7 +269,7 @@ impl Actor {
 
         match msg {
             wire::MakerToTaker::Heartbeat => {
-                self.state.handle_incoming_heartbeat();
+                tracing::trace!("legacy heartbeat handler - use libp2p instead");
             }
             wire::MakerToTaker::ConfirmOrder(order_id) => {
                 if let Err(NotConnected(_)) = self
@@ -443,36 +334,6 @@ impl Actor {
         }
         KeepRunning::Yes
     }
-
-    fn handle_measure_pulse(&mut self, _: MeasurePulse) {
-        tracing::trace!(target: "wire", "measuring heartbeat pulse");
-
-        match self.state.update_last_pulse_time() {
-            Ok(duration) => {
-                if duration >= self.maker_heartbeat_interval {
-                    let seconds = self.maker_heartbeat_interval.as_secs();
-                    let pulse_delta_seconds = duration.as_secs();
-
-                    tracing::warn!(
-                        "Heartbeat pulse measurements fell behind more than heartbeat interval ({seconds}), likely missing a heartbeat from the maker. Diff between pulses: {pulse_delta_seconds}"
-                    );
-                    return; // Don't try to disconnect if the measurements fell behind
-                }
-            }
-            Err(e) => {
-                tracing::debug!("{e}");
-            }
-        }
-
-        if self
-            .state
-            .disconnect_if_last_heartbeat_older_than(self.heartbeat_timeout)
-        {
-            self.status_sender
-                .send(ConnectionStatus::Offline { reason: None })
-                .expect("watch receiver to outlive the actor");
-        }
-    }
 }
 
 #[async_trait]
@@ -491,6 +352,11 @@ pub async fn connect(
     maker_addresses: Vec<SocketAddr>,
 ) {
     loop {
+        maker_online_status_feed_receiver
+            .changed()
+            .await
+            .expect("watch channel should outlive the future");
+
         let connection_status = maker_online_status_feed_receiver.borrow().clone();
         if matches!(connection_status, ConnectionStatus::Offline { .. }) {
             tracing::debug!("No connection to the maker");
@@ -525,9 +391,5 @@ pub async fn connect(
                 tokio::time::sleep(Duration::from_secs(seconds)).await;
             }
         }
-        maker_online_status_feed_receiver
-            .changed()
-            .await
-            .expect("watch channel should outlive the future");
     }
 }

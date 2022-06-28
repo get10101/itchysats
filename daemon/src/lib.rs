@@ -51,6 +51,7 @@ mod future_ext;
 pub mod libp2p_utils;
 pub mod monitor;
 pub mod noise;
+mod online_status;
 pub mod oracle;
 pub mod position_metrics;
 pub mod process_manager;
@@ -102,6 +103,7 @@ pub struct TakerActorSystem<O, W, P> {
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     _pong_actor: Address<pong::Actor>,
+    _online_status_actor: Address<online_status::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
 
@@ -128,7 +130,6 @@ where
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         price_feed_constructor: impl (Fn() -> P) + Send + 'static,
         n_payouts: usize,
-        maker_heartbeat_interval: Duration,
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
         maker_identity: Identity,
@@ -228,14 +229,23 @@ where
             .create(None)
             .spawn(&mut tasks);
 
+        let online_status_actor = online_status::Actor::new(
+            endpoint_addr.clone(),
+            maker_multiaddr
+                .clone()
+                .extract_peer_id()
+                .expect("to be able to extract peer id"),
+            maker_online_status_feed_sender,
+        )
+        .create(None)
+        .spawn(&mut tasks);
+
         tasks.add(
             connection_actor_ctx
                 .with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
-                    maker_online_status_feed_sender,
                     identity.identity_sk.clone(),
                     identity.peer_id(),
-                    maker_heartbeat_interval,
                     connect_timeout,
                     environment,
                 )),
@@ -259,6 +269,12 @@ where
         });
 
         let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
+
+        let (supervisor, ping_actor) = supervisor::Actor::new({
+            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
+        });
+        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+
         let endpoint = Endpoint::new(
             Box::new(TokioTcpConfig::new),
             identity.libp2p,
@@ -274,21 +290,21 @@ where
                 ),
             ],
             endpoint::Subscribers::new(
-                vec![],
-                vec![xtra::message_channel::MessageChannel::clone_channel(
-                    &dialer_actor,
-                )],
+                vec![
+                    xtra::message_channel::MessageChannel::clone_channel(&online_status_actor),
+                    xtra::message_channel::MessageChannel::clone_channel(&ping_actor),
+                ],
+                vec![
+                    xtra::message_channel::MessageChannel::clone_channel(&dialer_actor),
+                    xtra::message_channel::MessageChannel::clone_channel(&ping_actor),
+                    xtra::message_channel::MessageChannel::clone_channel(&online_status_actor),
+                ],
                 vec![],
                 vec![],
             ),
         );
 
         tasks.add(endpoint_context.run(endpoint));
-
-        let (supervisor, _ping_address) = supervisor::Actor::new({
-            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
-        });
-        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
 
         let dialer_supervisor = dialer_supervisor.create(None).spawn(&mut tasks);
         let offers_supervisor = offers_supervisor.create(None).spawn(&mut tasks);
@@ -324,6 +340,7 @@ where
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _tasks: tasks,
             maker_online_status_feed_receiver,
+            _online_status_actor: online_status_actor,
             _pong_actor: pong_address,
         })
     }
