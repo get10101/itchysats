@@ -26,7 +26,6 @@ use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIStopAll;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
@@ -327,8 +326,6 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
-
-impl IPromiseIStopAll for Actor {}
 
 #[xtra_productivity]
 impl Actor {
