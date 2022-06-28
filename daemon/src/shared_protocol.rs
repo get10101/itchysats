@@ -1,7 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::secp256k1::ecdsa::Signature;
 use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Transaction;
@@ -10,12 +9,13 @@ use maia::compute_adaptor_pk;
 use maia::spending_tx_sighash;
 use maia_core::interval;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::PartyParams;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
 pub(crate) async fn verify_cets(
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
+    (oracle_pk, nonce_pks): (XOnlyPublicKey, Vec<XOnlyPublicKey>),
     counterparty: PartyParams,
     own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
     counterparty_cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
@@ -60,10 +60,11 @@ pub(crate) fn verify_adaptor_signature(
     encryption_point: &bdk::bitcoin::PublicKey,
     pk: &bdk::bitcoin::PublicKey,
 ) -> Result<()> {
-    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount)
+        .context("could not obtain sighash")?;
 
     encsig
-        .verify(SECP256K1, &sighash, &pk.key, &encryption_point.key)
+        .verify(SECP256K1, &sighash, &pk.inner, &encryption_point.inner)
         .context("failed to verify encsig spend tx")
 }
 
@@ -74,8 +75,9 @@ pub(crate) fn verify_signature(
     sig: &Signature,
     pk: &bdk::bitcoin::PublicKey,
 ) -> Result<()> {
-    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
-    SECP256K1.verify(&sighash, sig, &pk.key)?;
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount)
+        .context("could not obtain sighash")?;
+    SECP256K1.verify_ecdsa(&sighash, sig, &pk.inner)?;
     Ok(())
 }
 
@@ -84,7 +86,7 @@ pub(crate) fn verify_cet_encsig(
     encsig: &EcdsaAdaptorSignature,
     digits: &interval::Digits,
     pk: &bdk::bitcoin::PublicKey,
-    (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    (oracle_pk, nonce_pks): (&XOnlyPublicKey, &[XOnlyPublicKey]),
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {

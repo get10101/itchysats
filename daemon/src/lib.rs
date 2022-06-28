@@ -9,7 +9,7 @@ use bdk::FeeRate;
 use connection::ConnectionStatus;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::olivia;
 use model::Identity;
@@ -124,7 +124,7 @@ where
     pub fn new<M>(
         db: sqlite_db::Connection,
         wallet_actor_addr: Address<W>,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         identity: Identities,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,

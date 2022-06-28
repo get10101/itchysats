@@ -74,11 +74,11 @@ impl From<OrderId> for model::OrderId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SecretKey(secp256k1_zkp::key::SecretKey);
+pub struct SecretKey(secp256k1_zkp::SecretKey);
 
 impl fmt::Display for SecretKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        write!(f, "{}", self.0.display_secret())
     }
 }
 
@@ -86,19 +86,19 @@ impl FromStr for SecretKey {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let sk = secp256k1_zkp::key::SecretKey::from_str(s)?;
+        let sk = secp256k1_zkp::SecretKey::from_str(s)?;
         Ok(Self(sk))
     }
 }
 
-impl From<SecretKey> for secp256k1_zkp::key::SecretKey {
+impl From<SecretKey> for secp256k1_zkp::SecretKey {
     fn from(sk: SecretKey) -> Self {
         sk.0
     }
 }
 
-impl From<secp256k1_zkp::key::SecretKey> for SecretKey {
-    fn from(key: secp256k1_zkp::key::SecretKey) -> Self {
+impl From<secp256k1_zkp::SecretKey> for SecretKey {
+    fn from(key: secp256k1_zkp::SecretKey) -> Self {
         Self(key)
     }
 }

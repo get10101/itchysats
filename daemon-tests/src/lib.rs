@@ -3,13 +3,13 @@ use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
 use daemon::auto_rollover;
-use daemon::bdk::bitcoin::secp256k1::schnorrsig;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
 use daemon::bdk::bitcoin::Txid;
 use daemon::connection::connect;
 use daemon::connection::ConnectionStatus;
 use daemon::libp2p_utils::create_connect_multiaddr;
+use daemon::maia_core::secp256k1_zkp::XOnlyPublicKey;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::Feeds;
@@ -56,11 +56,9 @@ pub mod flow;
 pub mod maia;
 pub mod mocks;
 
-fn oracle_pk() -> schnorrsig::PublicKey {
-    schnorrsig::PublicKey::from_str(
-        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7",
-    )
-    .unwrap()
+fn oracle_pk() -> XOnlyPublicKey {
+    XOnlyPublicKey::from_str("ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7")
+        .unwrap()
 }
 
 pub async fn start_both() -> (Maker, Taker) {
@@ -77,7 +75,7 @@ pub async fn start_both() -> (Maker, Taker) {
 
 #[derive(Clone, Copy)]
 pub struct MakerConfig {
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
@@ -116,7 +114,7 @@ impl Default for MakerConfig {
 
 #[derive(Clone, Copy)]
 pub struct TakerConfig {
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
     n_payouts: usize,
 }

@@ -10,7 +10,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use bdk::bitcoin::secp256k1::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::market_closing_price;
 use model::Cfd;
@@ -50,7 +50,7 @@ pub struct ProposeSettlement {
 pub struct Actor<O, W> {
     db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     projection_actor: xtra::Address<projection::Actor>,
     process_manager_actor: xtra::Address<process_manager::Actor>,
     conn_actor: xtra::Address<connection::Actor>,
@@ -72,7 +72,7 @@ where
     pub fn new(
         db: sqlite_db::Connection,
         wallet: xtra::Address<W>,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         projection_actor: xtra::Address<projection::Actor>,
         process_manager_actor: xtra::Address<process_manager::Actor>,
         conn_actor: xtra::Address<connection::Actor>,

@@ -18,7 +18,7 @@ use daemon::rollover;
 use daemon::seed::Identities;
 use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -83,7 +83,7 @@ where
     pub fn new<M>(
         db: sqlite_db::Connection,
         wallet_addr: Address<W>,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
         settlement_interval: time::Duration,

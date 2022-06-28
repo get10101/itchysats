@@ -28,7 +28,6 @@ use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
 use bdk::bitcoin::secp256k1::SecretKey;
-use bdk::bitcoin::secp256k1::Signature;
 use bdk::bitcoin::util::key::PublicKey;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
@@ -44,6 +43,7 @@ use itertools::Itertools;
 use maia::spending_tx_sighash;
 use maia_core::generate_payouts;
 use maia_core::secp256k1_zkp;
+use maia_core::secp256k1_zkp::ecdsa::Signature;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::SECP256K1;
 use maia_core::Payout;
@@ -2059,9 +2059,14 @@ impl SettlementTransaction {
             &self.unsigned_transaction,
             &self.lock_desc,
             self.lock_amount,
-        );
+        )
+        .context("could not obtain sighash")?;
         SECP256K1
-            .verify(&sighash, &counterparty_signature, &self.counterparty_pk.key)
+            .verify_ecdsa(
+                &sighash,
+                &counterparty_signature,
+                &self.counterparty_pk.inner,
+            )
             .context("Failed to verify counterparty signature")?;
 
         Ok(Self {
@@ -2118,7 +2123,7 @@ impl Dlc {
         )
         .context("Unable to build collaborative close transaction")?;
 
-        let sig = SECP256K1.sign(&sighash, &self.identity);
+        let sig = SECP256K1.sign_ecdsa(&sighash, &self.identity);
 
         Ok((tx, sig, lock_amount))
     }
@@ -2150,7 +2155,7 @@ impl Dlc {
         )
         .context("Unable to build collaborative close transaction")?;
 
-        let own_signature = SECP256K1.sign(&sighash, &self.identity);
+        let own_signature = SECP256K1.sign_ecdsa(&sighash, &self.identity);
 
         let own_pk = bitcoin::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,
@@ -2177,9 +2182,14 @@ impl Dlc {
         counterparty_sig: Signature,
         lock_amount: Amount,
     ) -> Result<Transaction> {
-        let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount);
+        let sighash = spending_tx_sighash(&spend_tx, &self.lock.1, lock_amount)
+            .context("could not obtain sighash")?;
         SECP256K1
-            .verify(&sighash, &counterparty_sig, &self.identity_counterparty.key)
+            .verify_ecdsa(
+                &sighash,
+                &counterparty_sig,
+                &self.identity_counterparty.inner,
+            )
             .context("Failed to verify counterparty signature")?;
 
         let own_pk = bitcoin::util::key::PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
@@ -2211,8 +2221,9 @@ impl Dlc {
             &self.refund.0,
             &self.commit.2,
             Amount::from_sat(self.commit.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
+        )
+        .context("could not obtain sighash")?;
+        let our_sig = SECP256K1.sign_ecdsa(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
             bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
@@ -2233,8 +2244,9 @@ impl Dlc {
             &self.commit.0,
             &self.lock.1,
             Amount::from_sat(self.lock.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
+        )
+        .context("could not obtain sighash")?;
+        let our_sig = SECP256K1.sign_ecdsa(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
             bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
@@ -2289,8 +2301,9 @@ impl Dlc {
             &cet,
             &self.commit.2,
             Amount::from_sat(self.commit.0.output[0].value),
-        );
-        let our_sig = SECP256K1.sign(&sig_hash, &self.identity);
+        )
+        .context("could not obtain sighash")?;
+        let our_sig = SECP256K1.sign_ecdsa(&sig_hash, &self.identity);
         let our_pubkey = bitcoin::util::key::PublicKey::new(
             bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
@@ -2430,7 +2443,6 @@ mod tests {
     use super::*;
     use bdk::bitcoin;
     use bdk::bitcoin::secp256k1::SecretKey;
-    use bdk::bitcoin::util::psbt::Global;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
     use bdk_ext::keypair;
     use bdk_ext::SecretKeyExt;
@@ -4430,18 +4442,16 @@ mod tests {
         // pulled in from github.com-1ecc6299db9ec823/bitcoin-0.27.1/src/util/psbt/mod.rs:238
 
         PartiallySignedTransaction {
-            global: Global {
-                unsigned_tx: Transaction {
-                    version: 2,
-                    lock_time: 0,
-                    input: vec![],
-                    output: vec![],
-                },
-                xpub: Default::default(),
-                version: 0,
-                proprietary: BTreeMap::new(),
-                unknown: BTreeMap::new(),
+            unsigned_tx: Transaction {
+                version: 2,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
             },
+            xpub: Default::default(),
+            version: 0,
+            proprietary: BTreeMap::new(),
+            unknown: BTreeMap::new(),
             inputs: vec![],
             outputs: vec![],
         }

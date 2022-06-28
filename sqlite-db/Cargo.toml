@@ -8,13 +8,13 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 async-stream = "0.3"
-bdk = "0.18"
+bdk = "0.19.0"
 chashmap-async = "0.1"
 futures = { version = "0.3", default-features = false }
 hex = "0.4"
 libp2p-core = { version = "0.33", default-features = false }
 maia = "0.2.0"
-maia-core = "0.1.0"
+maia-core = "0.1.1"
 model = { path = "../model" }
 rayon = "1.5"
 rust_decimal = "1.25"

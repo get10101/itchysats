@@ -3,7 +3,7 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::olivia;
 use model::olivia::next_announcement_after;
 use model::olivia::BitMexPriceEventId;
@@ -33,7 +33,7 @@ const SYNC_ANNOUNCEMENTS_INTERVAL: core::time::Duration = std::time::Duration::f
 const SYNC_ATTESTATIONS_INTERVAL: core::time::Duration = std::time::Duration::from_secs(30);
 
 pub struct Actor {
-    announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<schnorrsig::PublicKey>)>,
+    announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<XOnlyPublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
     executor: command::Executor,
     tasks: Tasks,
@@ -92,7 +92,7 @@ pub struct Attestation(olivia::Attestation);
 struct NewAnnouncementFetched {
     id: BitMexPriceEventId,
     expected_outcome_time: OffsetDateTime,
-    nonce_pks: Vec<schnorrsig::PublicKey>,
+    nonce_pks: Vec<XOnlyPublicKey>,
 }
 
 /// A module-private message to allow parallelization of fetching attestations.

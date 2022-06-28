@@ -5,14 +5,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-bdk = { version = "0.18", default-features = false }
+bdk = { version = "0.19.0", default-features = false }
 conquer-once = "0.3"
 hex = "0.4"
 itertools = "0.10"
 libp2p-core = { version = "0.33", default-features = false, features = ["serde"] }
 maia = "0.2.0"
-maia-core = "0.1.0"
-maia-deprecated = { git = "https://github.com/comit-network/maia", rev = "e419cb2cf19bed6ec53eaa3672408a6205a9b705", package = "maia" } # includes subtract-fee bug, needed for protocols over legacy networking
+maia-core = "0.1.1"
+maia-deprecated = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia" } # includes subtract-fee bug, needed for protocols over legacy networking
 nalgebra = { version = "0.31", default-features = false, features = ["std"] }
 ndarray = "0.15.4"
 ndarray_einsum_beta = "0.7.0"

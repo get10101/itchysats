@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 async-trait = "0.1.56"
-bdk = { version = "0.18", default-features = false, features = ["electrum"] }
+bdk = { version = "0.19.0", default-features = false, features = ["electrum"] }
 clap = { version = "3", features = ["derive"] }
 conquer-once = "0.3"
 daemon = { path = "../daemon" }
@@ -16,7 +16,7 @@ hex = "0.4"
 http-api-problem = { version = "0.53.0", features = ["rocket"] }
 libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] }
 maia = "0.2.0"
-maia-core = "0.1.0"
+maia-core = "0.1.1"
 model = { path = "../model" }
 prometheus = { version = "0.13", default-features = false }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }

@@ -2,7 +2,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk_ext::new_test_wallet;
 use daemon::bdk;
-use daemon::bdk::bitcoin::ecdsa;
 use daemon::bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Txid;
@@ -82,7 +81,7 @@ pub trait Wallet {
 /// tells the user they have plenty of moneys
 fn dummy_wallet_info() -> Result<WalletInfo> {
     let s = Secp256k1::new();
-    let public_key = ecdsa::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
+    let public_key = bdk::bitcoin::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
     let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
 
     Ok(WalletInfo {
