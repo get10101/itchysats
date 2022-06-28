@@ -52,8 +52,7 @@ pub struct Endpoint {
     transport_fn: Box<dyn Fn() -> Boxed<Connection> + Send + 'static>,
     tasks: Tasks,
     controls: HashMap<PeerId, (yamux::Control, Tasks)>,
-    inbound_substream_channels:
-        HashMap<&'static str, MessageChannel<NewInboundSubstream, ()>>,
+    inbound_substream_channels: HashMap<&'static str, MessageChannel<NewInboundSubstream, ()>>,
     listen_addresses: HashSet<Multiaddr>,
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
@@ -209,10 +208,7 @@ impl Endpoint {
         transport: Box<dyn Fn() -> T + Send + 'static>,
         identity: Keypair,
         connection_timeout: Duration,
-        inbound_substream_handlers: [(
-            &'static str,
-            MessageChannel<NewInboundSubstream, ()>,
-        ); N],
+        inbound_substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); N],
         subscribers: Subscribers,
     ) -> Self
     where
@@ -314,12 +310,7 @@ impl Endpoint {
                 let inbound_substream_channels = self
                     .inbound_substream_channels
                     .iter()
-                    .map(|(proto, channel)| {
-                        (
-                            proto.to_owned(),
-                            channel.clone()
-                        )
-                    })
+                    .map(|(proto, channel)| (proto.to_owned(), channel.clone()))
                     .collect::<HashMap<_, _>>();
 
                 async move {

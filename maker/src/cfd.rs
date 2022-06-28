@@ -1,5 +1,6 @@
 use crate::collab_settlement;
 use crate::connection;
+use crate::connection::NoConnection;
 use crate::contract_setup;
 use crate::future_ext::FutureExt;
 use crate::metrics::time_to_first_position;
@@ -9,14 +10,17 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::command;
 use daemon::libp2p_utils::can_use_libp2p;
 use daemon::oracle;
+use daemon::oracle::NoAnnouncement;
 use daemon::process_manager;
 use daemon::projection;
 use daemon::wallet;
 use daemon::wire;
 use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::PartyParams;
 use model::libp2p::PeerId;
 use model::olivia;
 use model::olivia::{Announcement, BitMexPriceEventId};
@@ -39,17 +43,13 @@ use model::TxFeeRate;
 use model::Usd;
 use sqlite_db;
 use std::collections::HashSet;
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use maia_core::PartyParams;
 use time::Duration;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
-use daemon::oracle::NoAnnouncement;
 use xtras::address_map::NotConnected;
 use xtras::AddressMap;
 use xtras::SendAsyncSafe;
-use crate::connection::NoConnection;
 
 const HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
@@ -288,10 +288,10 @@ where
 impl<O, T, W> Actor<O, T, W>
 where
     O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
-       + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
+        + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
-       + xtra::Handler<connection::TakerMessageIgnoreErr, Return = ()>
-       + xtra::Handler<connection::RegisterRollover, Return = ()>,
+        + xtra::Handler<connection::TakerMessageIgnoreErr, Return = ()>
+        + xtra::Handler<connection::RegisterRollover, Return = ()>,
     W: 'static,
 {
     async fn handle_propose_rollover(
@@ -424,7 +424,12 @@ where
             (self.oracle_pk, announcement),
             self.wallet.clone().into(),
             self.wallet.clone().into(),
-            (self.takers.clone().into(), self.takers.clone().into(), self.takers.clone().into(), taker_id),
+            (
+                self.takers.clone().into(),
+                self.takers.clone().into(),
+                self.takers.clone().into(),
+                taker_id,
+            ),
             self.time_to_first_position.clone(),
         )
         .create(None)

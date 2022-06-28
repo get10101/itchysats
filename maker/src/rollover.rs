@@ -1,8 +1,10 @@
 use crate::connection;
+use crate::connection::NoConnection;
 use anyhow::Context as _;
 use anyhow::Result;
 use daemon::command;
 use daemon::oracle;
+use daemon::oracle::NoAnnouncement;
 use daemon::process_manager;
 use daemon::setup_contract_deprecated;
 use daemon::wire;
@@ -11,6 +13,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
+use model::olivia::Announcement;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -23,10 +26,7 @@ use model::TxFeeRate;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use daemon::oracle::NoAnnouncement;
-use model::olivia::Announcement;
 use xtras::address_map::IPromiseIStopAll;
-use crate::connection::NoConnection;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
 /// funding rate
@@ -223,12 +223,17 @@ impl Actor {
         let funding_fee = *rollover_params.funding_fee();
 
         let rollover_fut = setup_contract_deprecated::roll_over(
-            self.send_to_taker_actor_ignore_err.clone().into_sink().with(move |msg| {
-                future::ok(connection::TakerMessageIgnoreErr(connection::TakerMessage {
-                    taker_id,
-                    msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
-                }))
-            }),
+            self.send_to_taker_actor_ignore_err
+                .clone()
+                .into_sink()
+                .with(move |msg| {
+                    future::ok(connection::TakerMessageIgnoreErr(
+                        connection::TakerMessage {
+                            taker_id,
+                            msg: wire::MakerToTaker::RolloverProtocol { order_id, msg },
+                        },
+                    ))
+                }),
             receiver,
             (self.oracle_pk, announcement),
             rollover_params,

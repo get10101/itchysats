@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
-use xtra::{Actor, Context};
 use std::time::Duration;
 use tokio::time::timeout;
+use xtra::{Actor, Context};
 
 pub trait HandlerTimeoutExt<A> {
     fn with_handler_timeout(self, timeout: Duration) -> TimeoutManager<A>;
@@ -9,10 +9,7 @@ pub trait HandlerTimeoutExt<A> {
 
 impl<A> HandlerTimeoutExt<A> for Context<A> {
     fn with_handler_timeout(self, timeout: Duration) -> TimeoutManager<A> {
-        TimeoutManager {
-            ctx: self,
-            timeout,
-        }
+        TimeoutManager { ctx: self, timeout }
     }
 }
 
@@ -22,7 +19,8 @@ pub struct TimeoutManager<A> {
 }
 
 impl<A> TimeoutManager<A>
-    where A: Actor
+where
+    A: Actor,
 {
     pub async fn run(mut self, mut actor: A) -> A::Stop {
         loop {

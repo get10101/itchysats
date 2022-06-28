@@ -1,7 +1,7 @@
-use xtra::refcount::RefCounter;
-use xtra::message_channel::MessageChannel;
 use async_trait::async_trait;
 use std::fmt;
+use xtra::message_channel::MessageChannel;
+use xtra::refcount::RefCounter;
 
 #[async_trait]
 pub trait SendAsyncSafe<M: Send + 'static, R> {
@@ -25,7 +25,7 @@ where
         let _ = self.send(msg).split_receiver().await;
 
         if self.is_connected() {
-           Ok(())
+            Ok(())
         } else {
             Err(xtra::Error::Disconnected)
         }
@@ -62,7 +62,8 @@ where
 }
 #[async_trait]
 impl<M, Rc: RefCounter> SendAsyncSafe<M, ()> for MessageChannel<M, (), Rc>
-    where M: Send + 'static
+where
+    M: Send + 'static,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         let _ = self.send(msg).split_receiver().await;

@@ -56,10 +56,7 @@ async fn main() -> Result<()> {
         Box::new(TokioTcpConfig::new),
         id,
         Duration::from_secs(30),
-        [(
-            "/hello-world/1.0.0",
-            hello_world_addr.clone().into(),
-        )],
+        [("/hello-world/1.0.0", hello_world_addr.clone().into())],
         Subscribers::default(),
     )
     .create(None)

@@ -1,6 +1,7 @@
 use crate::command;
 use crate::future_ext::FutureExt;
 use crate::oracle;
+use crate::oracle::NoAnnouncement;
 use crate::rollover;
 use crate::rollover::protocol::*;
 use crate::shared_protocol::format_expect_msg_within;
@@ -12,8 +13,8 @@ use futures::SinkExt;
 use futures::StreamExt;
 use maia_core::secp256k1_zkp::schnorrsig;
 use model::libp2p::PeerId;
-use model::olivia::BitMexPriceEventId;
 use model::olivia;
+use model::olivia::BitMexPriceEventId;
 use model::Dlc;
 use model::OrderId;
 use model::Role;
@@ -26,7 +27,6 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
-use crate::oracle::NoAnnouncement;
 
 /// The duration that the taker waits until a decision (accept/reject) is expected from the maker
 ///
@@ -38,7 +38,8 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Actor {
     endpoint: Address<Endpoint>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
+    get_announcement:
+        MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
     n_payouts: usize,
     tasks: Tasks,
     executor: command::Executor,
@@ -64,7 +65,10 @@ impl Actor {
         endpoint: Address<Endpoint>,
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
+        get_announcement: MessageChannel<
+            oracle::GetAnnouncement,
+            Result<olivia::Announcement, NoAnnouncement>,
+        >,
         n_payouts: usize,
     ) -> Self {
         Self {

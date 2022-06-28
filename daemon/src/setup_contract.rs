@@ -13,6 +13,7 @@ use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::secp256k1::schnorrsig;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk_ext::keypair;
 use futures::Sink;
@@ -35,7 +36,6 @@ use model::CET_TIMELOCK;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::time::Duration;
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use xtra::prelude::MessageChannel;
 
 /// How long contract setup protocol waits for the next message before giving up

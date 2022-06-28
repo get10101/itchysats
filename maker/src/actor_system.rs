@@ -3,6 +3,7 @@ use crate::connection;
 use crate::metrics::time_to_first_position;
 use anyhow::Result;
 use bdk::bitcoin;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Txid;
 use daemon::archive_closed_cfds;
@@ -11,6 +12,7 @@ use daemon::collab_settlement;
 use daemon::command;
 use daemon::monitor;
 use daemon::oracle;
+use daemon::oracle::NoAnnouncement;
 use daemon::position_metrics;
 use daemon::process_manager;
 use daemon::projection;
@@ -19,6 +21,8 @@ use daemon::seed::Identities;
 use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
 use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::PartyParams;
+use model::olivia::Announcement;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -29,23 +33,19 @@ use model::TxFeeRate;
 use model::Usd;
 use std::net::SocketAddr;
 use std::time::Duration;
-use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
-use maia_core::PartyParams;
 use tokio_tasks::Tasks;
 use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
 use xtra::Handler;
-use daemon::oracle::NoAnnouncement;
-use model::olivia::Announcement;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::{HandlerTimeoutExt, supervisor};
 use xtras::supervisor::always_restart_after;
+use xtras::{supervisor, HandlerTimeoutExt};
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
@@ -75,7 +75,9 @@ pub struct ActorSystem<O: 'static, W: 'static> {
 
 impl<O, W> ActorSystem<O, W>
 where
-    O: Handler<oracle::MonitorAttestation, Return = ()> + Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>> + Actor<Stop = ()>,
+    O: Handler<oracle::MonitorAttestation, Return = ()>
+        + Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+        + Actor<Stop = ()>,
     W: Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
         + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
         + Handler<wallet::Withdraw, Return = Result<Txid>>
@@ -102,7 +104,7 @@ where
             + Handler<monitor::Sync, Return = ()>
             + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
             + Handler<monitor::TryBroadcastTransaction, Return = Result<()>>
-            + Handler<monitor::MonitorCetFinality,Return = Result<()>>
+            + Handler<monitor::MonitorCetFinality, Return = Result<()>>
             + Actor<Stop = ()>,
     {
         let (monitor_addr, monitor_ctx) = Context::new(None);
@@ -196,28 +198,19 @@ where
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
-                (
-                    rollover::PROTOCOL,
-                    libp2p_rollover_addr.into(),
-                ),
+                (rollover::PROTOCOL, libp2p_rollover_addr.into()),
                 (
                     collab_settlement::PROTOCOL,
                     libp2p_collab_settlement_addr.into(),
                 ),
-                (
-                    xtra_libp2p_ping::PROTOCOL_NAME,
-                    pong_address.clone().into(),
-                ),
+                (xtra_libp2p_ping::PROTOCOL_NAME, pong_address.clone().into()),
             ],
             endpoint::Subscribers::new(
                 vec![
                     ping_address.clone().into(),
                     maker_offer_address.clone().into(),
                 ],
-                vec![
-                    ping_address.into(),
-                    maker_offer_address.into(),
-                ],
+                vec![ping_address.into(), maker_offer_address.into()],
                 vec![],
                 vec![listener_actor.into()],
             ),

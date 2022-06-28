@@ -1,4 +1,5 @@
 use crate::connection;
+use crate::connection::NoConnection;
 use crate::metrics::time_to_first_position;
 use anyhow::Context;
 use anyhow::Result;
@@ -13,8 +14,8 @@ use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use maia_core::PartyParams;
 use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::PartyParams;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;
@@ -26,7 +27,6 @@ use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIStopAll;
 use xtras::SendAsyncSafe;
-use crate::connection::NoConnection;
 
 pub struct Actor {
     order: Order,
@@ -99,10 +99,12 @@ impl Actor {
 
         let contract_future = setup_contract_deprecated::new(
             self.taker_ignore_err.clone().into_sink().with(move |msg| {
-                future::ok(connection::TakerMessageIgnoreErr(connection::TakerMessage {
-                    taker_id,
-                    msg: wire::MakerToTaker::Protocol { order_id, msg },
-                }))
+                future::ok(connection::TakerMessageIgnoreErr(
+                    connection::TakerMessage {
+                        taker_id,
+                        msg: wire::MakerToTaker::Protocol { order_id, msg },
+                    },
+                ))
             }),
             receiver,
             (self.oracle_pk, self.announcement.clone()),

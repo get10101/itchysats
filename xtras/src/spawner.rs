@@ -55,7 +55,7 @@ where
     E: Send + 'static,
 {
     type Return = ();
-    
+
     async fn handle(&mut self, msg: SpawnFallible<T, EH>, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we are alive");
         let id = Uuid::new_v4();

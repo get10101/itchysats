@@ -1,3 +1,4 @@
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::command;
 use crate::connection;
 use crate::process_manager;
@@ -13,6 +14,7 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::PartyParams;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Leverage;
@@ -21,12 +23,10 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use std::time::Duration;
-use maia_core::PartyParams;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::IPromiseIStopAll;
-use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 
 /// The maximum amount of time we give the maker to send us a response.
 const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -113,7 +113,9 @@ impl Actor {
         self.setup_msg_sender = Some(sender);
 
         let contract_future = setup_contract_deprecated::new(
-            self.maker.clone().into_sink()
+            self.maker
+                .clone()
+                .into_sink()
                 .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
             receiver,
             (self.oracle_pk, self.announcement.clone()),

@@ -33,15 +33,15 @@ use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::{HandlerTimeoutExt, supervisor};
 use xtras::supervisor::always_restart;
 use xtras::supervisor::always_restart_after;
+use xtras::{supervisor, HandlerTimeoutExt};
 
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 pub use bdk;
 pub use maia;
 pub use maia_core;
 use maia_core::PartyParams;
-use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 
 pub mod archive_closed_cfds;
 pub mod archive_failed_cfds;
@@ -112,13 +112,18 @@ pub struct TakerActorSystem<O, W, P> {
 
 impl<O, W, P> TakerActorSystem<O, W, P>
 where
-    O: Handler<oracle::MonitorAttestation, Return = ()> + Handler<oracle::GetAnnouncement, Return = Result<olivia::Announcement, oracle::NoAnnouncement>> + Actor<Stop = ()>,
+    O: Handler<oracle::MonitorAttestation, Return = ()>
+        + Handler<
+            oracle::GetAnnouncement,
+            Return = Result<olivia::Announcement, oracle::NoAnnouncement>,
+        > + Actor<Stop = ()>,
     W: Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
         + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
         + Handler<wallet::Withdraw, Return = Result<Txid>>
         + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
-    P: Handler<xtra_bitmex_price_feed::LatestQuote, Return = Option<Quote>> + Actor<Stop = xtra_bitmex_price_feed::Error>,
+    P: Handler<xtra_bitmex_price_feed::LatestQuote, Return = Option<Quote>>
+        + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
@@ -266,21 +271,10 @@ where
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
-                (
-                    xtra_libp2p_ping::PROTOCOL_NAME,
-                    pong_address.clone().into(),
-                ),
-                (
-                    xtra_libp2p_offer::PROTOCOL_NAME,
-                    libp2p_offer_addr.into(),
-                ),
+                (xtra_libp2p_ping::PROTOCOL_NAME, pong_address.clone().into()),
+                (xtra_libp2p_offer::PROTOCOL_NAME, libp2p_offer_addr.into()),
             ],
-            endpoint::Subscribers::new(
-                vec![],
-                vec![dialer_actor.into()],
-                vec![],
-                vec![],
-            ),
+            endpoint::Subscribers::new(vec![], vec![dialer_actor.into()], vec![], vec![]),
         );
 
         tasks.add(endpoint_context.run(endpoint));

@@ -9,10 +9,10 @@ use libp2p_core::Multiaddr;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_tasks::Tasks;
+use xtra::message_channel::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Address;
-use xtra::message_channel::MessageChannel;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::libp2p::identity::Keypair;
@@ -243,7 +243,7 @@ async fn chooses_first_protocol_in_list_of_multiple() {
     let (alice, bob, _) = alice_and_bob(
         [(
             "/hello-world/1.0.0",
-           alice_hello_world_handler.clone().into(),
+            alice_hello_world_handler.clone().into(),
         )],
         [],
     )
@@ -271,14 +271,8 @@ async fn disallow_duplicate_handlers() {
     let hello_world_handler = HelloWorld::default().create(None).spawn_global();
 
     make_node([
-        (
-            "/hello-world/1.0.0",
-            hello_world_handler.clone().into(),
-        ),
-        (
-            "/hello-world/1.0.0",
-            hello_world_handler.clone().into(),
-        ),
+        ("/hello-world/1.0.0", hello_world_handler.clone().into()),
+        ("/hello-world/1.0.0", hello_world_handler.clone().into()),
     ]);
 }
 
@@ -311,14 +305,8 @@ async fn falls_back_to_next_protocol_if_unsupported() {
 }
 
 async fn alice_and_bob<const AN: usize, const BN: usize>(
-    alice_inbound_substream_handlers: [(
-        &'static str,
-        MessageChannel<NewInboundSubstream, ()>,
-    ); AN],
-    bob_inbound_substream_handlers: [(
-        &'static str,
-        MessageChannel<NewInboundSubstream, ()>,
-    ); BN],
+    alice_inbound_substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); AN],
+    bob_inbound_substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); BN],
 ) -> (Node, Node, Multiaddr) {
     let port = rand::random::<u16>();
 
@@ -356,10 +344,7 @@ struct Node {
 }
 
 fn make_node<const N: usize>(
-    substream_handlers: [(
-        &'static str,
-        MessageChannel<NewInboundSubstream, ()>,
-    ); N],
+    substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); N],
 ) -> Node {
     let id = Keypair::generate_ed25519();
     let peer_id = id.public().to_peer_id();
@@ -374,8 +359,7 @@ fn make_node<const N: usize>(
         Duration::from_secs(20),
         substream_handlers,
         Subscribers::new(
-            vec![
-                subscriber_stats.clone().into()],
+            vec![subscriber_stats.clone().into()],
             vec![subscriber_stats.clone().into()],
             vec![subscriber_stats.clone().into()],
             vec![subscriber_stats.clone().into()],

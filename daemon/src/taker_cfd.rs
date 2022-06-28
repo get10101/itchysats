@@ -1,3 +1,4 @@
+use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::collab_settlement;
 use crate::collab_settlement::taker::Settle;
 use crate::connection;
@@ -13,7 +14,6 @@ use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::schnorrsig;
 use maia_core::PartyParams;
 use model::libp2p::PeerId;
-use model::{market_closing_price, olivia};
 use model::Cfd;
 use model::Identity;
 use model::Leverage;
@@ -23,13 +23,13 @@ use model::Origin;
 use model::Price;
 use model::Role;
 use model::Usd;
+use model::{market_closing_price, olivia};
 use sqlite_db;
 use time::OffsetDateTime;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
-use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 
 #[derive(Clone)]
 pub struct CurrentMakerOffers(pub Option<MakerOffers>);
@@ -168,8 +168,12 @@ impl<O, W> Actor<O, W> {
 #[xtra_productivity]
 impl<O, W> Actor<O, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<olivia::Announcement, oracle::NoAnnouncement>> + xtra::Handler<oracle::MonitorAttestation>,
-    W: xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>> + xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>,
+    O: xtra::Handler<
+            oracle::GetAnnouncement,
+            Return = Result<olivia::Announcement, oracle::NoAnnouncement>,
+        > + xtra::Handler<oracle::MonitorAttestation>,
+    W: xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
+        + xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>,
 {
     async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
         let TakeOffer {

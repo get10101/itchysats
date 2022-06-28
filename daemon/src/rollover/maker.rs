@@ -1,6 +1,7 @@
 use crate::command;
 use crate::future_ext::FutureExt;
 use crate::oracle;
+use crate::oracle::NoAnnouncement;
 use crate::rollover::protocol::*;
 use crate::shared_protocol::format_expect_msg_within;
 use anyhow::Context;
@@ -13,8 +14,8 @@ use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::schnorrsig;
-use model::olivia::BitMexPriceEventId;
 use model::olivia;
+use model::olivia::BitMexPriceEventId;
 use model::Dlc;
 use model::FundingRate;
 use model::OrderId;
@@ -28,7 +29,6 @@ use xtra::message_channel::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
-use crate::oracle::NoAnnouncement;
 
 use super::protocol;
 
@@ -47,7 +47,8 @@ pub struct Actor {
     tasks: Tasks,
     protocol_tasks: HashMap<OrderId, Tasks>,
     oracle_pk: schnorrsig::PublicKey,
-    get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
+    get_announcement:
+        MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
     n_payouts: usize,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
     executor: command::Executor,
@@ -57,7 +58,10 @@ impl Actor {
     pub fn new(
         executor: command::Executor,
         oracle_pk: schnorrsig::PublicKey,
-        get_announcement: MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
+        get_announcement: MessageChannel<
+            oracle::GetAnnouncement,
+            Result<olivia::Announcement, NoAnnouncement>,
+        >,
         n_payouts: usize,
     ) -> Self {
         Self {
