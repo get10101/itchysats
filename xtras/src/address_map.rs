@@ -135,7 +135,7 @@ mod tests {
     use xtra::Context;
 
     #[tokio::test]
-    async fn gc_removes_address_if_actor_returns_stop_all() {
+    async fn gc_removes_address_if_address_disconnects() {
         let mut tasks = Tasks::default();
         let mut map = AddressMap::default();
         let (addr_1, ctx_1) = Context::new(None);
@@ -166,7 +166,7 @@ mod tests {
     #[xtra_productivity::xtra_productivity]
     impl Dummy {
         fn handle_shutdown(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-            ctx.stop_all()
+            ctx.stop_self()
         }
     }
 }

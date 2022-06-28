@@ -37,7 +37,7 @@ impl Actor {
     fn stop_with_error(&mut self, e: Error, ctx: &mut xtra::Context<Self>) {
         tracing::debug!("Stopping listener with an error: {e:#}");
         self.stop_reason = Some(e);
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn is_listening(&self) -> Result<bool> {

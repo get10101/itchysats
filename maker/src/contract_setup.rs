@@ -142,7 +142,7 @@ impl Actor {
             tracing::warn!("Failed to record potential time to first position: {e:#}");
         };
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -154,7 +154,7 @@ impl Actor {
             tracing::error!("Failed to execute `reject_contract_setup` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -166,7 +166,7 @@ impl Actor {
             tracing::error!("Failed to execute `fail_contract_setup` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn forward_protocol_msg(&self, msg: wire::SetupMsg) -> Result<()> {

@@ -153,7 +153,7 @@ impl Actor {
             tracing::warn!("Failed to execute `reject_contract_setup` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     fn handle(&mut self, msg: wire::SetupMsg) {
@@ -171,7 +171,7 @@ impl Actor {
             tracing::warn!("Failed to execute `complete_contract_setup` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     fn handle(&mut self, msg: SetupFailed, ctx: &mut xtra::Context<Self>) {
@@ -183,7 +183,7 @@ impl Actor {
             tracing::warn!("Failed to execute `fail_contract_setup` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     pub async fn handle_setup_timeout_reached(
@@ -211,7 +211,7 @@ impl Actor {
             tracing::warn!("Failed to execute `fail_contract_setup` command: {:#}", e);
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 }
 
@@ -235,7 +235,7 @@ impl xtra::Actor for Actor {
 
         if let Err(e) = res {
             tracing::warn!(id = %self.order_id, "Stopping setup_taker actor: {e}");
-            ctx.stop_self(); // TODO(restioson) stop
+            ctx.stop_self();
         }
 
         let maker_response_timeout = {

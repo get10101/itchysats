@@ -112,7 +112,7 @@ impl Actor {
             );
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 }
 
@@ -185,7 +185,7 @@ impl Actor {
             tracing::warn!(%order_id, "Failed to execute `complete_collaborative_settlement` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn emit_rejected(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -200,7 +200,7 @@ impl Actor {
             tracing::warn!(%order_id, "Failed to execute `reject_collaborative_settlement` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn emit_failed(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -213,7 +213,7 @@ impl Actor {
             tracing::warn!(%order_id, "Failed to execute `fail_collaborative_settlement` command: {e:#}");
         }
 
-        ctx.stop_self(); // TODO(restioson) stop
+        ctx.stop_self();
     }
 
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {
