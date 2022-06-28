@@ -13,7 +13,6 @@ use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIStopAll;
 
 /// Timeout for waiting for the `Initiate` message from the taker
 ///
@@ -137,8 +136,6 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
-
-impl IPromiseIStopAll for Actor {}
 
 impl Actor {
     pub fn new(
