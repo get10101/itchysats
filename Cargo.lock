@@ -1872,6 +1872,7 @@ dependencies = [
  "rocket-basicauth",
  "rust-embed",
  "rust-embed-rocket",
+ "semver",
  "serde",
  "shared-bin",
  "sqlite-db",

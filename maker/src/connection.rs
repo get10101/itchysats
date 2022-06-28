@@ -37,6 +37,15 @@ use xtras::SendInterval;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
+fn parse_vergen_version(vergen_string: &str) -> semver::Version {
+    let vergen = semver::Version::parse(vergen_string).expect("daemon version to parse");
+
+    // vergen appends git tag at the end, which is wrongfully parsed by
+    // semver as a pre-release (it's in fact the opposite, the tag only
+    // comes *after* release). Here we strip it out.
+    semver::Version::new(vergen.major, vergen.minor, vergen.patch)
+}
+
 #[derive(Clone)]
 pub struct BroadcastOffers(pub Option<MakerOffers>);
 
@@ -487,7 +496,18 @@ impl Actor {
                 }
             },
         );
-        tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
+
+        let daemon_semver = parse_vergen_version(&daemon_version);
+        let no_need_for_heartbeats =
+            semver::VersionReq::parse(">= 0.4.20").expect("to parse VersionReq");
+
+        if no_need_for_heartbeats.matches(&daemon_semver) {
+            tracing::info!(
+                "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
+            );
+        } else {
+            tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
+        }
 
         self.connections.insert(
             identity,

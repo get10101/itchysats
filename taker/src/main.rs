@@ -21,7 +21,6 @@ use daemon::wallet;
 use daemon::wallet::TAKER_WALLET_ID;
 use daemon::Environment;
 use daemon::TakerActorSystem;
-use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use libp2p_core::PeerId;
 use model::olivia;
@@ -378,7 +377,6 @@ async fn main() -> Result<()> {
         },
         move || xtra_bitmex_price_feed::Actor::new(price_feed_network),
         N_PAYOUTS,
-        HEARTBEAT_INTERVAL,
         Duration::from_secs(10),
         projection_actor.clone(),
         Identity::new(maker_id),
