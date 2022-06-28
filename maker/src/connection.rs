@@ -209,9 +209,9 @@ impl Actor {
 
         Self {
             connections: HashMap::new(),
-            taker_connected_channel: taker_connected_channel.clone().into(),
-            taker_disconnected_channel: taker_disconnected_channel.clone().into(),
-            taker_msg_channel: taker_msg_channel.clone().into(),
+            taker_connected_channel,
+            taker_disconnected_channel,
+            taker_msg_channel,
             noise_priv_key,
             heartbeat_interval,
             p2p_socket,

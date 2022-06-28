@@ -109,7 +109,7 @@ impl Actor {
                 connected_takers: tx_connected_takers,
             },
             state: State::new(network),
-            price_feed: price_feed.clone(),
+            price_feed,
             tasks: Tasks::default(),
         };
         let feeds = Feeds {

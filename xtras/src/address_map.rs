@@ -12,9 +12,7 @@ pub struct AddressMap<K, A> {
     inner: HashMap<K, Address<A>>,
 }
 
-// TODO what is this really doing?
-/// A loud trait that makes sure we don't forget to return `StopAll` from the `stopping` lifecycle
-/// callback.
+/// A loud trait that makes sure we use `stop_all()` instead of `stop_self()`.
 ///
 /// Things might be outdated when you are reading this so bear that in mind.
 /// There is an open patch to `xtra` that changes the default implementation of an actor's
@@ -27,7 +25,7 @@ pub struct AddressMap<K, A> {
 /// `false`. This trait is meant to remind users that we need to check this.
 ///
 /// Once the bug in xtra is fixed, we can remove it again.
-pub trait IPromiseIamReturningStopAllFromStopping {}
+pub trait IPromiseIStopAll {}
 
 impl<K, A> Default for AddressMap<K, A> {
     fn default() -> Self {
@@ -40,7 +38,7 @@ impl<K, A> Default for AddressMap<K, A> {
 impl<K, A> AddressMap<K, A>
 where
     K: Eq + Hash,
-    A: IPromiseIamReturningStopAllFromStopping,
+    A: IPromiseIStopAll,
 {
     pub fn get_disconnected(&mut self, key: K) -> Result<Disconnected<'_, K, A>, StillConnected> {
         let entry = self.inner.entry(key);
@@ -181,7 +179,7 @@ mod tests {
         async fn stopped(self) -> Self::Stop {}
     }
 
-    impl IPromiseIamReturningStopAllFromStopping for Dummy {}
+    impl IPromiseIStopAll for Dummy {}
 
     #[xtra_productivity::xtra_productivity]
     impl Dummy {

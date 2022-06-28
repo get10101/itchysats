@@ -33,7 +33,7 @@ use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::supervisor;
+use xtras::{HandlerTimeoutExt, supervisor};
 use xtras::supervisor::always_restart;
 use xtras::supervisor::always_restart_after;
 
@@ -168,7 +168,7 @@ where
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
-            monitor_addr.clone().into(),
+            monitor_addr.into(),
             oracle_addr.clone().into(),
         )));
 
@@ -232,8 +232,7 @@ where
 
         tasks.add(
             connection_actor_ctx
-                // TODO(restioson) timeout
-                //.with_handler_timeout(Duration::from_secs(120))
+                .with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
                     maker_online_status_feed_sender,
                     identity.identity_sk.clone(),

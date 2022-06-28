@@ -25,7 +25,7 @@ use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use daemon::oracle::NoAnnouncement;
 use model::olivia::Announcement;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use xtras::address_map::IPromiseIStopAll;
 use crate::connection::NoConnection;
 
 /// Upon accepting Rollover maker sends the current estimated transaction fee and
@@ -88,13 +88,13 @@ impl Actor {
         Self {
             order_id,
             n_payouts,
-            send_to_taker_actor: send_to_taker_actor.clone(),
-            send_to_taker_actor_ignore_err: send_to_taker_actor_ignore_err.clone(),
+            send_to_taker_actor,
+            send_to_taker_actor_ignore_err,
             taker_id,
             oracle_pk,
             sent_from_taker: None,
-            oracle_actor: oracle_actor.clone().into(),
-            register: register.clone().into(),
+            oracle_actor,
+            register,
             executor: command::Executor::new(db, process_manager),
             tasks: Tasks::default(),
             version,
@@ -323,7 +323,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
+impl IPromiseIStopAll for Actor {}
 
 #[xtra_productivity]
 impl Actor {

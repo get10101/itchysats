@@ -25,7 +25,7 @@ use maia_core::PartyParams;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use xtras::address_map::IPromiseIStopAll;
 use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 
 /// The maximum amount of time we give the maker to send us a response.
@@ -64,8 +64,8 @@ impl Actor {
             n_payouts,
             oracle_pk,
             announcement,
-            build_party_params: build_party_params.clone(),
-            sign: sign.clone(),
+            build_party_params,
+            sign,
             maker,
             setup_msg_sender: None,
             tasks: Tasks::default(),
@@ -256,7 +256,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
+impl IPromiseIStopAll for Actor {}
 
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was accepted

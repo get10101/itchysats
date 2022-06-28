@@ -22,7 +22,13 @@ where
     M: Send + 'static,
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
-        self.send(msg).split_receiver().await.map(|_| ())
+        let _ = self.send(msg).split_receiver().await;
+
+        if self.is_connected() {
+           Ok(())
+        } else {
+            Err(xtra::Error::Disconnected)
+        }
     }
 }
 
@@ -33,7 +39,6 @@ where
     E: fmt::Display + Send + 'static,
     M: Send + 'static,
 {
-    // TODO what is this doing?
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         if !self.is_connected() {
             return Err(xtra::Error::Disconnected);
@@ -60,8 +65,13 @@ impl<M, Rc: RefCounter> SendAsyncSafe<M, ()> for MessageChannel<M, (), Rc>
     where M: Send + 'static
 {
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
-        #[allow(clippy::disallowed_methods)]
-        self.send(msg).split_receiver().await.map(|_| ())
+        let _ = self.send(msg).split_receiver().await;
+
+        if self.is_connected() {
+            Ok(())
+        } else {
+            Err(xtra::Error::Disconnected)
+        }
     }
 }
 

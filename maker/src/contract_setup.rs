@@ -24,7 +24,7 @@ use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use xtras::address_map::IPromiseIStopAll;
 use xtras::SendAsyncSafe;
 use crate::connection::NoConnection;
 
@@ -47,7 +47,7 @@ pub struct Actor {
 }
 
 impl Actor {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn new(
         db: sqlite_db::Connection,
         process_manager: xtra::Address<process_manager::Actor>,
@@ -70,11 +70,11 @@ impl Actor {
             n_payouts,
             oracle_pk,
             announcement,
-            build_party_params: build_party_params.clone().into(),
-            sign: sign.clone().into(),
-            taker: taker.clone().into(),
-            taker_ignore_err: taker_ignore_err.clone().into(),
-            confirm_order: confirm_order.clone().into(),
+            build_party_params,
+            sign,
+            taker,
+            taker_ignore_err,
+            confirm_order,
             taker_id,
             setup_msg_sender: None,
             tasks: Tasks::default(),
@@ -107,8 +107,8 @@ impl Actor {
             receiver,
             (self.oracle_pk, self.announcement.clone()),
             setup_params,
-            self.build_party_params.clone().into(),
-            self.sign.clone().into(),
+            self.build_party_params.clone(),
+            self.sign.clone(),
             Role::Maker,
             position,
             self.n_payouts,
@@ -279,7 +279,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
+impl IPromiseIStopAll for Actor {}
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted

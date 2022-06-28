@@ -44,7 +44,7 @@ use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::supervisor;
+use xtras::{HandlerTimeoutExt, supervisor};
 use xtras::supervisor::always_restart_after;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -127,7 +127,7 @@ where
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
-            monitor_addr.clone().into(),
+            monitor_addr.into(),
             oracle_addr.clone().into(),
         )));
 
@@ -197,12 +197,12 @@ where
             ENDPOINT_CONNECTION_TIMEOUT,
             [
                 (
-                    daemon::rollover::PROTOCOL,
-                    libp2p_rollover_addr.clone().into(),
+                    rollover::PROTOCOL,
+                    libp2p_rollover_addr.into(),
                 ),
                 (
-                    daemon::collab_settlement::PROTOCOL,
-                    libp2p_collab_settlement_addr.clone().into(),
+                    collab_settlement::PROTOCOL,
+                    libp2p_collab_settlement_addr.into(),
                 ),
                 (
                     xtra_libp2p_ping::PROTOCOL_NAME,
@@ -215,11 +215,11 @@ where
                     maker_offer_address.clone().into(),
                 ],
                 vec![
-                    ping_address.clone().into(),
-                    maker_offer_address.clone().into(),
+                    ping_address.into(),
+                    maker_offer_address.into(),
                 ],
                 vec![],
-                vec![listener_actor.clone().into()],
+                vec![listener_actor.into()],
             ),
         );
 
@@ -230,8 +230,7 @@ where
 
         tasks.add(
             inc_conn_ctx
-                // TODO(restioson) timeout
-                //.with_handler_timeout(Duration::from_secs(120))
+                .with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
                     cfd_actor_addr.clone().into(),
                     cfd_actor_addr.clone().into(),

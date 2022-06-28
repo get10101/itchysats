@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
+use xtras::address_map::IPromiseIStopAll;
 
 /// Timeout for waiting for the `Initiate` message from the taker
 ///
@@ -138,7 +138,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
+impl IPromiseIStopAll for Actor {}
 
 impl Actor {
     pub fn new(
@@ -152,7 +152,7 @@ impl Actor {
         Self {
             proposal,
             taker_id,
-            connections: connections.clone().into(),
+            connections,
             has_accepted: false,
             n_payouts,
             executor: command::Executor::new(db.clone(), process_manager),
