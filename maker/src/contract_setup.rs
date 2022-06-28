@@ -25,7 +25,6 @@ use model::Usd;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIStopAll;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
@@ -280,8 +279,6 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
-
-impl IPromiseIStopAll for Actor {}
 
 /// Message sent from the `maker_cfd::Actor` to the
 /// `setup_maker::Actor` to inform that the maker user has accepted

@@ -26,7 +26,6 @@ use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIStopAll;
 
 /// The maximum amount of time we give the maker to send us a response.
 const MAKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -257,8 +256,6 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
-
-impl IPromiseIStopAll for Actor {}
 
 /// Message sent from the `connection::Actor` to the
 /// `setup_taker::Actor` to notify that the order taken was accepted
