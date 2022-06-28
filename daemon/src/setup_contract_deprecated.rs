@@ -642,7 +642,7 @@ pub async fn roll_over(
     let mut revoked_commit = dlc.revoked_commit;
     let transaction = dlc.commit.0;
     revoked_commit.push(RevokedCommit {
-        encsig_ours: own_cfd_txs.commit.1,
+        encsig_ours: dlc.commit.1,
         revocation_sk_theirs,
         publication_pk_theirs: dlc.publish_pk_counterparty,
         txid: transaction.txid(),
