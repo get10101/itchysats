@@ -88,7 +88,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-12]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -100,7 +100,7 @@ jobs:
   smoke_test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-12]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -112,13 +112,13 @@ jobs:
         shell: bash
         run: |
           cargo dev-maker &
-          sleep 10s # Wait for binaries to start
+          sleep 10 # Wait for binaries to start
           curl --fail http://localhost:8001/api/alive
       - name: Smoke testing taker for ${{ matrix.os }} binary
         shell: bash
         run: |
           cargo dev-taker &
-          sleep 10s # Wait for binaries to start
+          sleep 10 # Wait for binaries to start
           curl --fail http://localhost:8000/api/alive
 
   daemons_arm_build:
