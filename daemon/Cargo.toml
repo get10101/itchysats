@@ -57,6 +57,7 @@ xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
 xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
 xtra_productivity = { version = "0.1.0" }
 xtras = { path = "../xtras" }
+hex = "0.4.3"
 
 [dev-dependencies]
 pretty_assertions = "1"

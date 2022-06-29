@@ -26,6 +26,7 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
+use tracing::Instrument;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -173,82 +174,84 @@ impl Actor {
         }: Connect,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
-        tracing::debug!(address = %maker_addr, "Connecting to maker");
+        async {
+            tracing::debug!(address = %maker_addr, "Connecting to maker");
 
-        let (mut write, mut read) = {
-            let mut connection = TcpStream::connect(&maker_addr)
-                .timeout(self.connect_timeout)
+            let (mut write, mut read) = {
+                let mut connection = TcpStream::connect(&maker_addr)
+                    .timeout(self.connect_timeout)
+                    .await
+                    .with_context(|| {
+                        let seconds = self.connect_timeout.as_secs();
+
+                        format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
+                    })?
+                    .with_context(|| format!("Failed to connect to {maker_addr}"))?;
+                let noise = noise::initiator_handshake(
+                    &mut connection,
+                    &self.identity_sk,
+                    &maker_identity.pk(),
+                )
+                    .timeout(TCP_TIMEOUT)
+                    .await??;
+
+                Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
+            };
+
+            let proposed_version = Version::LATEST;
+            write
+                .send(wire::TakerToMaker::HelloV4 {
+                    proposed_wire_version: proposed_version.clone(),
+                    daemon_version: version::version().to_string(),
+                    peer_id: self.peer_id,
+                    environment: self.environment.into(),
+                })
+                .timeout(TCP_TIMEOUT)
+                .await??;
+
+            match read
+                .try_next()
+                .timeout(TCP_TIMEOUT)
                 .await
                 .with_context(|| {
-                    let seconds = self.connect_timeout.as_secs();
-
-                    format!("Connection attempt to {maker_addr} timed out after {seconds}s",)
+                    format!(
+                        "Maker {maker_identity} did not send Hello within 10 seconds, dropping connection"
+                    )
                 })?
-                .with_context(|| format!("Failed to connect to {maker_addr}"))?;
-            let noise = noise::initiator_handshake(
-                &mut connection,
-                &self.identity_sk,
-                &maker_identity.pk(),
-            )
-            .timeout(TCP_TIMEOUT)
-            .await??;
-
-            Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
-        };
-
-        let proposed_version = Version::LATEST;
-        write
-            .send(wire::TakerToMaker::HelloV4 {
-                proposed_wire_version: proposed_version.clone(),
-                daemon_version: version::version().to_string(),
-                peer_id: self.peer_id,
-                environment: self.environment.into(),
-            })
-            .timeout(TCP_TIMEOUT)
-            .await??;
-
-        match read
-            .try_next()
-            .timeout(TCP_TIMEOUT)
-            .await
-            .with_context(|| {
-                format!(
-                    "Maker {maker_identity} did not send Hello within 10 seconds, dropping connection"
-                )
-            })?
-            .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
-            Some(wire::MakerToTaker::Hello(actual_version)) => {
-                tracing::info!(%maker_identity, %actual_version, "Received Hello message from maker");
-                if proposed_version != actual_version {
-                    bail!(
+                .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
+                Some(wire::MakerToTaker::Hello(actual_version)) => {
+                    tracing::info!(%maker_identity, %actual_version, "Received Hello message from maker");
+                    if proposed_version != actual_version {
+                        bail!(
                         "Network version mismatch, we proposed {proposed_version} but maker wants to use {actual_version}"
                     )
+                    }
                 }
-            }
-            Some(unexpected_message) => {
-                bail!(
+                Some(unexpected_message) => {
+                    bail!(
                     "Unexpected message {} from maker {maker_identity}", unexpected_message.name()
                 )
-            }
-            None => {
-                bail!(
+                }
+                None => {
+                    bail!(
                     "Connection to maker {maker_identity} closed before receiving first message"
                 )
+                }
             }
-        }
 
-        tracing::info!(address = %maker_addr, "Established connection to maker");
+            tracing::info!(address = %maker_addr, "Established connection to maker");
 
-        let this = ctx.address().expect("self to be alive");
+            let this = ctx.address().expect("self to be alive");
 
-        let mut tasks = Tasks::default();
-        tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
+            let mut tasks = Tasks::default();
+            tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
 
-        self.state = State::Connected {
-            write,
-            _tasks: tasks,
-        };
-        Ok(())
+            self.state = State::Connected {
+                write,
+                _tasks: tasks,
+            };
+            Ok(())
+        }.instrument(tracing::info_span!("handle_connect")).await
     }
 
     async fn handle_wire_message(&mut self, message: MakerStreamMessage) -> KeepRunning {
@@ -345,6 +348,7 @@ impl xtra::Actor for Actor {
 
 // TODO: Move the reconnection logic inside the connection::Actor instead of
 // depending on a watch channel
+#[tracing::instrument]
 pub async fn connect(
     mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     connection_actor_addr: xtra::Address<Actor>,

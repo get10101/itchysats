@@ -40,6 +40,7 @@ use model::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio::time::sleep;
+use tracing::Instrument;
 
 macro_rules! confirm {
     (lock transaction, $id:expr, $maker:expr, $taker:expr) => {
@@ -897,13 +898,27 @@ async fn taker_notices_lack_of_maker() {
 async fn maker_notices_lack_of_taker() {
     let _guard = init_tracing();
 
+    let span = tracing::info_span!("Maker notices lack of taker");
+    maker_notices_lack_of_taker_inner().instrument(span).await
+}
+
+async fn maker_notices_lack_of_taker_inner() {
+    tracing::info!("Start!");
+
     let (mut maker, taker) = start_both().await;
+
+    tracing::info!("Both started!");
+
     assert_eq!(
         vec![taker.id],
         next(maker.connected_takers_feed()).await.unwrap()
     );
 
+    tracing::info!("Got connected taker in feed!");
+
     drop(taker);
+
+    tracing::info!("Dropped taker!");
 
     assert_eq!(
         Vec::<Identity>::new(),

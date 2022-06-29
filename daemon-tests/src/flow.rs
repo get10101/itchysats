@@ -5,6 +5,7 @@ use daemon::projection::CfdState;
 use daemon::projection::MakerOffers;
 use std::time::Duration;
 use tokio::sync::watch;
+use tracing::{debug_span, Instrument};
 
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 60 } else { 30 });
@@ -27,6 +28,7 @@ pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Resul
 }
 
 /// Returns watch channel value upon change
+#[tracing::instrument(skip_all)]
 pub async fn next<T>(rx: &mut watch::Receiver<T>) -> Result<T>
 where
     T: Clone,
@@ -35,6 +37,7 @@ where
 }
 
 /// Returns watch channel value upon change
+#[tracing::instrument(skip_all)]
 pub async fn next_with<T, U>(
     rx: &mut watch::Receiver<T>,
     filter_map: impl Fn(T) -> Option<U>,
@@ -44,7 +47,7 @@ where
 {
     let wait_until_predicate = async {
         loop {
-            rx.changed().await?;
+            rx.changed().instrument(debug_span!("Waiting for watch channel to change")).await?;
 
             let current = rx.borrow().clone();
 
@@ -55,6 +58,7 @@ where
     };
 
     let val = tokio::time::timeout(NEXT_WAIT_TIME, wait_until_predicate)
+        .instrument(debug_span!("Wait or timeout on watch channel change"))
         .await
         .with_context(|| {
             let seconds = NEXT_WAIT_TIME.as_secs();

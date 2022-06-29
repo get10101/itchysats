@@ -39,14 +39,18 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
+use tracing::instrument;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, Layer, Registry};
+use tracing_subscriber::layer::SubscriberExt;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
 use xtra_libp2p::libp2p::Multiaddr;
@@ -63,6 +67,7 @@ fn oracle_pk() -> schnorrsig::PublicKey {
     .unwrap()
 }
 
+#[instrument]
 pub async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start(&MakerConfig::default()).await;
     let taker = Taker::start(
@@ -75,7 +80,7 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: RandomSeed,
@@ -114,7 +119,7 @@ impl Default for MakerConfig {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TakerConfig {
     oracle_pk: schnorrsig::PublicKey,
     seed: RandomSeed,
@@ -178,6 +183,7 @@ impl Maker {
         &mut self.feeds.connected_takers
     }
 
+    #[instrument(name = "Start maker")]
     pub async fn start(config: &MakerConfig) -> Self {
         let port = match config.dedicated_port {
             Some(port) => port,
@@ -352,6 +358,7 @@ impl Taker {
         &mut self.system.maker_online_status_feed_receiver
     }
 
+    #[instrument(name = "Start taker")]
     pub async fn start(
         config: &TakerConfig,
         maker_address: SocketAddr,
@@ -548,7 +555,8 @@ fn dummy_price() -> Decimal {
     dec!(50_000)
 }
 
-pub fn init_tracing() -> DefaultGuard {
+// TODO
+pub fn init_tracing() {
     let filter = EnvFilter::from_default_env()
         // apply warning level globally
         .add_directive(LevelFilter::WARN.into())
@@ -563,10 +571,21 @@ pub fn init_tracing() -> DefaultGuard {
         .add_directive("xtra_libp2p_ping=debug".parse().unwrap())
         .add_directive("rocket=warn".parse().unwrap());
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    global::set_text_map_propagator(TraceContextPropagator::new());
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name("daemon-tests")
+        .install_batch(opentelemetry::runtime::Tokio)
+        .unwrap();
+
+    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .with_test_writer()
-        .set_default()
+        .with_filter(filter);
+
+    Registry::default()
+        .with(telemetry)
+        .with(fmt_layer)
+        .init();
 }
 
 pub async fn mock_oracle_announcements(
