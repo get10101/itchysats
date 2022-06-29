@@ -56,6 +56,7 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
 
 fn base_directives(env: EnvFilter) -> Result<EnvFilter> {
     let filter = env
+        .add_directive("bdk=warn".parse()?) // bdk is quite spamy on debug
         .add_directive("sqlx=warn".parse()?) // sqlx logs all queries on INFO
         .add_directive("hyper=warn".parse()?)
         .add_directive("rustls=warn".parse()?)
