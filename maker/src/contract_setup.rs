@@ -16,7 +16,6 @@ use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
 use maia_core::PartyParams;
-use tracing::Span;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;

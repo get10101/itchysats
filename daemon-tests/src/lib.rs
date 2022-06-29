@@ -46,7 +46,6 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use tracing::instrument;
-use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer, Registry};

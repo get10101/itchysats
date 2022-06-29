@@ -65,7 +65,7 @@ impl fmt::Display for Version {
 pub mod taker_to_maker {
     use super::*;
 
-    #[derive(Serialize, Deserialize, Clone, Copy)]
+    #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
     #[serde(tag = "type", content = "payload")]
     #[allow(clippy::large_enum_variant)]
     pub enum Settlement {
@@ -419,7 +419,7 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "payload")]
 pub enum SetupMsg {
     /// Message enabling setting up lock and based on that commit, refund and cets
@@ -482,7 +482,7 @@ impl SetupMsg {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Msg0 {
     pub lock_psbt: PartiallySignedTransaction, // TODO: Use binary representation
     pub identity_pk: PublicKey,
@@ -543,7 +543,7 @@ impl From<Msg0> for (PartyParams, PunishParams) {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Msg1 {
     pub commit: EcdsaAdaptorSignature,
     pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
@@ -574,15 +574,15 @@ impl From<CfdTransactions> for Msg1 {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Msg2 {
     pub signed_lock: PartiallySignedTransaction, // TODO: Use binary representation
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Msg3;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "payload")]
 pub enum RolloverMsg {
     Msg0(RolloverMsg0),
@@ -591,7 +591,7 @@ pub enum RolloverMsg {
     Msg3(RolloverMsg3),
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct RolloverMsg0 {
     pub revocation_pk: PublicKey,
     pub publish_pk: PublicKey,
@@ -631,19 +631,19 @@ impl RolloverMsg {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RolloverMsg1 {
     pub commit: EcdsaAdaptorSignature,
     pub cets: HashMap<String, Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>>,
     pub refund: Signature,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct RolloverMsg2 {
     pub revocation_sk: SecretKey,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct RolloverMsg3;
 
 impl From<CfdTransactions> for RolloverMsg1 {
