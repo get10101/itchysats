@@ -96,10 +96,10 @@ impl Actor {
     }
 
     async fn dial(&self) -> Result<()> {
-        anyhow::ensure!(
-            !self.is_connection_established().await?,
-            "Connection should not be active when dialing"
-        );
+        if self.is_connection_established().await? {
+            tracing::info!("Connection is already established, no need to connect");
+            return Ok(());
+        }
 
         if let Err(e) = self.connect().await {
             tracing::warn!("Failed to request connection from endpoint: {e:#}");
