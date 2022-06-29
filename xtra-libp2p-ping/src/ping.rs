@@ -128,7 +128,7 @@ impl Actor {
             };
 
             let err_handler = move |e| async move {
-                tracing::debug!(%peer, "Outbound ping protocol failed: {e:#}")
+                tracing::warn!(%peer, "Outbound ping protocol failed: {e:#}")
             };
 
             if let Err(e) = self
