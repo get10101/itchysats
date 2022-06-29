@@ -272,7 +272,7 @@ async fn disallow_duplicate_handlers() {
 
     make_node([
         ("/hello-world/1.0.0", hello_world_handler.clone().into()),
-        ("/hello-world/1.0.0", hello_world_handler.clone().into()),
+        ("/hello-world/1.0.0", hello_world_handler.into()),
     ]);
 }
 

@@ -93,7 +93,7 @@ mod tests {
             Box::new(MemoryTransport::default),
             id.clone(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, pong_address.clone().into())],
+            [(PROTOCOL_NAME, pong_address.into())],
             Subscribers::new(
                 vec![ping_address.clone().into()],
                 vec![ping_address.clone().into()],

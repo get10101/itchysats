@@ -44,8 +44,9 @@ use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
+use xtras::supervisor;
 use xtras::supervisor::always_restart_after;
-use xtras::{supervisor, HandlerTimeoutExt};
+use xtras::HandlerTimeoutExt;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const PING_INTERVAL: Duration = Duration::from_secs(5);

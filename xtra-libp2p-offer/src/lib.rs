@@ -140,7 +140,7 @@ mod tests {
             Box::new(MemoryTransport::default),
             Keypair::generate_ed25519(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, offer_taker_addr.clone().into())],
+            [(PROTOCOL_NAME, offer_taker_addr.into())],
             Subscribers::default(),
         )
         .create(None)

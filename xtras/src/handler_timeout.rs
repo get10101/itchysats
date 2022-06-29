@@ -1,7 +1,8 @@
 use std::ops::ControlFlow;
 use std::time::Duration;
 use tokio::time::timeout;
-use xtra::{Actor, Context};
+use xtra::Actor;
+use xtra::Context;
 
 pub trait HandlerTimeoutExt<A> {
     fn with_handler_timeout(self, timeout: Duration) -> TimeoutManager<A>;
