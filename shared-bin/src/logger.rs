@@ -1,8 +1,12 @@
 use anyhow::anyhow;
 use anyhow::Result;
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
 use time::macros::format_description;
 use tracing_subscriber::fmt::time::UtcTime;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer, Registry};
 
 pub use tracing_subscriber::filter::LevelFilter;
 
@@ -30,26 +34,40 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
         _ => base_directives(EnvFilter::from_env(RUST_LOG_ENV))?,
     };
     let filter = filter.add_directive(format!("{level}").parse()?);
+    let filter_tracing: EnvFilter = filter.to_string().parse()?;
 
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .with_ansi(is_terminal);
 
-    let result = if json_format {
-        builder.json().with_timer(UtcTime::rfc_3339()).try_init()
-    } else {
-        builder
-            .compact()
-            .with_timer(UtcTime::new(format_description!(
-                "[year]-[month]-[day] [hour]:[minute]:[second]"
-            )))
-            .try_init()
-    };
+    // let result = if json_format {
+    //     builder.json().with_timer(UtcTime::rfc_3339()).try_init()
+    // } else {
+    //     builder
+    //         .compact()
+    //         .with_timer(UtcTime::new(format_description!(
+    //             "[year]-[month]-[day] [hour]:[minute]:[second]"
+    //         )))
+    //         .try_init()
+    // };
 
-    result.map_err(|e| anyhow!("Failed to init logger: {e}"))?;
+    // result.map_err(|e| anyhow!("Failed to init logger: {e}"))?;
 
     tracing::info!("Initialized logger");
+
+    global::set_text_map_propagator(TraceContextPropagator::new());
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name("daemon")
+        .install_simple()
+        .unwrap();
+
+    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_filter(filter_tracing);
+
+    Registry::default().with(telemetry).with(fmt_layer).init();
 
     Ok(())
 }

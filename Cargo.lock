@@ -3781,11 +3781,14 @@ dependencies = [
  "daemon",
  "http-api-problem",
  "model",
+ "opentelemetry",
+ "opentelemetry-jaeger",
  "rocket",
  "rocket-basicauth",
  "serde",
  "time",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
 ]
 
@@ -5210,7 +5213,7 @@ dependencies = [
 [[package]]
 name = "xtra_productivity"
 version = "0.1.0"
-source = "git+https://github.com/Restioson/xtra-productivity?branch=instrumentation#694e701f84d52dda0d4793193d1f240ccf8c585c"
+source = "git+https://github.com/Restioson/xtra-productivity?rev=65b2296fbfaec61fc49bfe03f66708a6a6113441#65b2296fbfaec61fc49bfe03f66708a6a6113441"
 dependencies = [
  "quote",
  "syn",
