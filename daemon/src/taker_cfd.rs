@@ -27,6 +27,7 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use time::OffsetDateTime;
+use tracing::Instrument;
 use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
@@ -35,7 +36,7 @@ use xtras::AddressMap;
 #[derive(Clone)]
 pub struct CurrentMakerOffers(pub Option<MakerOffers>);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TakeOffer {
     pub order_id: OrderId,
     pub quantity: Usd,
@@ -176,6 +177,7 @@ where
     W: xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
         + xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>,
 {
+    #[tracing::instrument(name = "handle_take_offer", skip(self, _ctx), err)]
     async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
         let TakeOffer {
             order_id,
@@ -238,7 +240,7 @@ where
             .await?
             .with_context(|| format!("Announcement {price_event_id} not found"))?;
 
-        let addr = setup_taker::Actor::new(
+        let (addr, fut) = setup_taker::Actor::new(
             self.db.clone(),
             self.process_manager_actor.clone(),
             (
@@ -253,7 +255,11 @@ where
             self.conn_actor.clone(),
         )
         .create(None)
-        .spawn(&mut self.tasks);
+        .run();
+
+        self.tasks.add(fut.instrument(tracing::debug_span!("Taker setup actor")));
+
+        tracing::info!("Spawned taker setup actor");
 
         disconnected.insert(addr);
 

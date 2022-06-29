@@ -5210,7 +5210,7 @@ dependencies = [
 [[package]]
 name = "xtra_productivity"
 version = "0.1.0"
-source = "git+https://github.com/comit-network/xtra-productivity?rev=bebe45425ae44980186df7b96b41f70cad58a4bb#bebe45425ae44980186df7b96b41f70cad58a4bb"
+source = "git+https://github.com/Restioson/xtra-productivity?branch=instrumentation#694e701f84d52dda0d4793193d1f240ccf8c585c"
 dependencies = [
  "quote",
  "syn",

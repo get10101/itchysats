@@ -1,7 +1,6 @@
 use crate::future_ext::FutureExt;
 use futures::future::RemoteHandle;
 use futures::Future;
-use tracing::{debug_span, Instrument};
 
 /// Struct controlling the lifetime of the async tasks, such as
 /// running actors and periodic notifications. If it gets dropped, all
@@ -15,7 +14,7 @@ impl Tasks {
     /// The task will be stopped if this instance of [`Tasks`] goes
     /// out of scope.
     pub fn add(&mut self, f: impl Future<Output = ()> + Send + 'static) {
-        let handle = f.instrument(debug_span!("xtras task", fallible = false)).spawn_with_handle();
+        let handle = f.spawn_with_handle();
         self.0.push(handle);
     }
 
@@ -39,7 +38,7 @@ impl Tasks {
             }
         };
 
-        let handle = fut.instrument(debug_span!("xtras task", fallible = true)).spawn_with_handle();
+        let handle = fut.spawn_with_handle();
         self.0.push(handle);
     }
 }

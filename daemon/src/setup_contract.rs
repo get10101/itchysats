@@ -49,6 +49,7 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 /// the counterparty.
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument(
+    err,
     name = "Set up contract (new)"
     skip(sink, stream)
 )]

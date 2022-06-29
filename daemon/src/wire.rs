@@ -83,7 +83,7 @@ pub mod taker_to_maker {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "payload")]
 #[allow(clippy::large_enum_variant)]
 pub enum TakerToMaker {

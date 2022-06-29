@@ -82,7 +82,7 @@ impl Actor {
         }
     }
 
-    #[tracing::instrument(skip_all, fields(order_id))]
+    #[tracing::instrument(skip_all, fields(order_id), err)]
     async fn contract_setup(&mut self, this: xtra::Address<Self>) -> Result<()> {
         let order_id = self.order.id;
 

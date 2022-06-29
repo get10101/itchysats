@@ -30,7 +30,7 @@ pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Resul
 }
 
 /// Returns watch channel value upon change
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(err, skip_all)]
 pub async fn next<T>(rx: &mut watch::Receiver<T>) -> Result<T>
 where
     T: Clone,
@@ -39,7 +39,7 @@ where
 }
 
 /// Returns watch channel value upon change
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(err, skip_all)]
 pub async fn next_with<T, U>(
     rx: &mut watch::Receiver<T>,
     filter_map: impl Fn(T) -> Option<U>,

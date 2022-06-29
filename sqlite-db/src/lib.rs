@@ -143,6 +143,7 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
 }
 
 impl Connection {
+    #[tracing::instrument(skip(self), err)]
     pub async fn insert_cfd(&self, cfd: &model::Cfd) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
 

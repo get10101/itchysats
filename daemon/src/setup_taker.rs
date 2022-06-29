@@ -23,7 +23,6 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use std::time::Duration;
-use tracing::{debug_span, Instrument};
 use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -91,51 +90,50 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
+    #[tracing::instrument(name = "Handle accepted", skip_all)]
     fn handle(&mut self, _: Accepted, ctx: &mut xtra::Context<Self>) {
-        async {
-            let order_id = self.order_id;
-            tracing::info!(%order_id, "Order got accepted");
+        let order_id = self.order_id;
+        tracing::info!(%order_id, "Order got accepted");
 
-            let (setup_params, position) = match self
-                .executor
-                .execute(order_id, |cfd| cfd.start_contract_setup())
-                .await
-            {
-                Ok(contract_setup) => contract_setup,
-                Err(e) => {
-                    tracing::error!("Failed to handle accepting contract setup: {e}");
-                    return;
-                }
+        let (setup_params, position) = match self
+            .executor
+            .execute(order_id, |cfd| cfd.start_contract_setup())
+            .await
+        {
+            Ok(contract_setup) => contract_setup,
+            Err(e) => {
+                tracing::error!("Failed to handle accepting contract setup: {e}");
+                return;
+            }
+        };
+
+        let (sender, receiver) = mpsc::unbounded();
+        // store the writing end to forward messages from the maker to
+        // the spawned contract setup task
+        self.setup_msg_sender = Some(sender);
+
+        let contract_future = setup_contract_deprecated::new(
+            self.maker
+                .clone()
+                .into_sink()
+                .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
+            receiver,
+            (self.oracle_pk, self.announcement.clone()),
+            setup_params,
+            self.build_party_params.clone(),
+            self.sign.clone(),
+            Role::Taker,
+            position,
+            self.n_payouts,
+        );
+
+        let this = ctx.address().expect("self to be alive");
+        self.tasks.add(async move {
+            let _: Result<(), xtra::Error> = match contract_future.await {
+                Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
+                Err(error) => this.send(SetupFailed { error }).await,
             };
-
-            let (sender, receiver) = mpsc::unbounded();
-            // store the writing end to forward messages from the maker to
-            // the spawned contract setup task
-            self.setup_msg_sender = Some(sender);
-
-            let contract_future = setup_contract_deprecated::new(
-                self.maker
-                    .clone()
-                    .into_sink()
-                    .with(move |msg| future::ok(wire::TakerToMaker::Protocol { order_id, msg })),
-                receiver,
-                (self.oracle_pk, self.announcement.clone()),
-                setup_params,
-                self.build_party_params.clone(),
-                self.sign.clone(),
-                Role::Taker,
-                position,
-                self.n_payouts,
-            );
-
-            let this = ctx.address().expect("self to be alive");
-            self.tasks.add(async move {
-                let _: Result<(), xtra::Error> = match contract_future.await {
-                    Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
-                    Err(error) => this.send(SetupFailed { error }).await,
-                };
-            });
-        }.instrument(debug_span!("Handle Accepted")).await
+        });
     }
 
     fn handle(&mut self, msg: Rejected, ctx: &mut xtra::Context<Self>) {

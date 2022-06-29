@@ -306,7 +306,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), err)]
     pub async fn reject_order(&self, order_id: OrderId) -> Result<()> {
         self.cfd_actor.send(cfd::RejectOrder { order_id }).await??;
         Ok(())
