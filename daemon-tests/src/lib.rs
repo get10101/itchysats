@@ -574,7 +574,7 @@ pub fn init_tracing() {
     global::set_text_map_propagator(TraceContextPropagator::new());
     let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name("daemon-tests")
-        .install_batch(opentelemetry::runtime::Tokio)
+        .install_simple()
         .unwrap();
 
     let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);

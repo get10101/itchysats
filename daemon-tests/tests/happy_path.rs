@@ -196,6 +196,12 @@ fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
 #[tokio::test]
 async fn taker_takes_order_and_maker_rejects() {
     let _guard = init_tracing();
+
+    let span = tracing::info_span!("Taker takes order and maker rejects");
+    taker_takes_order_and_maker_rejects_inner().instrument(span).await
+}
+
+async fn taker_takes_order_and_maker_rejects_inner() {
     let (mut maker, mut taker) = start_both().await;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();

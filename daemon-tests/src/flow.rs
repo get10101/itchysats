@@ -55,7 +55,7 @@ where
                 return anyhow::Ok(val);
             }
         }
-    };
+    }.instrument(debug_span!("Wait until predicate"));
 
     let val = tokio::time::timeout(NEXT_WAIT_TIME, wait_until_predicate)
         .instrument(debug_span!("Wait or timeout on watch channel change"))

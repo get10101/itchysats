@@ -174,12 +174,14 @@ impl Actor {
         }: Connect,
         ctx: &mut xtra::Context<Self>,
     ) -> Result<()> {
-        async {
+        let span = tracing::info_span!("handle_connect");
+        let res = async {
             tracing::debug!(address = %maker_addr, "Connecting to maker");
 
             let (mut write, mut read) = {
                 let mut connection = TcpStream::connect(&maker_addr)
                     .timeout(self.connect_timeout)
+                    .instrument(tracing::debug_span!("Connect to maker addr", %maker_addr))
                     .await
                     .with_context(|| {
                         let seconds = self.connect_timeout.as_secs();
@@ -193,6 +195,7 @@ impl Actor {
                     &maker_identity.pk(),
                 )
                     .timeout(TCP_TIMEOUT)
+                    .instrument(tracing::debug_span!("Initiate handshake"))
                     .await??;
 
                 Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
@@ -207,11 +210,14 @@ impl Actor {
                     environment: self.environment.into(),
                 })
                 .timeout(TCP_TIMEOUT)
+                .instrument(tracing::debug_span!("Send HelloV4"))
                 .await??;
 
+            let wait_for_hello = tracing::debug_span!("Waiting for hello from maker");
             match read
                 .try_next()
                 .timeout(TCP_TIMEOUT)
+                .instrument(wait_for_hello.clone())
                 .await
                 .with_context(|| {
                     format!(
@@ -220,6 +226,7 @@ impl Actor {
                 })?
                 .with_context(|| format!("Failed to read first message from maker {maker_identity}"))? {
                 Some(wire::MakerToTaker::Hello(actual_version)) => {
+                    let _g = wait_for_hello.entered();
                     tracing::info!(%maker_identity, %actual_version, "Received Hello message from maker");
                     if proposed_version != actual_version {
                         bail!(
@@ -244,14 +251,25 @@ impl Actor {
             let this = ctx.address().expect("self to be alive");
 
             let mut tasks = Tasks::default();
-            tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
+            tasks.add(
+                this
+                    .attach_stream(read.map(move |item| MakerStreamMessage { item }))
+                    .instrument(tracing::debug_span!("Forward maker stream messages"))
+            );
 
             self.state = State::Connected {
                 write,
                 _tasks: tasks,
             };
             Ok(())
-        }.instrument(tracing::info_span!("handle_connect")).await
+        }.instrument(span.clone()).await;
+
+        if let Err(e) = &res {
+            let _g = span.entered();
+            tracing::error!("Error in handle_connect: {}", e);
+        }
+
+        res
     }
 
     async fn handle_wire_message(&mut self, message: MakerStreamMessage) -> KeepRunning {
