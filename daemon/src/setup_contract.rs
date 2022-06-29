@@ -48,6 +48,10 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the counterparty.
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(
+    name = "Set up contract (new)"
+    skip(sink, stream)
+)]
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl Stream<Item = SetupMsg> + Unpin,

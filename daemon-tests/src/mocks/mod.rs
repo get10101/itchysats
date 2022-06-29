@@ -59,11 +59,13 @@ impl Mocks {
             .returning(|sign_msg| Ok(sign_msg.psbt));
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn mock_oracle_announcement(&mut self) {
         self.mock_oracle_announcement_with(OliviaData::example_0().announcement())
             .await;
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn mock_oracle_announcement_with(&mut self, announcement: olivia::Announcement) {
         self.oracle().await.set_announcement(announcement);
     }

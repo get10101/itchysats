@@ -348,6 +348,7 @@ where
         })
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn take_offer(
         &self,
         order_id: OrderId,

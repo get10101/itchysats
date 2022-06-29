@@ -100,7 +100,7 @@ pub struct TakerDisconnected {
     pub id: Identity,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OfferParams {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,

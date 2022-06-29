@@ -10,6 +10,7 @@ use tracing::{debug_span, Instrument};
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 60 } else { 30 });
 
+#[tracing::instrument]
 pub async fn next_maker_offers(
     rx_a: &mut watch::Receiver<MakerOffers>,
     rx_b: &mut watch::Receiver<MakerOffers>,
@@ -22,6 +23,7 @@ pub async fn next_maker_offers(
     Ok((a?, b?))
 }
 
+#[tracing::instrument]
 pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Result<bool> {
     let maker_offers = next(rx).await?;
     Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
@@ -76,10 +78,24 @@ where
 /// If there is more than one CFD in the list. This is unsupported and unexpected by our test
 /// framework.
 pub fn one_cfd_with_state(expected_state: CfdState) -> impl Fn(Vec<Cfd>) -> Option<Cfd> {
-    move |cfds: Vec<Cfd>| match cfds.as_slice() {
-        [one] if one.state == expected_state => Some(one.clone()),
-        [_one_that_doesnt_match_state] => None,
-        [] => None,
-        _more_than_one => panic!("More than one CFD in feed!"),
+    move |cfds: Vec<Cfd>| {
+        match cfds.as_slice() {
+            [one] if one.state == expected_state => {
+                tracing::debug!("Had one, correct CFD");
+                Some(one.clone())
+            },
+            [_one_that_doesnt_match_state] => {
+                tracing::debug!("Had one CFD, but did not match state");
+                None
+            },
+            [] => {
+                tracing::debug!("Had no CFDs");
+                None
+            },
+            _more_than_one => {
+                tracing::error!("More than one CFD in feed!");
+                panic!("More than one CFD in feed!")
+            },
+        }
     }
 }

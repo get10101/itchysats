@@ -16,6 +16,7 @@ use futures::future;
 use futures::SinkExt;
 use maia_core::secp256k1_zkp::schnorrsig;
 use maia_core::PartyParams;
+use tracing::Span;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;
@@ -81,6 +82,7 @@ impl Actor {
         }
     }
 
+    #[tracing::instrument(skip_all, fields(order_id))]
     async fn contract_setup(&mut self, this: xtra::Address<Self>) -> Result<()> {
         let order_id = self.order.id;
 

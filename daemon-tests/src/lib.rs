@@ -272,6 +272,7 @@ impl Maker {
         }
     }
 
+    #[instrument(skip(self))]
     pub async fn set_offer_params(&mut self, offer_params: maker::cfd::OfferParams) {
         let maker::cfd::OfferParams {
             price_long,
@@ -499,23 +500,33 @@ macro_rules! simulate_attestation {
 #[macro_export]
 macro_rules! wait_next_state {
     ($id:expr, $maker:expr, $taker:expr, $maker_state:expr, $taker_state:expr) => {
-        let wait_until_taker = next_with($taker.cfd_feed(), |maybe_cfds| {
-            maybe_cfds.and_then(one_cfd_with_state($taker_state))
-        });
-        let wait_until_maker = next_with($maker.cfd_feed(), |maybe_cfds| {
-            maybe_cfds.and_then(one_cfd_with_state($maker_state))
-        });
+        let fut = async {
+            let wait_until_taker = next_with($taker.cfd_feed(), |maybe_cfds| {
+                maybe_cfds.and_then(one_cfd_with_state($taker_state))
+            });
+            let wait_until_maker = next_with($maker.cfd_feed(), |maybe_cfds| {
+                maybe_cfds.and_then(one_cfd_with_state($maker_state))
+            });
 
-        let (taker_cfd, maker_cfd) = tokio::join!(wait_until_taker, wait_until_maker);
-        let taker_cfd = taker_cfd.unwrap();
-        let maker_cfd = maker_cfd.unwrap();
+            let (taker_cfd, maker_cfd) = tokio::join!(wait_until_taker, wait_until_maker);
+            let taker_cfd = taker_cfd.unwrap();
+            let maker_cfd = maker_cfd.unwrap();
 
-        assert_eq!(
-            taker_cfd.order_id, maker_cfd.order_id,
-            "order id mismatch between maker and taker"
+            assert_eq!(
+                taker_cfd.order_id, maker_cfd.order_id,
+                "order id mismatch between maker and taker"
+            );
+            assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
+            assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
+        };
+
+        let span = tracing::debug_span!(
+            "wait_next_state",
+            id = ?$id,
+            maker_state = ?$maker_state,
+            taker_state = ?$taker_state,
         );
-        assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
-        assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
+        tracing::Instrument::instrument(fut, span).await
     };
     ($id:expr, $maker:expr, $taker:expr, $state:expr) => {
         wait_next_state!($id, $maker, $taker, $state, $state)
