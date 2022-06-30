@@ -24,6 +24,7 @@ use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
+use  tracing_test::traced_test;
 
 mod util;
 
@@ -114,6 +115,7 @@ const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_LOWER_BOUND: u64 = 400;
 const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_UPPER_BOUND: u64 = 600;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1000)]
+#[traced_test]
 async fn multiple_bobs_one_protocol_load_test() {
     const SOME_PROTOCOL_NAME: &str = "/some-protocol/1.0.0";
 
@@ -214,6 +216,7 @@ async fn multiple_bobs_one_protocol_load_test() {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn multiple_bobs_multiple_distinct_protocols_load_test() {
     let _guard = init_tracing();
 

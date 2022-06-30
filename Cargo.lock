@@ -379,7 +379,7 @@ dependencies = [
  "tokio-extras",
  "tokio-tungstenite",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
 ]
 
 [[package]]
@@ -421,7 +421,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
 ]
 
 [[package]]
@@ -518,6 +518,18 @@ dependencies = [
  "async-lock",
  "owning_ref_async",
  "stable_deref_trait",
+]
+
+[[package]]
+name = "chrono"
+version = "0.4.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
+dependencies = [
+ "libc",
+ "num-integer",
+ "num-traits",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -653,7 +665,7 @@ dependencies = [
  "tonic 0.7.2",
  "tracing",
  "tracing-core",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
 ]
 
 [[package]]
@@ -880,7 +892,7 @@ dependencies = [
  "tokio-extras",
  "tokio-util 0.7.3",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
  "uuid 1.1.2",
  "vergen",
  "x25519-dalek",
@@ -913,7 +925,7 @@ dependencies = [
  "tokio",
  "tokio-extras",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
  "xtra",
  "xtra-bitmex-price-feed",
  "xtra-libp2p",
@@ -2005,6 +2017,15 @@ dependencies = [
  "xtra-libp2p-ping",
  "xtra_productivity",
  "xtras",
+]
+
+[[package]]
+name = "matchers"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f099785f7595cc4b4553a174ce30dd7589ef93391ff414dbb67f62392b9e0ce1"
+dependencies = [
+ "regex-automata",
 ]
 
 [[package]]
@@ -3894,7 +3915,7 @@ dependencies = [
  "time",
  "tracing",
  "tracing-opentelemetry",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
 ]
 
 [[package]]
@@ -4774,7 +4795,7 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
 ]
 
 [[package]]
@@ -4789,12 +4810,34 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
+version = "0.2.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e0d2eaa99c3c2e41547cfa109e910a68ea03823cccad4a0525dcbc9b01e8c71"
+dependencies = [
+ "ansi_term",
+ "chrono",
+ "lazy_static",
+ "matchers 0.0.1",
+ "regex",
+ "serde",
+ "serde_json",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
+ "tracing-serde",
+]
+
+[[package]]
+name = "tracing-subscriber"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a713421342a5a666b7577783721d3117f1b69a393df803ee17bb73b1e122a59"
 dependencies = [
  "ansi_term",
- "matchers",
+ "matchers 0.1.0",
  "once_cell",
  "regex",
  "serde",
@@ -4807,6 +4850,29 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "tracing-test"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3b48778c2d401c6a7fcf38a0e3c55dc8e8e753cbd381044a8cdb6fd69a29f53"
+dependencies = [
+ "lazy_static",
+ "tracing-core",
+ "tracing-subscriber 0.2.25",
+ "tracing-test-macro",
+]
+
+[[package]]
+name = "tracing-test-macro"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c49adbab879d2e0dd7f75edace5f0ac2156939ecb7e6a1e8fa14e53728328c48"
+dependencies = [
+ "lazy_static",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -5428,7 +5494,8 @@ dependencies = [
  "tokio",
  "tokio-extras",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
+ "tracing-test",
  "void",
  "xtra",
  "xtra_productivity",
@@ -5455,7 +5522,7 @@ dependencies = [
  "tokio",
  "tokio-extras",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
  "xtra",
  "xtra-libp2p",
  "xtra_productivity",
@@ -5475,7 +5542,7 @@ dependencies = [
  "tokio",
  "tokio-extras",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
  "xtra",
  "xtra-libp2p",
  "xtra_productivity",
@@ -5502,7 +5569,7 @@ dependencies = [
  "tokio",
  "tokio-extras",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.14",
  "uuid 1.1.2",
  "xtra",
  "xtra_productivity",
