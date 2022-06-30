@@ -353,7 +353,7 @@ mod metrics {
             .unwrap()
         });
 
-    static POSITION_AMOUNT_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
+    static POSITION_NUMBER_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
         conquer_once::Lazy::new(|| {
             prometheus::register_int_gauge_vec!(
                 "positions_number_total",
@@ -427,7 +427,7 @@ mod metrics {
                     .to_f64()
                     .unwrap_or_default(),
             );
-        POSITION_AMOUNT_GAUGE
+        POSITION_NUMBER_GAUGE
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
