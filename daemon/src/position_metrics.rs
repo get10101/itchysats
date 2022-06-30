@@ -1,15 +1,19 @@
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::Amount;
 use futures::StreamExt;
+use model::calculate_margin;
 use model::CfdEvent;
 use model::ClosedCfd;
 use model::EventKind;
 use model::FailedCfd;
 use model::FailedKind;
 use model::Identity;
+use model::Leverage;
 use model::OrderId;
 use model::Position;
+use model::Role;
 use model::Settlement;
 use model::Usd;
 use rust_decimal::Decimal;
@@ -121,6 +125,8 @@ pub struct Cfd {
     id: OrderId,
     position: Position,
     quantity_usd: Usd,
+    margin: Amount,
+    margin_counterparty: Amount,
 
     state: AggregatedState,
     counterparty_network_identity: Identity,
@@ -143,10 +149,21 @@ impl sqlite_db::CfdAggregate for Cfd {
     type CtorArgs = ();
 
     fn new(_: Self::CtorArgs, cfd: sqlite_db::Cfd) -> Self {
+        let (our_leverage, counterparty_leverage) = match cfd.role {
+            Role::Maker => (Leverage::ONE, cfd.taker_leverage),
+            Role::Taker => (cfd.taker_leverage, Leverage::ONE),
+        };
+
+        let margin = calculate_margin(cfd.initial_price, cfd.quantity_usd, our_leverage);
+        let margin_counterparty =
+            calculate_margin(cfd.initial_price, cfd.quantity_usd, counterparty_leverage);
+
         Self {
             id: cfd.id,
             position: cfd.position,
             quantity_usd: cfd.quantity_usd,
+            margin,
+            margin_counterparty,
             state: AggregatedState::New,
             counterparty_network_identity: cfd.counterparty_network_identity,
             version: 0,
@@ -260,6 +277,9 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             n_contracts,
             settlement,
             counterparty_network_identity,
+            role,
+            taker_leverage,
+            initial_price,
             ..
         } = closed_cfd;
 
@@ -270,10 +290,21 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             Settlement::Refund { .. } => AggregatedState::Refunded,
         };
 
+        let (our_leverage, counterparty_leverage) = match role {
+            Role::Maker => (Leverage::ONE, taker_leverage),
+            Role::Taker => (taker_leverage, Leverage::ONE),
+        };
+
+        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
+        let margin_counterparty =
+            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+
         Self {
             id,
             position,
             quantity_usd,
+            margin,
+            margin_counterparty,
             state,
             counterparty_network_identity,
             version: 0,
@@ -289,6 +320,9 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             n_contracts,
             kind,
             counterparty_network_identity,
+            role,
+            taker_leverage,
+            initial_price,
             ..
         } = cfd;
 
@@ -299,10 +333,21 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             FailedKind::ContractSetupFailed => AggregatedState::Failed,
         };
 
+        let (our_leverage, counterparty_leverage) = match role {
+            Role::Maker => (Leverage::ONE, taker_leverage),
+            Role::Taker => (taker_leverage, Leverage::ONE),
+        };
+
+        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
+        let margin_counterparty =
+            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+
         Self {
             id,
             position,
             quantity_usd,
+            margin,
+            margin_counterparty,
             state,
             counterparty_network_identity,
             version: 0,
@@ -313,6 +358,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
 mod metrics {
     use crate::position_metrics::AggregatedState;
     use crate::position_metrics::Cfd;
+    use bdk::bitcoin::Amount;
     use itertools::Itertools;
     use model::OrderId;
     use model::Position;
@@ -339,6 +385,24 @@ mod metrics {
                 "positions_quantities",
                 "Total quantity of positions on ItchySats.",
                 &[POSITION_LABEL, STATUS_LABEL]
+            )
+            .unwrap()
+        });
+
+    static POSITION_MARGIN_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+        conquer_once::Lazy::new(|| {
+            prometheus::register_int_gauge!(
+                "position_margin_satoshis",
+                "Total position margin on ItchySats.",
+            )
+            .unwrap()
+        });
+
+    static POSITION_MARGIN_COUNTERPARTY_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+        conquer_once::Lazy::new(|| {
+            prometheus::register_int_gauge!(
+                "position_margin_counterparty_satoshis",
+                "Total position margin of our counterparties on ItchySats.",
             )
             .unwrap()
         });
@@ -394,6 +458,22 @@ mod metrics {
                 .filter(|cfd| cfd.state == AggregatedState::Refunded),
             STATUS_REFUNDED_LABEL,
         );
+
+        let (margin, margin_counterparty) = cfds
+            .iter()
+            .filter(|cfd| cfd.state == AggregatedState::Open)
+            .fold(
+                (Amount::ZERO, Amount::ZERO),
+                |(sum_margin, sum_margin_counterparty), cfd| {
+                    (
+                        sum_margin + cfd.margin,
+                        sum_margin_counterparty + cfd.margin_counterparty,
+                    )
+                },
+            );
+
+        POSITION_MARGIN_GAUGE.set(margin.as_sat() as i64);
+        POSITION_MARGIN_COUNTERPARTY_GAUGE.set(margin_counterparty.as_sat() as i64);
     }
 
     fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str) {
