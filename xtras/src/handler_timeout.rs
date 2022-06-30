@@ -24,6 +24,12 @@ where
     A: Actor,
 {
     pub async fn run(mut self, mut actor: A) -> A::Stop {
+        actor.started(&mut self.ctx).await;
+
+        if !self.ctx.running {
+            return actor.stopped().await;
+        }
+
         loop {
             let msg = self.ctx.next_message().await;
 
