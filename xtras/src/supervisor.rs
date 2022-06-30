@@ -1,24 +1,21 @@
 use crate::ActorName;
-use async_trait::async_trait;
 use futures::Future;
 use futures::FutureExt;
-use std::any::Any;
 use std::error::Error;
 use std::fmt;
+use std::ops::ControlFlow;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::time::Duration;
 use xtra::Address;
 use xtra::Context;
-use xtra_productivity::xtra_productivity;
 
 /// A supervising actor reacts to messages from the actor it is supervising and restarts it based on
 /// a given policy.
-pub struct Actor<T, R> {
+pub struct Supervisor<T, R> {
     context: Context<T>,
     ctor: Box<dyn Fn() -> T + Send + 'static>,
     restart_policy: AsyncClosure<R>,
-    _actor: Address<T>, // kept around to ensure that the supervised actor stays alive
     metrics: Metrics,
 }
 
@@ -53,8 +50,8 @@ where
     })
 }
 
-#[derive(Default, Clone, Copy)]
-struct Metrics {
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Metrics {
     /// How many times the supervisor spawned an instance of the actor.
     pub num_spawns: u64,
     /// How many times the actor shut down due to a panic.
@@ -78,7 +75,7 @@ impl From<()> for UnitReason {
     }
 }
 
-impl<T> Actor<T, UnitReason>
+impl<T> Supervisor<T, UnitReason>
 where
     T: xtra::Actor<Stop = ()>,
 {
@@ -95,7 +92,6 @@ where
             context,
             ctor: Box::new(ctor),
             restart_policy: always_restart(),
-            _actor: address.clone(),
             metrics: Metrics::default(),
         };
 
@@ -103,7 +99,7 @@ where
     }
 }
 
-impl<T, R, S> Actor<T, R>
+impl<T, R, S> Supervisor<T, R>
 where
     T: xtra::Actor<Stop = S>,
     R: Error + Send + Sync + 'static,
@@ -124,126 +120,87 @@ where
             context,
             ctor: Box::new(ctor),
             restart_policy,
-            _actor: address.clone(),
             metrics: Metrics::default(),
         };
 
         (supervisor, address)
     }
 
-    fn spawn_new(&mut self, ctx: &mut Context<Self>) {
-        let actor_name = T::name();
-        tracing::info!(actor = %&actor_name, "Spawning new actor instance");
+    pub async fn run_log_summary(self) {
+        let weak = self.context.weak_address();
+        let (exit, metrics) = self.run().await;
 
-        let this = ctx.address().expect("we are alive");
-        let actor = (self.ctor)();
+        tracing::info!(
+            ?metrics,
+            actor = %std::any::type_name::<T>(),
+            reason = %format!("{:#}", exit), // Format entire chain of errors with alternate Display
+            connected = %weak.is_connected(),
+            "Supervisor exited"
+        );
+    }
 
-        self.metrics.num_spawns += 1;
-        tokio_extras::spawn(&this.clone(), {
-            let task = self.context.attach(actor);
+    pub async fn run(mut self) -> (anyhow::Error, Metrics) {
+        let mut actor = self.spawn_new().await;
 
-            async move {
-                match AssertUnwindSafe(task).catch_unwind().await {
-                    Ok(reason) => {
-                        let _ = this
-                            .send(Stopped {
-                                reason: reason.into(),
-                            })
-                            .await;
-                    }
-                    Err(error) => {
-                        let _ = this.send(Panicked { error }).await;
-                    }
+        loop {
+            if !self.context.running {
+                let reason = actor.stopped().await.into();
+                let restart = (self.restart_policy)(&reason).await;
+                let err = anyhow::Error::new(reason);
+                let connected = self.context.weak_address().is_connected();
+
+                tracing::info!(
+                    actor = %T::name(),
+                    // Format entire chain of errors by using alternate Display (#)
+                    reason = %format!("{:#}", err),
+                    %restart,
+                    %connected,
+                    "Actor stopped"
+                );
+
+                if restart && connected {
+                    // Spawn the actor and continue to check context.running again
+                    actor = self.spawn_new().await;
+                    continue;
+                } else {
+                    tracing::info!("Ending supervisor loop");
+                    break (err, self.metrics);
                 }
             }
-        });
-    }
-}
 
-#[async_trait]
-impl<T, R, S> xtra::Actor for Actor<T, R>
-where
-    T: xtra::Actor<Stop = S>,
-    R: Error + Send + Sync + 'static,
-    S: Into<R> + Send + 'static,
-{
-    type Stop = ();
+            let msg = self.context.next_message().await;
 
-    async fn started(&mut self, ctx: &mut Context<Self>) {
-        self.spawn_new(ctx);
-    }
+            match AssertUnwindSafe(self.context.tick(msg, &mut actor))
+                .catch_unwind()
+                .await
+            {
+                Ok(ControlFlow::Continue(())) => (),
+                Ok(ControlFlow::Break(())) => (), // This will run `if !self.context.running` above
+                Err(error) => {
+                    let actor_name = T::name();
+                    let reason = match error.downcast::<&'static str>() {
+                        Ok(reason) => *reason,
+                        Err(_) => "unknown",
+                    };
 
-    async fn stopped(self) -> Self::Stop {}
-}
+                    tracing::info!(actor = %&actor_name, %reason, restart = true, "Actor panicked");
 
-#[xtra_productivity]
-impl<T, R, S> Actor<T, R>
-where
-    T: xtra::Actor<Stop = S>,
-    R: Error + Send + Sync + 'static,
-    S: Into<R> + Send + 'static,
-{
-    pub fn handle(&mut self, msg: Stopped<R>, ctx: &mut Context<Self>) {
-        let actor = T::name();
-        let should_restart = (self.restart_policy)(&msg.reason).await;
-        let reason_str = format!("{:#}", anyhow::Error::new(msg.reason)); // Anyhow will format the entire chain of errors when using `alternate` Display (`#`)
-
-        tracing::info!(actor = %&actor, reason = %reason_str, restart = %should_restart, "Actor stopped");
-
-        if should_restart {
-            self.spawn_new(ctx)
+                    self.metrics.num_panics += 1;
+                    actor = self.spawn_new().await;
+                }
+            }
         }
     }
-}
 
-#[xtra_productivity]
-impl<T, R, S> Actor<T, R>
-where
-    T: xtra::Actor<Stop = S>,
-    R: Error + Send + Sync + 'static,
-    S: Into<R>,
-{
-    pub fn handle(&mut self, _: GetMetrics) -> Metrics {
-        self.metrics
+    async fn spawn_new(&mut self) -> T {
+        let actor_name = T::name();
+        tracing::info!(actor = %&actor_name, "Spawning new actor instance");
+        self.metrics.num_spawns += 1;
+        let mut actor = (self.ctor)();
+        self.context.running = true;
+        actor.started(&mut self.context).await;
+        actor
     }
-}
-
-#[async_trait]
-impl<T, R, S> xtra::Handler<Panicked> for Actor<T, R>
-where
-    T: xtra::Actor<Stop = S>,
-    R: Error + Send + Sync + 'static,
-    S: Into<R> + Send + 'static,
-{
-    type Return = ();
-
-    async fn handle(&mut self, msg: Panicked, ctx: &mut Context<Self>) {
-        let actor = T::name();
-        let reason = match msg.error.downcast::<&'static str>() {
-            Ok(reason) => *reason,
-            Err(_) => "unknown",
-        };
-
-        tracing::info!(actor = %&actor, %reason, restart = true, "Actor panicked");
-
-        self.metrics.num_panics += 1;
-        self.spawn_new(ctx)
-    }
-}
-
-/// Module private message to notify ourselves that an actor stopped.
-///
-/// The given `reason` will be passed to the `restart_policy` configured in the supervisor. If it
-/// yields `true`, a new instance of the actor will be spawned.
-#[derive(Debug)]
-struct Stopped<R> {
-    pub reason: R,
-}
-
-/// Module private message to notify ourselves that an actor panicked.
-#[derive(Debug)]
-struct Panicked {
-    pub error: Box<dyn Any + Send>,
 }
 
 /// Return the metrics tracked by this supervisor.
@@ -258,73 +215,68 @@ struct GetMetrics;
 mod tests {
     use super::*;
     use crate::SendAsyncSafe;
+    use async_trait::async_trait;
     use std::io;
     use std::time::Duration;
+    use tokio_extras::Tasks;
     use tracing_subscriber::util::SubscriberInitExt;
-    use xtra::Actor as _;
+    use xtra_productivity::xtra_productivity;
 
     #[tokio::test]
     async fn supervisor_tracks_spawn_metrics() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
+        let mut tasks = Tasks::default();
 
-        let (supervisor, address) =
-            Actor::with_policy(|| RemoteShutdown, always_restart::<io::Error>());
-        let (supervisor, task) = supervisor.create(None).run();
+        let (supervisor, addr) =
+            Supervisor::with_policy(|| RemoteShutdown, always_restart::<io::Error>());
+        let task = supervisor.run();
 
-        #[allow(clippy::disallowed_methods)]
-        tokio::spawn(task);
+        drop(addr);
 
-        let metrics = supervisor.send(GetMetrics).await.unwrap();
+        let (_, metrics) = task.await;
+
         assert_eq!(
             metrics.num_spawns, 1,
             "after initial spawn, should have 1 spawn"
         );
 
-        address.send(Shutdown).await.unwrap();
+        let (supervisor, addr) =
+            Supervisor::with_policy(|| RemoteShutdown, always_restart::<io::Error>());
+        let task = supervisor.run();
 
-        let metrics = supervisor.send(GetMetrics).await.unwrap();
-        assert_eq!(
-            metrics.num_spawns, 2,
-            "after shutdown, should have 2 spawns"
-        );
+        tasks.add(async move {
+            let _ = addr.send(Shutdown).await;
+            drop(addr);
+        });
+
+        let (_, metrics) = task.await;
+
+        assert_eq!(metrics.num_spawns, 2, "with shutdown, should have 2 spawns");
     }
 
     #[tokio::test]
     async fn supervisor_can_delay_respawn() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
+        let mut tasks = Tasks::default();
 
         let wait_time_seconds = 2;
         let wait_time = Duration::from_secs(wait_time_seconds);
 
-        let (supervisor, address) = Actor::with_policy(
+        let (supervisor, address) = Supervisor::with_policy(
             || RemoteShutdown,
             always_restart_after::<io::Error>(wait_time),
         );
-        let (supervisor, task) = supervisor.create(None).run();
+        let task = supervisor.run();
 
-        #[allow(clippy::disallowed_methods)]
-        tokio::spawn(task);
-
-        let metrics = supervisor.send(GetMetrics).await.unwrap();
-        assert_eq!(
-            metrics.num_spawns, 1,
-            "after initial spawn, should have 1 spawn"
-        );
-
-        // Don't wait for the result of the message, as the wait_time between
-        // restart happens when stopping the actor context - otherwise it
-        // would be hard to verify the wait in a test.
         address.send_async_safe(Shutdown).await.unwrap();
 
-        let metrics = supervisor.send(GetMetrics).await.unwrap();
-        assert_eq!(
-            metrics.num_spawns, 1,
-            "Right after shutdown, supervisor should wait for {wait_time_seconds}s to respawn the actor"
-        );
+        tasks.add(async move {
+            tokio_extras::time::sleep(wait_time + Duration::from_secs(1)).await;
+            drop(address);
+        });
 
-        tokio_extras::time::sleep(wait_time + Duration::from_secs(1)).await;
+        let (_, metrics) = task.await;
 
-        let metrics = supervisor.send(GetMetrics).await.unwrap();
         assert_eq!(
             metrics.num_spawns, 2,
             "after waiting longer than {wait_time_seconds}s, should have 2 spawns"
@@ -336,8 +288,8 @@ mod tests {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
         let (supervisor, address) =
-            Actor::with_policy(|| RemoteShutdown, always_restart::<io::Error>());
-        let (_supervisor, task) = supervisor.create(None).run();
+            Supervisor::with_policy(|| RemoteShutdown, always_restart::<io::Error>());
+        let task = supervisor.run();
 
         #[allow(clippy::disallowed_methods)]
         tokio::spawn(task);
@@ -356,15 +308,13 @@ mod tests {
         std::panic::set_hook(Box::new(|_| ())); // Override hook to avoid panic printing to log.
 
         let (supervisor, address) =
-            Actor::with_policy(|| PanickingActor, always_restart::<io::Error>());
-        let (supervisor, task) = supervisor.create(None).run();
+            Supervisor::with_policy(|| PanickingActor, always_restart::<io::Error>());
+        let task = supervisor.run();
 
-        #[allow(clippy::disallowed_methods)]
-        tokio::spawn(task);
+        let _ = address.send(Panic).split_receiver().await;
+        drop(address);
 
-        address.send(Panic).await.unwrap_err(); // Actor will be dead by the end of the function call because it panicked.
-
-        let metrics = supervisor.send(GetMetrics).await.unwrap();
+        let (_, metrics) = task.await;
         assert_eq!(metrics.num_spawns, 2, "after panic, should have 2 spawns");
         assert_eq!(metrics.num_panics, 1, "after panic, should have 1 panic");
     }
@@ -373,11 +323,10 @@ mod tests {
     async fn supervisor_can_supervise_unit_actor() {
         let _guard = tracing_subscriber::fmt().with_test_writer().set_default();
 
-        let (supervisor, _address) = Actor::new(|| UnitActor);
-        let (_supervisor, task) = supervisor.create(None).run();
+        let (supervisor, _) = Supervisor::new(|| UnitActor);
+        let task = supervisor.run();
 
-        #[allow(clippy::disallowed_methods)]
-        tokio::spawn(task);
+        task.await;
     }
 
     /// An actor that can be shutdown remotely.

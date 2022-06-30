@@ -34,9 +34,9 @@ use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::supervisor;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::always_restart_after;
+use xtras::supervisor::Supervisor;
 use xtras::HandlerTimeoutExt;
 
 pub use bdk;
@@ -90,17 +90,6 @@ pub struct TakerActorSystem<O, W, P> {
     pub auto_rollover_actor: Address<auto_rollover::Actor>,
     pub price_feed_actor: Address<P>,
     executor: command::Executor,
-    /// Keep this one around to avoid the supervisor being dropped due to ref-count changes on the
-    /// address.
-    _price_feed_supervisor: Address<supervisor::Actor<P, xtra_bitmex_price_feed::Error>>,
-    _collab_settlement_supervisor:
-        Address<supervisor::Actor<collab_settlement::taker::Actor, supervisor::UnitReason>>,
-    _rollover_supervisor:
-        Address<supervisor::Actor<rollover::taker::Actor, supervisor::UnitReason>>,
-    _dialer_supervisor: Address<supervisor::Actor<dialer::Actor, dialer::Error>>,
-    _offers_supervisor:
-        Address<supervisor::Actor<xtra_libp2p_offer::taker::Actor, supervisor::UnitReason>>,
-    _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _close_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     _pong_actor: Address<pong::Actor>,
@@ -179,20 +168,18 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
-            supervisor::Actor::new({
-                let endpoint_addr = endpoint_addr.clone();
-                let executor = executor.clone();
-                move || {
-                    collab_settlement::taker::Actor::new(
-                        endpoint_addr.clone(),
-                        executor.clone(),
-                        n_payouts,
-                    )
-                }
-            });
-        let collab_settlement_supervisor =
-            collab_settlement_supervisor.create(None).spawn(&mut tasks);
+        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
+            let endpoint_addr = endpoint_addr.clone();
+            let executor = executor.clone();
+            move || {
+                collab_settlement::taker::Actor::new(
+                    endpoint_addr.clone(),
+                    executor.clone(),
+                    n_payouts,
+                )
+            }
+        });
+        tasks.add(collab_settlement_supervisor.run_log_summary());
 
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
@@ -216,7 +203,7 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let (rollover_supervisor, libp2p_rollover_addr) = supervisor::Actor::new({
+        let (rollover_supervisor, libp2p_rollover_addr) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
             move || {
@@ -229,7 +216,7 @@ where
                 )
             }
         });
-        let rollover_supervisor = rollover_supervisor.create(None).spawn(&mut tasks);
+        tasks.add(rollover_supervisor.run_log_summary());
 
         let auto_rollover_addr = auto_rollover::Actor::new(db.clone(), libp2p_rollover_addr)
             .create(None)
@@ -264,22 +251,21 @@ where
             let endpoint_addr = endpoint_addr.clone();
             move || dialer::Actor::new(endpoint_addr.clone(), maker_multiaddr.clone())
         };
-        let (dialer_supervisor, dialer_actor) = supervisor::Actor::with_policy(
+        let (dialer_supervisor, dialer_actor) = Supervisor::<_, dialer::Error>::with_policy(
             dialer_constructor,
             always_restart_after(RESTART_INTERVAL),
         );
 
-        let (offers_supervisor, libp2p_offer_addr) = supervisor::Actor::new({
+        let (offers_supervisor, libp2p_offer_addr) = Supervisor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
             move || xtra_libp2p_offer::taker::Actor::new(cfd_actor_addr.clone().into())
         });
 
         let pong_address = pong::Actor.create(None).spawn(&mut tasks);
 
-        let (supervisor, ping_actor) = supervisor::Actor::new({
-            move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
-        });
-        let ping_supervisor = supervisor.create(None).spawn(&mut tasks);
+        let (supervisor, ping_actor) =
+            Supervisor::new(move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL));
+        tasks.add(supervisor.run_log_summary());
 
         let endpoint = Endpoint::new(
             Box::new(TokioTcpConfig::new),
@@ -306,13 +292,16 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let dialer_supervisor = dialer_supervisor.create(None).spawn(&mut tasks);
-        let offers_supervisor = offers_supervisor.create(None).spawn(&mut tasks);
+        tasks.add(dialer_supervisor.run_log_summary());
+        tasks.add(offers_supervisor.run_log_summary());
 
         let (supervisor, price_feed_actor) =
-            supervisor::Actor::with_policy(price_feed_constructor, always_restart());
+            Supervisor::<_, xtra_bitmex_price_feed::Error>::with_policy(
+                price_feed_constructor,
+                always_restart(),
+            );
 
-        let price_feed_supervisor = supervisor.create(None).spawn(&mut tasks);
+        tasks.add(supervisor.run_log_summary());
 
         let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
             .create(None)
@@ -330,12 +319,6 @@ where
             auto_rollover_actor: auto_rollover_addr,
             price_feed_actor,
             executor,
-            _price_feed_supervisor: price_feed_supervisor,
-            _rollover_supervisor: rollover_supervisor,
-            _collab_settlement_supervisor: collab_settlement_supervisor,
-            _dialer_supervisor: dialer_supervisor,
-            _offers_supervisor: offers_supervisor,
-            _ping_supervisor: ping_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             _tasks: tasks,
