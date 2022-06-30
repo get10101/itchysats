@@ -7,6 +7,7 @@ use model::ClosedCfd;
 use model::EventKind;
 use model::FailedCfd;
 use model::FailedKind;
+use model::Identity;
 use model::OrderId;
 use model::Position;
 use model::Settlement;
@@ -122,6 +123,7 @@ pub struct Cfd {
     quantity_usd: Usd,
 
     state: AggregatedState,
+    counterparty_network_identity: Identity,
 
     version: u32,
 }
@@ -146,6 +148,7 @@ impl sqlite_db::CfdAggregate for Cfd {
             position: cfd.position,
             quantity_usd: cfd.quantity_usd,
             state: AggregatedState::New,
+            counterparty_network_identity: cfd.counterparty_network_identity,
             version: 0,
         }
     }
@@ -256,6 +259,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             position,
             n_contracts,
             settlement,
+            counterparty_network_identity,
             ..
         } = closed_cfd;
 
@@ -271,6 +275,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             position,
             quantity_usd,
             state,
+            counterparty_network_identity,
             version: 0,
         }
     }
@@ -283,6 +288,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             position,
             n_contracts,
             kind,
+            counterparty_network_identity,
             ..
         } = cfd;
 
@@ -298,6 +304,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             position,
             quantity_usd,
             state,
+            counterparty_network_identity,
             version: 0,
         }
     }
@@ -306,6 +313,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
 mod metrics {
     use crate::position_metrics::AggregatedState;
     use crate::position_metrics::Cfd;
+    use itertools::Itertools;
     use model::OrderId;
     use model::Position;
     use model::Usd;
@@ -315,6 +323,7 @@ mod metrics {
     const POSITION_LABEL: &str = "position";
     const POSITION_LONG_LABEL: &str = "long";
     const POSITION_SHORT_LABEL: &str = "short";
+    const POSITION_ANY_LABEL: &str = "any";
 
     const STATUS_LABEL: &str = "status";
     const STATUS_NEW_LABEL: &str = "new";
@@ -329,6 +338,16 @@ mod metrics {
             prometheus::register_gauge_vec!(
                 "positions_quantities",
                 "Total quantity of positions on ItchySats.",
+                &[POSITION_LABEL, STATUS_LABEL]
+            )
+            .unwrap()
+        });
+
+    static COUNTERPARTY_NUMBER_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
+        conquer_once::Lazy::new(|| {
+            prometheus::register_int_gauge_vec!(
+                "counterparty_number_total",
+                "Total number of counterparties we had a position with on ItchySats.",
                 &[POSITION_LABEL, STATUS_LABEL]
             )
             .unwrap()
@@ -382,6 +401,18 @@ mod metrics {
 
         set_metrics_for(POSITION_LONG_LABEL, status, &long);
         set_metrics_for(POSITION_SHORT_LABEL, status, &short);
+
+        let long_takers = long.iter().map(|cfd| cfd.counterparty_network_identity);
+        let short_takers = short.iter().map(|cfd| cfd.counterparty_network_identity);
+
+        let counterparties = long_takers.chain(short_takers).unique().count();
+
+        COUNTERPARTY_NUMBER_GAUGE
+            .with(&HashMap::from([
+                (POSITION_LABEL, POSITION_ANY_LABEL),
+                (STATUS_LABEL, status),
+            ]))
+            .set(counterparties as i64);
     }
 
     fn set_metrics_for(position_label: &str, status: &str, position: &[&Cfd]) {
@@ -402,6 +433,19 @@ mod metrics {
                 (STATUS_LABEL, status),
             ]))
             .set(position.len() as i64);
+
+        let counterparties = position
+            .iter()
+            .map(|cfd| cfd.counterparty_network_identity)
+            .unique()
+            .count();
+
+        COUNTERPARTY_NUMBER_GAUGE
+            .with(&HashMap::from([
+                (POSITION_LABEL, position_label),
+                (STATUS_LABEL, status),
+            ]))
+            .set(counterparties as i64);
     }
 
     fn sum_amounts(cfds: &[&Cfd]) -> Usd {
