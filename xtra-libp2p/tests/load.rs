@@ -30,13 +30,13 @@ use xtras::SendAsyncSafe;
 mod util;
 
 struct SomeMessageExchange {
-    protocol: &'static str,
+    protocol: String,
     done_times_count: usize,
     tasks: Tasks,
 }
 
 impl SomeMessageExchange {
-    pub fn new(protocol: &'static str) -> Self {
+    pub fn new(protocol: String) -> Self {
         Self {
             protocol,
             done_times_count: 0,
@@ -52,7 +52,7 @@ impl SomeMessageExchange {
 
         let this = ctx.address().expect("self to be alive");
 
-        let protocol = self.protocol;
+        let protocol = self.protocol.clone();
         let future = async move {
             some_message_exchange_listener(msg.stream).await?;
             this.send_async_safe(ListenerDone).await?;
@@ -100,10 +100,6 @@ pub fn into_arr<T, const N: usize>(v: Vec<T>) -> [T; N] {
         .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
 }
 
-fn string_to_str(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
-}
-
 // TODO: If we go over 100 then *sometimes* we fail by the test just "hanging" in the end, i.e. we
 // don't finish properly
 const BOBS: usize = 200;
@@ -121,18 +117,18 @@ const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_UPPER_BOUND: u64 = 600;
 
 #[tokio::test]
 async fn multiple_bobs_one_protocol_load_test() {
+    const SOME_PROTOCOL_NAME: &str = "/some-protocol/1.0.0";
+
     let _guard = init_tracing();
 
-    let protocol = "/some-protocol/1.0.0".to_owned();
-
-    let alice_pme_handler = SomeMessageExchange::new(string_to_str(protocol.clone()))
+    let alice_pme_handler = SomeMessageExchange::new(SOME_PROTOCOL_NAME.to_string())
         .create(None)
         .spawn_global();
 
     let port = rand::random::<u16>();
 
     let alice = make_node([(
-        string_to_str(protocol.clone()),
+        SOME_PROTOCOL_NAME,
         xtra::message_channel::StrongMessageChannel::clone_channel(&alice_pme_handler),
     )]);
     let alice_listen = format!("/memory/{port}").parse::<Multiaddr>().unwrap();
@@ -148,7 +144,6 @@ async fn multiple_bobs_one_protocol_load_test() {
 
     for _bob in 0..BOBS {
         let alice_peer_id = *alice_peer_id;
-        let protocol = protocol.clone();
         let dialer = async move {
             let bob = make_node([]);
             bob.endpoint
@@ -173,13 +168,11 @@ async fn multiple_bobs_one_protocol_load_test() {
             tokio::time::sleep(Duration::from_millis(sleep_millis)).await;
 
             for _ in 0..TRIGGER_TIMES {
-                let protocol = protocol.clone();
-
                 let bob_to_alice = bob
                     .endpoint
                     .send(OpenSubstream::single_protocol(
                         alice.peer_id,
-                        string_to_str(protocol),
+                        SOME_PROTOCOL_NAME,
                     ))
                     .await
                     .unwrap()
@@ -237,12 +230,12 @@ async fn multiple_bobs_multiple_distinct_protocols_load_test() {
     for index in 0..BOBS {
         let protocol = format!("/some-protocol-{}/1.0.0", index);
 
-        let pme_handler = SomeMessageExchange::new(string_to_str(protocol.clone()))
+        let pme_handler = SomeMessageExchange::new(protocol.to_string())
             .create(None)
             .spawn_global();
 
         alice_inbound_substream_handlers.push((
-            string_to_str(protocol.clone()),
+            Box::leak(protocol.clone().into_boxed_str()),
             xtra::message_channel::StrongMessageChannel::clone_channel(&pme_handler),
         ));
         alice_pme_actors.push(pme_handler);
@@ -297,13 +290,11 @@ async fn multiple_bobs_multiple_distinct_protocols_load_test() {
             tokio::time::sleep(Duration::from_millis(sleep_millis)).await;
 
             for _ in 0..TRIGGER_TIMES {
-                let protocol = protocol.clone();
-
                 let bob_to_alice = bob
                     .endpoint
                     .send(OpenSubstream::single_protocol(
                         alice.peer_id,
-                        string_to_str(protocol),
+                        Box::leak(protocol.clone().into_boxed_str()),
                     ))
                     .await
                     .unwrap()
