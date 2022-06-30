@@ -349,31 +349,6 @@ async fn some_message_exchange_dialer(stream: xtra_libp2p::Substream) -> Result<
     stream.send(Bytes::from("Dialer1")).await?;
     tracing::info!("dialer after send1");
 
-    tracing::info!("dialer before receive 1");
-    let bytes = stream
-        .select_next_some()
-        .await
-        .context("Expected message")?;
-    tracing::info!("dialer after receive 1");
-    let message = String::from_utf8(bytes.to_vec())?;
-
-    assert_eq!(message, "Listener1");
-    // tokio::time::sleep(Duration::from_millis(10)).await;
-
-    tracing::info!("dialer before send 2");
-    stream.send(Bytes::from("Dialer2")).await?;
-    tracing::info!("dialer after send 2");
-
-    tracing::info!("dialer before receive 2");
-    let bytes = stream
-        .select_next_some()
-        .await
-        .context("Expected message")?;
-    tracing::info!("dialer after receive 2");
-    let message = String::from_utf8(bytes.to_vec())?;
-
-    assert_eq!(message, "Listener2");
-
     Ok(())
 }
 
@@ -386,26 +361,7 @@ async fn some_message_exchange_listener(stream: xtra_libp2p::Substream) -> Resul
     tracing::info!("listener after receive 1");
     let name = String::from_utf8(bytes.to_vec())?;
 
-    tracing::info!("listener before send 1");
-    stream.send(Bytes::from("Listener1")).await?;
-    tracing::info!("listener after send 1");
-
-    // tokio::time::sleep(Duration::from_millis(20)).await;
-
     assert_eq!(name, "Dialer1");
-
-    // tokio::time::sleep(Duration::from_millis(10)).await;
-
-    tracing::info!("listener before receive 2");
-    let bytes = stream.select_next_some().await?;
-    tracing::info!("listener after receive 2");
-    let name = String::from_utf8(bytes.to_vec())?;
-
-    tracing::info!("listener before send 2");
-    stream.send(Bytes::from("Listener2")).await?;
-    tracing::info!("listener after send 2");
-
-    assert_eq!(name, "Dialer2");
 
     Ok(())
 }
@@ -413,7 +369,6 @@ async fn some_message_exchange_listener(stream: xtra_libp2p::Substream) -> Resul
 pub fn init_tracing() -> DefaultGuard {
     tracing_subscriber::fmt()
         .with_env_filter("WARN")
-        .with_env_filter("load=debug")
         .with_env_filter("xtra=debug")
         .with_env_filter("xtra_libp2p=debug")
         .with_env_filter("xtras=debug")
