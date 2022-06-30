@@ -319,6 +319,7 @@ pub struct Taker {
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub maker_peer_id: PeerId,
+    _tasks: Tasks,
 }
 
 impl Taker {
@@ -437,6 +438,7 @@ impl Taker {
                 .extract_peer_id()
                 .expect("to have peer id")
                 .into(),
+            _tasks: tasks,
         }
     }
 

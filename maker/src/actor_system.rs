@@ -71,6 +71,7 @@ pub struct ActorSystem<O: 'static, W: 'static> {
         Address<supervisor::Actor<xtra_libp2p_offer::maker::Actor, supervisor::UnitReason>>,
     _position_metrics_actor: Address<position_metrics::Actor>,
     _pong_actor: Address<pong::Actor>,
+    _tasks: Tasks,
 }
 
 impl<O, W> ActorSystem<O, W>
@@ -263,6 +264,7 @@ where
             _maker_offer_supervisor,
             _position_metrics_actor: position_metrics_actor,
             _pong_actor: pong_address,
+            _tasks: tasks,
         })
     }
 
