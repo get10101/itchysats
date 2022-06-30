@@ -120,11 +120,6 @@ const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_LOWER_BOUND: u64 = 400;
 const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_UPPER_BOUND: u64 = 600;
 
 #[tokio::test]
-async fn load_tests() {
-    multiple_bobs_one_protocol_load_test().await;
-    multiple_bobs_multiple_distinct_protocols_load_test().await;
-}
-
 async fn multiple_bobs_one_protocol_load_test() {
     let _guard = init_tracing();
 
@@ -227,6 +222,7 @@ async fn multiple_bobs_one_protocol_load_test() {
         .unwrap();
 }
 
+#[tokio::test]
 async fn multiple_bobs_multiple_distinct_protocols_load_test() {
     let _guard = init_tracing();
 
