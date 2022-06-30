@@ -42,6 +42,7 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 enum State {
     Connected {
         write: wire::Write<wire::MakerToTaker, wire::TakerToMaker>,
+        _tasks: Tasks,
     },
     Disconnected,
 }
@@ -255,7 +256,10 @@ impl Actor {
                 .instrument(tracing::debug_span!("Forward maker stream messages")),
         );
 
-        self.state = State::Connected { write };
+        self.state = State::Connected {
+            write,
+            _tasks: tasks,
+        };
         Ok(())
     }
 

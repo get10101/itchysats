@@ -147,6 +147,7 @@ pub struct Maker {
     /// The address on which taker can dial in with libp2p protocols (includes
     /// maker's PeerId)
     pub connect_addr: Multiaddr,
+    pub _tasks: Tasks,
 }
 
 impl Maker {
@@ -268,6 +269,7 @@ impl Maker {
             mocks,
             connect_addr: create_connect_multiaddr(&endpoint_listen, &identities.peer_id().inner())
                 .expect("to parse properly"),
+            _tasks: tasks,
         }
     }
 

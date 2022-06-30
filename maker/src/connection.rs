@@ -121,6 +121,7 @@ struct Connection {
     wire_version: wire::Version,
     environment: Environment,
     daemon_version: String,
+    _tasks: Tasks,
 }
 
 impl Connection {
@@ -514,6 +515,7 @@ impl Actor {
                 wire_version: wire_version.clone(),
                 environment,
                 daemon_version: daemon_version.clone(),
+                _tasks: tasks,
             },
         );
 
