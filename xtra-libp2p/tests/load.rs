@@ -12,10 +12,8 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use std::time::Duration;
 use tokio_tasks::Tasks;
-use tracing::level_filters::LevelFilter;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 use xtra::message_channel::StrongMessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
@@ -102,11 +100,11 @@ pub fn into_arr<T, const N: usize>(v: Vec<T>) -> [T; N] {
 
 // TODO: If we go over 100 then *sometimes* we fail by the test just "hanging" in the end, i.e. we
 // don't finish properly
-const BOBS: usize = 200;
+const BOBS: usize = 10;
 
 // TODO: It does not really matter how often we trigger, if we run with 200 BOBS I see consistent
 // failure for multiple_bobs_one_protocol_load_test because something "hangs"
-const TRIGGER_TIMES: usize = 1;
+const TRIGGER_TIMES: usize = 1_000;
 
 // TODO: Sometimes it takes longer and we fail to establish a connection
 const BOB_WAIT_BUFFER_MILLIS_LOWER_BOUND: u64 = 800;
@@ -115,7 +113,7 @@ const BOB_WAIT_BUFFER_MILLIS_UPPER_BOUND: u64 = 900;
 const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_LOWER_BOUND: u64 = 400;
 const BOB_WAIT_BETWEEN_TRIGGER_MILLIS_UPPER_BOUND: u64 = 600;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1000)]
 async fn multiple_bobs_one_protocol_load_test() {
     const SOME_PROTOCOL_NAME: &str = "/some-protocol/1.0.0";
 
@@ -410,15 +408,12 @@ async fn some_message_exchange_listener(stream: xtra_libp2p::Substream) -> Resul
 }
 
 pub fn init_tracing() -> DefaultGuard {
-    let filter = EnvFilter::from_default_env()
-        // apply warning level globally
-        .add_directive(LevelFilter::WARN.into())
-        // log traces from test itself
-        .add_directive("basic=debug".parse().unwrap())
-        .add_directive("xtra_libp2p=debug".parse().unwrap());
-
     tracing_subscriber::fmt()
-        .with_env_filter(filter)
+        .with_env_filter("WARN")
+        .with_env_filter("load=debug")
+        .with_env_filter("xtra=debug")
+        .with_env_filter("xtra_libp2p=debug")
+        .with_env_filter("xtras=debug")
         .with_test_writer()
         .set_default()
 }
