@@ -198,7 +198,9 @@ async fn taker_takes_order_and_maker_rejects() {
     let _guard = init_tracing();
 
     let span = tracing::info_span!("Taker takes order and maker rejects");
-    taker_takes_order_and_maker_rejects_inner().instrument(span).await
+    taker_takes_order_and_maker_rejects_inner()
+        .instrument(span)
+        .await
 }
 
 async fn taker_takes_order_and_maker_rejects_inner() {

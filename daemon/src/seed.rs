@@ -95,7 +95,9 @@ pub struct RandomSeed([u8; 256]);
 
 impl Debug for RandomSeed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("RandomSeed").field(&hex::encode(&self.0)).finish()
+        f.debug_tuple("RandomSeed")
+            .field(&hex::encode(&self.0))
+            .finish()
     }
 }
 

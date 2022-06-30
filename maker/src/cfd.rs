@@ -45,7 +45,6 @@ use model::Usd;
 use sqlite_db;
 use std::collections::HashSet;
 use time::Duration;
-use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -195,7 +194,6 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
-    tasks: Tasks,
     libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
     libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
@@ -235,7 +233,6 @@ impl<O, T, W> Actor<O, T, W> {
             n_payouts,
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
-            tasks: Tasks::default(),
             libp2p_rollover,
             libp2p_collab_settlement,
             libp2p_offer,
@@ -300,8 +297,9 @@ where
         RolloverProposal { order_id, .. }: RolloverProposal,
         taker_id: Identity,
         version: RolloverVersion,
+        this: &xtra::Address<Self>,
     ) -> Result<()> {
-        let rollover_actor_addr = rollover::Actor::new(
+        let (rollover_actor_addr, fut) = rollover::Actor::new(
             order_id,
             self.n_payouts,
             self.takers.clone().into(),
@@ -315,7 +313,9 @@ where
             version,
         )
         .create(None)
-        .spawn(&mut self.tasks);
+        .run();
+
+        tokio_tasks::spawn(this, fut);
 
         self.rollover_actors.insert(order_id, rollover_actor_addr);
 
@@ -341,6 +341,7 @@ where
         order_id: OrderId,
         quantity: Usd,
         leverage: Leverage,
+        this: &xtra::Address<Self>,
     ) -> Result<()> {
         tracing::debug!(%taker_id, %quantity, %order_id, "Taker wants to take an order");
 
@@ -418,7 +419,7 @@ where
             .await??;
 
         // 5. Start up contract setup actor
-        let addr = contract_setup::Actor::new(
+        let (addr, fut) = contract_setup::Actor::new(
             self.db.clone(),
             self.process_manager.clone(),
             (order_to_take.clone(), cfd.quantity(), self.n_payouts),
@@ -434,7 +435,9 @@ where
             self.time_to_first_position.clone(),
         )
         .create(None)
-        .spawn(&mut self.tasks);
+        .run();
+
+        tokio_tasks::spawn(this, fut);
 
         disconnected.insert(addr);
 
@@ -719,6 +722,7 @@ where
         &mut self,
         taker_id: Identity,
         proposal: SettlementProposal,
+        this: &xtra::Address<Self>,
     ) -> Result<()> {
         let order_id = proposal.order_id;
 
@@ -727,7 +731,7 @@ where
             .get_disconnected(order_id)
             .with_context(|| format!("Settlement for order {order_id} is already in progress",))?;
 
-        let addr = collab_settlement::Actor::new(
+        let (addr, fut) = collab_settlement::Actor::new(
             proposal,
             taker_id,
             self.takers.clone().into(),
@@ -736,8 +740,9 @@ where
             self.n_payouts,
         )
         .create(None)
-        .spawn(&mut self.tasks);
+        .run();
 
+        tokio_tasks::spawn(this, fut);
         disconnected.insert(addr);
 
         Ok(())
@@ -797,7 +802,10 @@ where
             peer_id,
             msg,
         }: FromTaker,
+        ctx: &mut xtra::Context<Self>,
     ) {
+        let this = ctx.address().expect("self to be alive");
+
         match msg {
             wire::TakerToMaker::DeprecatedTakeOrder { order_id, quantity } => {
                 // Old clients do not send over leverage. Hence we default to Leverage::TWO which
@@ -805,7 +813,7 @@ where
                 let leverage = Leverage::TWO;
 
                 if let Err(e) = self
-                    .handle_take_order(taker_id, peer_id, order_id, quantity, leverage)
+                    .handle_take_order(taker_id, peer_id, order_id, quantity, leverage, &this)
                     .await
                 {
                     tracing::error!("Error when handling order take request: {:#}", e)
@@ -817,7 +825,7 @@ where
                 leverage,
             } => {
                 if let Err(e) = self
-                    .handle_take_order(taker_id, peer_id, order_id, quantity, leverage)
+                    .handle_take_order(taker_id, peer_id, order_id, quantity, leverage, &this)
                     .await
                 {
                     tracing::error!("Error when handling order take request: {:#}", e)
@@ -842,6 +850,7 @@ where
                             maker,
                             price,
                         },
+                        &this,
                     )
                     .await
                 {
@@ -866,6 +875,7 @@ where
                         },
                         taker_id,
                         RolloverVersion::V1,
+                        &this,
                     )
                     .await
                 {
@@ -884,6 +894,7 @@ where
                         },
                         taker_id,
                         RolloverVersion::V2,
+                        &this,
                     )
                     .await
                 {
@@ -902,6 +913,7 @@ where
                         },
                         taker_id,
                         RolloverVersion::V3,
+                        &this,
                     )
                     .await
                 {

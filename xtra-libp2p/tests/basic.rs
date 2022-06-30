@@ -8,11 +8,11 @@ use libp2p_core::multiaddr::Protocol;
 use libp2p_core::Multiaddr;
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio_tasks::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Address;
+use xtra::Context;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::libp2p::identity::Keypair;
@@ -426,19 +426,20 @@ struct GetConnectedPeers;
 struct GetListenAddresses;
 
 #[derive(Default)]
-struct HelloWorld {
-    tasks: Tasks,
-}
+struct HelloWorld;
 
 #[xtra_productivity(message_impl = false)]
 impl HelloWorld {
-    async fn handle(&mut self, msg: NewInboundSubstream) {
+    async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
         tracing::info!("New hello world stream from {}", msg.peer);
 
-        self.tasks
-            .add_fallible(hello_world_listener(msg.stream), move |e| async move {
+        tokio_tasks::spawn_fallible(
+            &ctx.address().unwrap(),
+            hello_world_listener(msg.stream),
+            move |e| async move {
                 tracing::warn!("Hello world protocol with peer {} failed: {}", msg.peer, e);
-            });
+            },
+        );
     }
 }
 

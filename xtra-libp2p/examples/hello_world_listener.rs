@@ -9,7 +9,6 @@ use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
 use std::time::Duration;
 use tokio::time::sleep;
-use tokio_tasks::Tasks;
 use tracing::Level;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -78,20 +77,21 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Default)]
-pub struct HelloWorld {
-    tasks: Tasks,
-}
+#[derive(Default, Copy, Clone)]
+pub struct HelloWorld;
 
 #[xtra_productivity(message_impl = false)]
 impl HelloWorld {
-    async fn handle(&mut self, msg: NewInboundSubstream) {
+    async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
         tracing::info!("New hello world stream from {}", msg.peer);
 
-        self.tasks
-            .add_fallible(hello_world_listener(msg.stream), move |e| async move {
+        tokio_tasks::spawn_fallible(
+            &ctx.address().unwrap(),
+            hello_world_listener(msg.stream),
+            move |e| async move {
                 tracing::warn!("Hello world protocol with peer {} failed: {}", msg.peer, e);
-            });
+            },
+        );
     }
 }
 

@@ -10,7 +10,6 @@ use model::CollaborativeSettlement;
 use model::Identity;
 use model::SettlementProposal;
 use std::time::Duration;
-use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -31,7 +30,6 @@ pub struct Actor {
     n_payouts: usize,
     executor: command::Executor,
     db: sqlite_db::Connection,
-    tasks: Tasks,
 }
 
 #[derive(Clone, Copy)]
@@ -154,7 +152,6 @@ impl Actor {
             n_payouts,
             executor: command::Executor::new(db.clone(), process_manager),
             db,
-            tasks: Tasks::default(),
             is_initiated: false,
         }
     }
@@ -233,8 +230,10 @@ impl Actor {
             })
             .await?;
 
+        let this = ctx.address().expect("self to be alive");
+
         let timeout = {
-            let this = ctx.address().expect("self to be alive");
+            let this = this.clone();
             async move {
                 tokio::time::sleep(INITIATE_TIMEOUT).await;
 
@@ -245,7 +244,7 @@ impl Actor {
                     .await;
             }
         };
-        self.tasks.add(timeout);
+        tokio_tasks::spawn(&this, timeout);
 
         let this = ctx.address().expect("self to be alive");
         self.connections

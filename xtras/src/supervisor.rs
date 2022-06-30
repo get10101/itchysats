@@ -8,7 +8,6 @@ use std::fmt;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio_tasks::Tasks;
 use xtra::Address;
 use xtra::Context;
 use xtra_productivity::xtra_productivity;
@@ -18,7 +17,6 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor<T, R> {
     context: Context<T>,
     ctor: Box<dyn Fn() -> T + Send + 'static>,
-    tasks: Tasks,
     restart_policy: AsyncClosure<R>,
     _actor: Address<T>, // kept around to ensure that the supervised actor stays alive
     metrics: Metrics,
@@ -96,7 +94,6 @@ where
         let supervisor = Self {
             context,
             ctor: Box::new(ctor),
-            tasks: Tasks::default(),
             restart_policy: always_restart(),
             _actor: address.clone(),
             metrics: Metrics::default(),
@@ -126,7 +123,6 @@ where
         let supervisor = Self {
             context,
             ctor: Box::new(ctor),
-            tasks: Tasks::default(),
             restart_policy,
             _actor: address.clone(),
             metrics: Metrics::default(),
@@ -143,7 +139,7 @@ where
         let actor = (self.ctor)();
 
         self.metrics.num_spawns += 1;
-        self.tasks.add({
+        tokio_tasks::spawn(&this.clone(), {
             let task = self.context.attach(actor);
 
             async move {

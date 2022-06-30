@@ -6,7 +6,6 @@ use prometheus::Histogram;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio_tasks::Tasks;
 use xtra::prelude::async_trait;
 use xtra::Address;
 use xtra::Context;
@@ -40,7 +39,6 @@ pub struct Actor {
     endpoint: Address<Endpoint>,
     ping_interval: Duration,
     connected_peers: HashSet<PeerId>,
-    tasks: Tasks,
     spawner: Option<Address<spawner::Actor>>,
     latencies: HashMap<PeerId, Duration>,
 }
@@ -51,7 +49,6 @@ impl Actor {
             endpoint,
             ping_interval,
             connected_peers: HashSet::default(),
-            tasks: Tasks::default(),
             spawner: None,
             latencies: HashMap::default(),
         }
@@ -65,7 +62,9 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we just started");
 
-        self.spawner = Some(spawner::Actor::new().create(None).spawn(&mut self.tasks));
+        let (addr, fut) = spawner::Actor::new().create(None).run();
+        tokio_tasks::spawn(&this, fut);
+        self.spawner = Some(addr);
 
         match self.endpoint.send(GetConnectionStats).await {
             Ok(connection_stats) => self
@@ -83,8 +82,10 @@ impl xtra::Actor for Actor {
             }
         }
 
-        self.tasks
-            .add(this.send_interval(self.ping_interval, || Ping));
+        tokio_tasks::spawn(
+            &this.clone(),
+            this.send_interval(self.ping_interval, || Ping),
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

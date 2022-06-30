@@ -13,6 +13,8 @@ maker = { path = "../maker" }
 mockall = "0.11"
 mockall_derive = "0.11"
 model = { path = "../model" }
+opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.16.0", features = ["rt-tokio"] }
 rand = "0.6"
 rust_decimal = "1.25"
 rust_decimal_macros = "1.25"
@@ -21,10 +23,8 @@ time = "0.3.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
 tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 tracing-opentelemetry = "0.17.3"
-opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
-opentelemetry-jaeger = { version = "0.16.0", features = ["rt-tokio"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 xtra = { version = "0.6" }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }

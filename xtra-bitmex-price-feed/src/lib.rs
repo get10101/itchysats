@@ -5,13 +5,11 @@ use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::fmt;
 use time::OffsetDateTime;
-use tokio_tasks::Tasks;
 use xtra_productivity::xtra_productivity;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
 pub struct Actor {
-    tasks: Tasks,
     latest_quote: Option<Quote>,
 
     /// Contains the reason we are stopping.
@@ -22,7 +20,6 @@ pub struct Actor {
 impl Actor {
     pub fn new(network: Network) -> Self {
         Self {
-            tasks: Default::default(),
             latest_quote: None,
             stop_reason: None,
             network,
@@ -37,15 +34,17 @@ impl xtra::Actor for Actor {
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
 
-        self.tasks.add_fallible(
+        tokio_tasks::spawn_fallible(
+            &this.clone(),
             {
                 let this = this.clone();
                 let network = self.network;
 
                 async move {
-                    let mut stream = bitmex_stream::subscribe([format!(
-                        "quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD"
-                    )], network);
+                    let mut stream = bitmex_stream::subscribe(
+                        [format!("quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD")],
+                        network,
+                    );
 
                     while let Some(text) = stream
                         .try_next()
@@ -76,8 +75,8 @@ impl xtra::Actor for Actor {
                     Err(Error::StreamEnded)
                 }
             },
-            |e: Error| async move {
-                let _: Result<(), xtra::Error> = this.send(e).await;
+            |err| async move {
+                let _: Result<(), xtra::Error> = this.send(err).await;
             },
         );
     }

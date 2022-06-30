@@ -17,6 +17,7 @@ chashmap-async = "0.1"
 conquer-once = "0.3"
 derivative = "2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
+hex = "0.4.3"
 hkdf = "0.12"
 itertools = "0.10"
 libp2p-core = { version = "0.33", default-features = false }
@@ -57,7 +58,6 @@ xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
 xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
 xtra_productivity = { version = "0.1.0" }
 xtras = { path = "../xtras" }
-hex = "0.4.3"
 
 [dev-dependencies]
 pretty_assertions = "1"

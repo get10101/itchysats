@@ -34,7 +34,6 @@ type ListenerConnection = (
 /// There is only one instance of this actor for all connections, meaning we must always spawn a
 /// task whenever we interact with a substream to not block the execution of other connections.
 pub struct Actor {
-    tasks: Tasks,
     protocol_tasks: HashMap<OrderId, Tasks>,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
     executor: command::Executor,
@@ -44,7 +43,6 @@ pub struct Actor {
 impl Actor {
     pub fn new(executor: command::Executor, n_payouts: usize) -> Self {
         Self {
-            tasks: Tasks::default(),
             protocol_tasks: HashMap::default(),
             pending_protocols: HashMap::default(),
             executor,
@@ -66,7 +64,8 @@ impl Actor {
         let NewInboundSubstream { peer, stream } = msg;
         let address = ctx.address().expect("we are alive");
 
-        self.tasks.add_fallible(
+        tokio_tasks::spawn_fallible(
+            &address.clone(),
             async move {
                 let mut framed =
                     Framed::new(stream, JsonCodec::<ListenerMessage, DialerMessage>::new());

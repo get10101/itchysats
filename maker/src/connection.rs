@@ -112,7 +112,6 @@ pub struct Actor {
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
     rollover_actors: AddressMap<OrderId, rollover::Actor>,
-    tasks: Tasks,
 }
 
 /// A connection to a taker.
@@ -122,7 +121,6 @@ struct Connection {
     wire_version: wire::Version,
     environment: Environment,
     daemon_version: String,
-    _tasks: Tasks,
 }
 
 impl Connection {
@@ -227,7 +225,6 @@ impl Actor {
             setup_actors: AddressMap::default(),
             settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
-            tasks: Tasks::default(),
         }
     }
 
@@ -302,7 +299,7 @@ impl Actor {
 
         let noise_priv_key = self.noise_priv_key.clone();
 
-        self.tasks.add(async move {
+        tokio_tasks::spawn(&this.clone(), async move {
             let mut tasks = Tasks::default();
 
             loop {
@@ -517,7 +514,6 @@ impl Actor {
                 wire_version: wire_version.clone(),
                 environment,
                 daemon_version: daemon_version.clone(),
-                _tasks: tasks,
             },
         );
 

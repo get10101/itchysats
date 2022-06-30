@@ -22,7 +22,6 @@ use model::Identity;
 use model::Order;
 use model::Role;
 use model::Usd;
-use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -40,7 +39,6 @@ pub struct Actor {
     confirm_order: MessageChannel<connection::ConfirmOrder, Result<()>>,
     taker_id: Identity,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
-    tasks: Tasks,
     executor: command::Executor,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
 }
@@ -76,7 +74,6 @@ impl Actor {
             confirm_order,
             taker_id,
             setup_msg_sender: None,
-            tasks: Tasks::default(),
             time_to_first_position,
         }
     }
@@ -116,7 +113,7 @@ impl Actor {
             self.n_payouts,
         );
 
-        self.tasks.add(async move {
+        tokio_tasks::spawn(&this.clone(), async move {
             let _: Result<(), xtra::Error> = match contract_future.await {
                 Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
                 Err(error) => this.send(SetupFailed { error }).await,

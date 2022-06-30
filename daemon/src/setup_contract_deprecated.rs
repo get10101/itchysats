@@ -70,11 +70,7 @@ const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the counterparty.
-#[tracing::instrument(
-    name = "Set up contract (deprecated)",
-    skip(sink, stream),
-    err
-)]
+#[tracing::instrument(name = "Set up contract (deprecated)", skip(sink, stream), err)]
 #[allow(clippy::too_many_arguments)]
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,

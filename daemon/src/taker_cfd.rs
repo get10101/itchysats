@@ -28,7 +28,6 @@ use model::Usd;
 use sqlite_db;
 use time::OffsetDateTime;
 use tracing::Instrument;
-use tokio_tasks::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
@@ -62,7 +61,6 @@ pub struct Actor<O, W> {
     libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     oracle_actor: xtra::Address<O>,
     n_payouts: usize,
-    tasks: Tasks,
     current_maker_offers: Option<MakerOffers>,
     maker_identity: Identity,
     maker_peer_id: PeerId,
@@ -97,7 +95,6 @@ where
             libp2p_collab_settlement_actor,
             n_payouts,
             setup_actors: AddressMap::default(),
-            tasks: Tasks::default(),
             current_maker_offers: None,
             maker_identity,
             maker_peer_id,
@@ -177,8 +174,12 @@ where
     W: xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
         + xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>,
 {
-    #[tracing::instrument(name = "handle_take_offer", skip(self, _ctx), err)]
-    async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
+    #[tracing::instrument(name = "handle_take_offer", skip(self, ctx), err)]
+    async fn handle_take_offer(
+        &mut self,
+        msg: TakeOffer,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
         let TakeOffer {
             order_id,
             quantity,
@@ -257,7 +258,10 @@ where
         .create(None)
         .run();
 
-        self.tasks.add(fut.instrument(tracing::debug_span!("Taker setup actor")));
+        tokio_tasks::spawn(
+            &ctx.address().expect("self to be alive"),
+            fut.instrument(tracing::debug_span!("Taker setup actor")),
+        );
 
         tracing::info!("Spawned taker setup actor");
 

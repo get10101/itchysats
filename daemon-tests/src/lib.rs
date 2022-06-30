@@ -32,6 +32,8 @@ use model::Price;
 use model::TxFeeRate;
 use model::Usd;
 use model::SETTLEMENT_INTERVAL;
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::net::IpAddr;
@@ -39,17 +41,17 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
-use opentelemetry::global;
-use opentelemetry::sdk::propagation::TraceContextPropagator;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_tasks::Tasks;
 use tracing::instrument;
 use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, Layer, Registry};
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer;
+use tracing_subscriber::Registry;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
 use xtra_libp2p::libp2p::Multiaddr;
@@ -145,7 +147,6 @@ pub struct Maker {
     /// The address on which taker can dial in with libp2p protocols (includes
     /// maker's PeerId)
     pub connect_addr: Multiaddr,
-    _tasks: Tasks,
 }
 
 impl Maker {
@@ -265,7 +266,6 @@ impl Maker {
             identity: model::Identity::new(identities.identity_pk),
             listen_addr: address,
             mocks,
-            _tasks: tasks,
             connect_addr: create_connect_multiaddr(&endpoint_listen, &identities.peer_id().inner())
                 .expect("to parse properly"),
         }
@@ -317,7 +317,6 @@ pub struct Taker {
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub maker_peer_id: PeerId,
-    _tasks: Tasks,
 }
 
 impl Taker {
@@ -436,7 +435,6 @@ impl Taker {
                 .extract_peer_id()
                 .expect("to have peer id")
                 .into(),
-            _tasks: tasks,
         }
     }
 
@@ -592,10 +590,7 @@ pub fn init_tracing() {
         .with_test_writer()
         .with_filter(filter);
 
-    Registry::default()
-        .with(telemetry)
-        .with(fmt_layer)
-        .init();
+    Registry::default().with(telemetry).with(fmt_layer).init();
 }
 
 pub async fn mock_oracle_announcements(

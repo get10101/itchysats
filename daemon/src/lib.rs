@@ -110,8 +110,6 @@ pub struct TakerActorSystem<O, W, P> {
     _online_status_actor: Address<online_status::Actor>,
 
     pub maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
-
-    _tasks: Tasks,
 }
 
 impl<O, W, P> TakerActorSystem<O, W, P>
@@ -341,7 +339,6 @@ where
             _ping_supervisor: ping_supervisor,
             _close_cfds_actor: close_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
-            _tasks: tasks,
             maker_online_status_feed_receiver,
             _online_status_actor: online_status_actor,
             _pong_actor: pong_address,

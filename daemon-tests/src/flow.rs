@@ -5,7 +5,8 @@ use daemon::projection::CfdState;
 use daemon::projection::MakerOffers;
 use std::time::Duration;
 use tokio::sync::watch;
-use tracing::{debug_span, Instrument};
+use tracing::debug_span;
+use tracing::Instrument;
 
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 60 } else { 30 });
@@ -49,7 +50,9 @@ where
 {
     let wait_until_predicate = async {
         loop {
-            rx.changed().instrument(debug_span!("Waiting for watch channel to change")).await?;
+            rx.changed()
+                .instrument(debug_span!("Waiting for watch channel to change"))
+                .await?;
 
             let current = rx.borrow().clone();
 
@@ -57,7 +60,8 @@ where
                 return anyhow::Ok(val);
             }
         }
-    }.instrument(debug_span!("Wait until predicate"));
+    }
+    .instrument(debug_span!("Wait until predicate"));
 
     let val = tokio::time::timeout(NEXT_WAIT_TIME, wait_until_predicate)
         .instrument(debug_span!("Wait or timeout on watch channel change"))
@@ -78,24 +82,22 @@ where
 /// If there is more than one CFD in the list. This is unsupported and unexpected by our test
 /// framework.
 pub fn one_cfd_with_state(expected_state: CfdState) -> impl Fn(Vec<Cfd>) -> Option<Cfd> {
-    move |cfds: Vec<Cfd>| {
-        match cfds.as_slice() {
-            [one] if one.state == expected_state => {
-                tracing::debug!("Had one, correct CFD");
-                Some(one.clone())
-            },
-            [_one_that_doesnt_match_state] => {
-                tracing::debug!("Had one CFD, but did not match state");
-                None
-            },
-            [] => {
-                tracing::debug!("Had no CFDs");
-                None
-            },
-            _more_than_one => {
-                tracing::error!("More than one CFD in feed!");
-                panic!("More than one CFD in feed!")
-            },
+    move |cfds: Vec<Cfd>| match cfds.as_slice() {
+        [one] if one.state == expected_state => {
+            tracing::debug!("Had one, correct CFD");
+            Some(one.clone())
+        }
+        [_one_that_doesnt_match_state] => {
+            tracing::debug!("Had one CFD, but did not match state");
+            None
+        }
+        [] => {
+            tracing::debug!("Had no CFDs");
+            None
+        }
+        _more_than_one => {
+            tracing::error!("More than one CFD in feed!");
+            panic!("More than one CFD in feed!")
         }
     }
 }

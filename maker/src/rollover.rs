@@ -23,7 +23,6 @@ use model::Position;
 use model::Role;
 use model::RolloverVersion;
 use model::TxFeeRate;
-use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -64,7 +63,6 @@ pub struct Actor {
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
     oracle_actor: MessageChannel<oracle::GetAnnouncement, Result<Announcement, NoAnnouncement>>,
     register: MessageChannel<connection::RegisterRollover, ()>,
-    tasks: Tasks,
     executor: command::Executor,
     version: RolloverVersion,
 }
@@ -95,7 +93,6 @@ impl Actor {
             oracle_actor,
             register,
             executor: command::Executor::new(db, process_manager),
-            tasks: Tasks::default(),
             version,
         }
     }
@@ -245,7 +242,7 @@ impl Actor {
 
         let this = ctx.address().expect("self to be alive");
 
-        self.tasks.add(async move {
+        tokio_tasks::spawn(&this.clone(), async move {
             let _: Result<(), xtra::Error> =
                 match rollover_fut.await.context("Rollover protocol failed") {
                     Ok(dlc) => this.send(RolloverSucceeded { dlc, funding_fee }).await,

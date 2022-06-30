@@ -61,7 +61,6 @@ pub struct ActorSystem<O: 'static, W: 'static> {
     _archive_closed_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     executor: command::Executor,
-    _tasks: Tasks,
     _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
     _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
     _collab_settlement_supervisor:
@@ -257,7 +256,6 @@ where
             _archive_closed_cfds_actor: archive_closed_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             executor,
-            _tasks: tasks,
             _listener_supervisor: listener_supervisor,
             _ping_supervisor: ping_supervisor,
             _rollover_supervisor: rollover_supervisor,

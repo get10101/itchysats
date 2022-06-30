@@ -42,7 +42,6 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 enum State {
     Connected {
         write: wire::Write<wire::MakerToTaker, wire::TakerToMaker>,
-        _tasks: Tasks,
     },
     Disconnected,
 }
@@ -194,9 +193,9 @@ impl Actor {
                 &self.identity_sk,
                 &maker_identity.pk(),
             )
-                .timeout(TCP_TIMEOUT)
-                .instrument(tracing::debug_span!("Initiate handshake"))
-                .await??;
+            .timeout(TCP_TIMEOUT)
+            .instrument(tracing::debug_span!("Initiate handshake"))
+            .await??;
 
             Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
         };
@@ -252,15 +251,11 @@ impl Actor {
 
         let mut tasks = Tasks::default();
         tasks.add(
-            this
-                .attach_stream(read.map(move |item| MakerStreamMessage { item }))
-                .instrument(tracing::debug_span!("Forward maker stream messages"))
+            this.attach_stream(read.map(move |item| MakerStreamMessage { item }))
+                .instrument(tracing::debug_span!("Forward maker stream messages")),
         );
 
-        self.state = State::Connected {
-            write,
-            _tasks: tasks,
-        };
+        self.state = State::Connected { write };
         Ok(())
     }
 

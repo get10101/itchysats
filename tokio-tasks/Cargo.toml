@@ -7,8 +7,8 @@ description = "Control the lifetime of async tasks by leveraging Drop"
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread"] }
-xtra = { version = "0.6", optional = true }
 tracing = "0.1"
+xtra = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["time", "macros"] }

@@ -54,7 +54,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
-use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -77,7 +76,6 @@ pub struct Actor {
     state: State,
     price_feed:
         MessageChannel<xtra_bitmex_price_feed::LatestQuote, Option<xtra_bitmex_price_feed::Quote>>,
-    tasks: Tasks,
 }
 
 pub struct Feeds {
@@ -114,7 +112,6 @@ impl Actor {
             },
             state: State::new(network),
             price_feed,
-            tasks: Tasks::default(),
         };
         let feeds = Feeds {
             cfds: rx_cfds,
@@ -1194,7 +1191,7 @@ impl xtra::Actor for Actor {
             .await
             .expect("we just started");
 
-        self.tasks.add({
+        tokio_tasks::spawn(&this.clone(), {
             let price_feed = self.price_feed.clone();
 
             async move {
