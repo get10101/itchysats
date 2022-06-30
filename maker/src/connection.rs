@@ -28,6 +28,7 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_tasks::Tasks;
 use tokio_util::codec::Framed;
+use tracing::Instrument;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -216,6 +217,8 @@ impl Actor {
     ) -> Self {
         NUM_CONNECTIONS_GAUGE.reset();
 
+        tracing::debug!("About to start connection actor");
+
         Self {
             connections: HashMap::new(),
             taker_connected_channel,
@@ -279,6 +282,7 @@ impl Actor {
         }
     }
 
+    #[tracing::instrument(name = "start_listener", skip(self, ctx))]
     async fn start_listener(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
         let address = self.p2p_socket;
@@ -289,6 +293,7 @@ impl Actor {
         {
             Ok(listener) => listener,
             Err(error) => {
+                tracing::error!("{}", error);
                 let _ = this.send_async_safe(ListenerFailed { error }).await;
                 return;
             }
@@ -310,6 +315,8 @@ impl Actor {
                     .accept()
                     .await
                     .context("Failed to accept new connection");
+
+                tracing::info!("Got new connection");
 
                 match new_connection {
                     Ok((stream, address)) => {
@@ -751,6 +758,7 @@ struct ListenerFailed {
 impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
+        tracing::info!("We're starting listener");
         self.start_listener(ctx).await;
     }
 
