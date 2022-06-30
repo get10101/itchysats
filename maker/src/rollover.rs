@@ -10,7 +10,7 @@ use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
 use futures::future;
 use futures::SinkExt;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::Dlc;
 use model::FundingFee;
 use model::FundingRate;
@@ -58,7 +58,7 @@ pub struct Actor {
     send_to_taker_actor: Box<dyn MessageChannel<connection::TakerMessage>>,
     n_payouts: usize,
     taker_id: Identity,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     sent_from_taker: Option<UnboundedSender<wire::RolloverMsg>>,
     oracle_actor: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     register: Box<dyn MessageChannel<connection::RegisterRollover>>,
@@ -74,7 +74,7 @@ impl Actor {
         n_payouts: usize,
         send_to_taker_actor: &(impl MessageChannel<connection::TakerMessage> + 'static),
         taker_id: Identity,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         oracle_actor: &(impl MessageChannel<oracle::GetAnnouncement> + 'static),
         process_manager: xtra::Address<process_manager::Actor>,
         register: &(impl MessageChannel<connection::RegisterRollover> + 'static),

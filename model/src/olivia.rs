@@ -1,12 +1,13 @@
 use anyhow::Context;
+use bdk::bitcoin::XOnlyPublicKey;
 use conquer_once::Lazy;
-use maia_core::secp256k1_zkp::schnorrsig;
 use maia_core::secp256k1_zkp::SecretKey;
 use serde::Deserialize;
 use serde_with::DeserializeFromStr;
 use serde_with::SerializeDisplay;
 use std::fmt;
 use std::str;
+use std::str::FromStr;
 use time::ext::NumericalDuration;
 use time::format_description::FormatItem;
 use time::macros::format_description;
@@ -19,9 +20,8 @@ use url::Url;
 pub const EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
 
-pub static PUBLIC_KEY: Lazy<schnorrsig::PublicKey> = Lazy::new(|| {
-    "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7"
-        .parse()
+pub static PUBLIC_KEY: Lazy<XOnlyPublicKey> = Lazy::new(|| {
+    XOnlyPublicKey::from_str("ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7")
         .expect("static key to be valid")
 });
 
@@ -34,7 +34,7 @@ pub struct Announcement {
     /// <https://h00.ooo/>{id}.
     pub id: BitMexPriceEventId,
     pub expected_outcome_time: OffsetDateTime,
-    pub nonce_pks: Vec<schnorrsig::PublicKey>,
+    pub nonce_pks: Vec<XOnlyPublicKey>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -111,7 +111,7 @@ impl fmt::Display for BitMexPriceEventId {
     }
 }
 
-impl str::FromStr for BitMexPriceEventId {
+impl FromStr for BitMexPriceEventId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -154,8 +154,6 @@ fn ceil_to_next_hour(original: OffsetDateTime) -> OffsetDateTime {
 mod olivia_api {
     use super::*;
     use anyhow::Context;
-    use maia_core::secp256k1_zkp::schnorrsig;
-    use maia_core::secp256k1_zkp::SecretKey;
     use std::convert::TryFrom;
     use time::OffsetDateTime;
 
@@ -236,7 +234,7 @@ mod olivia_api {
         #[serde(default)]
         scalars: Vec<SecretKey>,
         #[serde(default)]
-        nonces: Vec<schnorrsig::PublicKey>,
+        nonces: Vec<XOnlyPublicKey>,
     }
 
     mod timestamp {

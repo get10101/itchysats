@@ -12,7 +12,7 @@ use bdk_ext::keypair;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::olivia::BitMexPriceEventId;
 use model::Dlc;
 use model::FundingRate;
@@ -44,7 +44,7 @@ type ListenerConnection = (
 pub struct Actor {
     tasks: Tasks,
     protocol_tasks: HashMap<OrderId, Tasks>,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     n_payouts: usize,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
@@ -54,7 +54,7 @@ pub struct Actor {
 impl Actor {
     pub fn new(
         executor: command::Executor,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
         n_payouts: usize,
     ) -> Self {

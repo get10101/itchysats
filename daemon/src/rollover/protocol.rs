@@ -9,8 +9,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::secp256k1::ecdsa::Signature;
 use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
@@ -22,6 +21,7 @@ use maia::commit_descriptor;
 use maia::renew_cfd_transactions;
 use maia_core::secp256k1_zkp;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::Announcement;
 use maia_core::CfdTransactions;
 use maia_core::PartyParams;
@@ -361,7 +361,7 @@ pub(crate) async fn build_own_cfd_transactions(
     dlc: &Dlc,
     rollover_params: RolloverParams,
     announcement: &olivia::Announcement,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     our_position: Position,
     n_payouts: usize,
     complete_fee: model::CompleteFee,
@@ -449,7 +449,7 @@ pub(crate) fn build_commit_descriptor(punish_params: PunishParams) -> Descriptor
 pub(crate) async fn build_and_verify_cets_and_refund(
     dlc: &Dlc,
     announcement: &olivia::Announcement,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     publish_pk: PublicKey,
     our_role: Role,
     own_cfd_txs: &CfdTransactions,

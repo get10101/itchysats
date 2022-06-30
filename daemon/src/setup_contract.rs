@@ -12,7 +12,6 @@ use crate::wire::Msg3;
 use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::schnorrsig;
 use bdk::bitcoin::Amount;
 use bdk_ext::keypair;
 use futures::Sink;
@@ -22,6 +21,7 @@ use futures::StreamExt;
 use maia::commit_descriptor;
 use maia::create_cfd_transactions;
 use maia::lock_descriptor;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
 use model::calculate_payouts;
@@ -50,7 +50,7 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl Stream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
+    (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
@@ -244,7 +244,7 @@ pub async fn new(
         .context("Empty stream instead of Msg2")?
         .try_into_msg2()?;
     signed_lock_tx
-        .merge(msg2.signed_lock)
+        .combine(msg2.signed_lock)
         .context("Failed to merge lock PSBTs")?;
 
     tracing::info!("Exchanged signed lock transaction");

@@ -16,7 +16,7 @@ use daemon::process_manager;
 use daemon::projection;
 use daemon::wallet;
 use daemon::wire;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
@@ -177,7 +177,7 @@ pub struct Actor<O, T, W> {
     db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
     settlement_interval: Duration,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     projection: xtra::Address<projection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
     executor: command::Executor,
@@ -202,7 +202,7 @@ impl<O, T, W> Actor<O, T, W> {
         db: sqlite_db::Connection,
         wallet: xtra::Address<W>,
         settlement_interval: Duration,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         projection: xtra::Address<projection::Actor>,
         process_manager: xtra::Address<process_manager::Actor>,
         takers: xtra::Address<T>,

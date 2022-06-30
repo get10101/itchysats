@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::bitcoin::secp256k1::Signature;
+use crate::bitcoin::secp256k1::ecdsa::Signature;
 use crate::bitcoin::Transaction;
 use crate::collab_settlement::PROTOCOL;
 use crate::command;

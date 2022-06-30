@@ -13,8 +13,7 @@ use crate::wire::RolloverMsg3;
 use crate::wire::SetupMsg;
 use anyhow::Context;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::schnorrsig;
-use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::secp256k1::ecdsa::Signature;
 use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
@@ -29,6 +28,7 @@ use futures::StreamExt;
 use maia_core::interval;
 use maia_core::secp256k1_zkp;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::Announcement;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
@@ -74,7 +74,7 @@ const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
+    (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
     setup_params: SetupParams,
     build_party_params_channel: Box<dyn MessageChannel<wallet::BuildPartyParams>>,
     sign_channel: Box<dyn MessageChannel<wallet::Sign>>,
@@ -265,7 +265,7 @@ pub async fn new(
         .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg2()?;
     signed_lock_tx
-        .merge(msg2.signed_lock)
+        .combine(msg2.signed_lock)
         .context("Failed to merge lock PSBTs")?;
 
     tracing::info!("Exchanged signed lock transaction");
@@ -370,7 +370,7 @@ pub async fn new(
 pub async fn roll_over(
     mut sink: impl Sink<RolloverMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl FusedStream<Item = RolloverMsg> + Unpin,
-    (oracle_pk, announcement): (schnorrsig::PublicKey, olivia::Announcement),
+    (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
     rollover_params: RolloverParams,
     our_role: Role,
     our_position: Position,
@@ -742,7 +742,7 @@ impl AllParams {
 }
 
 async fn verify_cets(
-    (oracle_pk, nonce_pks): (schnorrsig::PublicKey, Vec<schnorrsig::PublicKey>),
+    (oracle_pk, nonce_pks): (XOnlyPublicKey, Vec<XOnlyPublicKey>),
     counterparty: PartyParams,
     own_cets: Vec<(Transaction, EcdsaAdaptorSignature, interval::Digits)>,
     cets: Vec<(RangeInclusive<u64>, EcdsaAdaptorSignature)>,
@@ -787,10 +787,11 @@ fn verify_adaptor_signature(
     encryption_point: &bdk::bitcoin::PublicKey,
     pk: &bdk::bitcoin::PublicKey,
 ) -> Result<()> {
-    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount)
+        .context("could not obtain sighash")?;
 
     encsig
-        .verify(SECP256K1, &sighash, &pk.key, &encryption_point.key)
+        .verify(SECP256K1, &sighash, &pk.inner, &encryption_point.inner)
         .context("failed to verify encsig spend tx")
 }
 
@@ -801,8 +802,9 @@ fn verify_signature(
     sig: &Signature,
     pk: &bdk::bitcoin::PublicKey,
 ) -> Result<()> {
-    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount);
-    SECP256K1.verify(&sighash, sig, &pk.key)?;
+    let sighash = spending_tx_sighash(tx, spent_descriptor, spent_amount)
+        .context("could not obtain sighash")?;
+    SECP256K1.verify_ecdsa(&sighash, sig, &pk.inner)?;
     Ok(())
 }
 
@@ -811,7 +813,7 @@ fn verify_cet_encsig(
     encsig: &EcdsaAdaptorSignature,
     digits: &interval::Digits,
     pk: &bdk::bitcoin::PublicKey,
-    (oracle_pk, nonce_pks): (&schnorrsig::PublicKey, &[schnorrsig::PublicKey]),
+    (oracle_pk, nonce_pks): (&XOnlyPublicKey, &[XOnlyPublicKey]),
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
     spent_amount: Amount,
 ) -> Result<()> {

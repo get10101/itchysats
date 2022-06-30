@@ -94,7 +94,7 @@ pub async fn load(
         ),
         refund: (
             row.refund_tx.into(),
-            secp256k1::Signature::from_str(row.refund_signature.as_str())?,
+            secp256k1::ecdsa::Signature::from_str(row.refund_signature.as_str())?,
         ),
         cets,
         maker_lock_amount: Amount::from_sat(row.maker_lock_amount as u64),

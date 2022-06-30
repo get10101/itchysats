@@ -383,7 +383,6 @@ where
         let (psbt, _) = builder.finish()?;
 
         let used_inputs = psbt
-            .global
             .unsigned_tx
             .input
             .iter()
@@ -506,7 +505,6 @@ mod tests {
         let mut utxos_in_transaction = HashSet::new();
         utxos_in_transaction.extend(
             lock_tx_1
-                .global
                 .unsigned_tx
                 .input
                 .iter()
@@ -514,7 +512,6 @@ mod tests {
         );
         utxos_in_transaction.extend(
             lock_tx_2
-                .global
                 .unsigned_tx
                 .input
                 .iter()

@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use bdk_ext::keypair;
 use futures::SinkExt;
 use futures::StreamExt;
-use maia_core::secp256k1_zkp::schnorrsig;
+use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::olivia::BitMexPriceEventId;
 use model::Dlc;
@@ -35,7 +35,7 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 /// One actor to rule all the rollovers
 pub struct Actor {
     endpoint: Address<Endpoint>,
-    oracle_pk: schnorrsig::PublicKey,
+    oracle_pk: XOnlyPublicKey,
     get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
     n_payouts: usize,
     tasks: Tasks,
@@ -61,7 +61,7 @@ impl Actor {
     pub fn new(
         endpoint: Address<Endpoint>,
         executor: command::Executor,
-        oracle_pk: schnorrsig::PublicKey,
+        oracle_pk: XOnlyPublicKey,
         get_announcement: Box<dyn MessageChannel<oracle::GetAnnouncement>>,
         n_payouts: usize,
     ) -> Self {

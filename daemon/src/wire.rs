@@ -3,7 +3,7 @@ use crate::noise::NOISE_TAG_LEN;
 use crate::olivia::BitMexPriceEventId;
 use anyhow::bail;
 use anyhow::Result;
-use bdk::bitcoin::secp256k1::Signature;
+use bdk::bitcoin::secp256k1::ecdsa::Signature;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
