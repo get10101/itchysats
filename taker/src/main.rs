@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
     let network = opts.network();
     let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
-    logger::init(opts.log_level, opts.json).context("initialize logger")?;
+    logger::init(opts.log_level, opts.json, "taker").context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 

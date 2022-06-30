@@ -13,7 +13,7 @@ pub use tracing_subscriber::filter::LevelFilter;
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 #[allow(clippy::print_stdout)] // because the logger is only initialized at the end of this function but we want to print a warning
-pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
+pub fn init(level: LevelFilter, json_format: bool, label: &str) -> Result<()> {
     if level == LevelFilter::OFF {
         return Ok(());
     }
@@ -58,7 +58,7 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
 
     global::set_text_map_propagator(TraceContextPropagator::new());
     let tracer = opentelemetry_jaeger::new_pipeline()
-        .with_service_name("daemon")
+        .with_service_name(label)
         .install_simple()
         .unwrap();
 
