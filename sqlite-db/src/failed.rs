@@ -296,7 +296,7 @@ async fn load_creation_timestamp(
     let row = sqlx::query!(
         r#"
         SELECT
-            event_log_failed.created_at
+            event_log_failed.created_at as "created_at!: i64"
         FROM
             event_log_failed
         JOIN
