@@ -26,3 +26,6 @@ xtra = { git = "https://github.com/comit-network/xtra" } # We need to use unrele
 maia = { git = "https://github.com/comit-network/maia", rev = "fc6b78b98407b10b55f8cfd152062ad77f98cd9f" } # Unreleased
 maia-core = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia-core" } # Pinned to support maia 0.1 and 0.2
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity" } # Unreleased
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3
