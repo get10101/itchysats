@@ -12,9 +12,7 @@ use model::SettlementProposal;
 use std::time::Duration;
 use tokio_tasks::Tasks;
 use xtra::prelude::MessageChannel;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
-use xtras::address_map::IPromiseIamReturningStopAllFromStopping;
 
 /// Timeout for waiting for the `Initiate` message from the taker
 ///
@@ -27,7 +25,7 @@ const INITIATE_TIMEOUT: Duration = Duration::from_secs(60 * 5);
 pub struct Actor {
     proposal: SettlementProposal,
     taker_id: Identity,
-    connections: Box<dyn MessageChannel<connection::settlement::Response>>,
+    connections: MessageChannel<connection::settlement::Response, Result<()>>,
     has_accepted: bool,
     is_initiated: bool,
     n_payouts: usize,
@@ -114,7 +112,7 @@ impl Actor {
             );
         }
 
-        ctx.stop()
+        ctx.stop_self();
     }
 }
 
@@ -136,20 +134,14 @@ impl xtra::Actor for Actor {
         }
     }
 
-    async fn stopping(&mut self, _: &mut xtra::Context<Self>) -> KeepRunning {
-        KeepRunning::StopAll
-    }
-
     async fn stopped(self) -> Self::Stop {}
 }
-
-impl IPromiseIamReturningStopAllFromStopping for Actor {}
 
 impl Actor {
     pub fn new(
         proposal: SettlementProposal,
         taker_id: Identity,
-        connections: &(impl MessageChannel<connection::settlement::Response> + 'static),
+        connections: MessageChannel<connection::settlement::Response, Result<()>>,
         process_manager: xtra::Address<process_manager::Actor>,
         db: sqlite_db::Connection,
         n_payouts: usize,
@@ -157,7 +149,7 @@ impl Actor {
         Self {
             proposal,
             taker_id,
-            connections: connections.clone_channel(),
+            connections,
             has_accepted: false,
             n_payouts,
             executor: command::Executor::new(db.clone(), process_manager),
@@ -193,7 +185,7 @@ impl Actor {
             tracing::warn!(%order_id, "Failed to execute `complete_collaborative_settlement` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn emit_rejected(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -208,7 +200,7 @@ impl Actor {
             tracing::warn!(%order_id, "Failed to execute `reject_collaborative_settlement` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn emit_failed(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
@@ -221,7 +213,7 @@ impl Actor {
             tracing::warn!(%order_id, "Failed to execute `fail_collaborative_settlement` command: {e:#}");
         }
 
-        ctx.stop();
+        ctx.stop_self();
     }
 
     async fn accept(&mut self, ctx: &mut xtra::Context<Self>) -> Result<()> {

@@ -13,7 +13,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tokio-tasks = { path = "../tokio-tasks" }
 tracing = { version = "0.1" }
 uuid = { version = "1.1", features = ["v4"] }
-xtra = { version = "0.6" }
+xtra = { version = "0.6", features = ["instrumentation"] }
 xtra_productivity = { version = "0.1.0" }
 
 [dev-dependencies]

@@ -117,7 +117,7 @@ impl xtra::Actor for Actor {
                 // prevents a continuous endless loup of restarts.
                 tokio::time::sleep(Duration::from_secs(2)).await;
 
-                ctx.stop();
+                ctx.stop_self();
             }
         }
     }

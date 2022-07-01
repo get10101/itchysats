@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update `xtra` to [upstream](https://github.com/Restioson/xtra). This involved re-implementing some of the features
+  in [comit-network's fork](https://github.com/comit-network/xtra) internally. Xtra message handler metrics were also
+  removed in favour of the new `instrumentation` feature combined with
+  [Grafana Tempo's span metrics](https://grafana.com/docs/tempo/latest/server_side_metrics/span_metrics/).
+
 ## [0.4.21] - 2022-06-27
 
 ### Added

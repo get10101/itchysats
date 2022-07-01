@@ -7,27 +7,10 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use xtra::Address;
 use xtra::Handler;
-use xtra::Message;
 
 pub struct AddressMap<K, A> {
     inner: HashMap<K, Address<A>>,
 }
-
-/// A loud trait that makes sure we don't forget to return `StopAll` from the `stopping` lifecycle
-/// callback.
-///
-/// Things might be outdated when you are reading this so bear that in mind.
-/// There is an open patch to `xtra` that changes the default implementation of an actor's
-/// `stopping` function to `StopSelf`. This is necessary, otherwise the supervisor implementation
-/// provided in this crate does not work correctly. At the same time though, returning `StopSelf`
-/// has another side-effect: It does not mark an address as disconnected if its only instance stops
-/// with a return value of `StopSelf`.
-///
-/// The GC mechanism of the [`AddressMap`] only works if [`Address::is_connected`] properly returns
-/// `false`. This trait is meant to remind users that we need to check this.
-///
-/// Once the bug in xtra is fixed, we can remove it again.
-pub trait IPromiseIamReturningStopAllFromStopping {}
 
 impl<K, A> Default for AddressMap<K, A> {
     fn default() -> Self {
@@ -40,7 +23,6 @@ impl<K, A> Default for AddressMap<K, A> {
 impl<K, A> AddressMap<K, A>
 where
     K: Eq + Hash,
-    A: IPromiseIamReturningStopAllFromStopping,
 {
     pub fn get_disconnected(&mut self, key: K) -> Result<Disconnected<'_, K, A>, StillConnected> {
         let entry = self.inner.entry(key);
@@ -79,8 +61,8 @@ where
     /// Sends a message to the actor stored with the given key.
     pub async fn send<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
-        M: Message<Result = ()>,
-        A: Handler<M> + ActorName,
+        A: Handler<M, Return = ()> + ActorName,
+        M: Send + 'static,
     {
         self.get(key)?
             .send(msg)
@@ -92,8 +74,8 @@ where
 
     pub async fn send_async<M>(&self, key: &K, msg: M) -> Result<(), NotConnected>
     where
-        M: Message<Result = ()>,
-        A: Handler<M> + ActorName,
+        A: Handler<M, Return = ()> + ActorName,
+        M: Send + 'static,
     {
         self.get(key)?
             .send_async_safe(msg)
@@ -151,10 +133,9 @@ mod tests {
     use std::time::Duration;
     use tokio_tasks::Tasks;
     use xtra::Context;
-    use xtra::KeepRunning;
 
     #[tokio::test]
-    async fn gc_removes_address_if_actor_returns_stop_all() {
+    async fn gc_removes_address_if_address_disconnects() {
         let mut tasks = Tasks::default();
         let mut map = AddressMap::default();
         let (addr_1, ctx_1) = Context::new(None);
@@ -179,19 +160,13 @@ mod tests {
     impl xtra::Actor for Dummy {
         type Stop = ();
 
-        async fn stopping(&mut self, _: &mut Context<Self>) -> KeepRunning {
-            KeepRunning::StopAll
-        }
-
         async fn stopped(self) -> Self::Stop {}
     }
-
-    impl IPromiseIamReturningStopAllFromStopping for Dummy {}
 
     #[xtra_productivity::xtra_productivity]
     impl Dummy {
         fn handle_shutdown(&mut self, _: Shutdown, ctx: &mut Context<Self>) {
-            ctx.stop()
+            ctx.stop_self()
         }
     }
 }

@@ -68,7 +68,7 @@ impl xtra::Actor for Actor {
                     .expect("Receiver to outlive this actor");
                 tokio::time::sleep(Duration::from_secs(2)).await;
 
-                ctx.stop();
+                ctx.stop_self();
             }
         }
     }

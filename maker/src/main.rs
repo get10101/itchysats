@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
     let _supervisor_address = supervisor.create(None).spawn(&mut tasks);
 
     let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), bitcoin_network, &price_feed);
+        projection::Actor::new(db.clone(), bitcoin_network, price_feed.clone().into());
     tasks.add(projection_context.run(proj_actor));
 
     let mission_success = rocket::custom(figment)

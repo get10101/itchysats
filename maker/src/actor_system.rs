@@ -3,6 +3,7 @@ use crate::connection;
 use crate::metrics::time_to_first_position;
 use anyhow::Result;
 use bdk::bitcoin;
+use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Txid;
 use daemon::archive_closed_cfds;
@@ -11,6 +12,7 @@ use daemon::collab_settlement;
 use daemon::command;
 use daemon::monitor;
 use daemon::oracle;
+use daemon::oracle::NoAnnouncement;
 use daemon::position_metrics;
 use daemon::process_manager;
 use daemon::projection;
@@ -19,6 +21,8 @@ use daemon::seed::Identities;
 use daemon::wallet;
 use libp2p_tcp::TokioTcpConfig;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
+use maia_core::PartyParams;
+use model::olivia::Announcement;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -30,7 +34,6 @@ use model::Usd;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio_tasks::Tasks;
-use xtra::message_channel::MessageChannel;
 use xtra::Actor;
 use xtra::Address;
 use xtra::Context;
@@ -43,6 +46,7 @@ use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor;
 use xtras::supervisor::always_restart_after;
+use xtras::HandlerTimeoutExt;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const PING_INTERVAL: Duration = Duration::from_secs(5);
@@ -51,7 +55,7 @@ const PING_INTERVAL: Duration = Duration::from_secs(5);
 /// a failure.
 pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 
-pub struct ActorSystem<O, W> {
+pub struct ActorSystem<O: 'static, W: 'static> {
     pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
     wallet_actor: Address<W>,
     _archive_closed_cfds_actor: Address<archive_closed_cfds::Actor>,
@@ -72,11 +76,13 @@ pub struct ActorSystem<O, W> {
 
 impl<O, W> ActorSystem<O, W>
 where
-    O: Handler<oracle::MonitorAttestation> + Handler<oracle::GetAnnouncement> + Actor<Stop = ()>,
-    W: Handler<wallet::BuildPartyParams>
-        + Handler<wallet::Sign>
-        + Handler<wallet::Withdraw>
-        + Handler<wallet::Sync>
+    O: Handler<oracle::MonitorAttestation, Return = ()>
+        + Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+        + Actor<Stop = ()>,
+    W: Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
+        + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
+        + Handler<wallet::Withdraw, Return = Result<Txid>>
+        + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -95,11 +101,11 @@ where
         listen_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
-        M: Handler<monitor::StartMonitoring>
-            + Handler<monitor::Sync>
-            + Handler<monitor::MonitorCollaborativeSettlement>
-            + Handler<monitor::TryBroadcastTransaction>
-            + Handler<monitor::MonitorCetFinality>
+        M: Handler<monitor::StartMonitoring, Return = ()>
+            + Handler<monitor::Sync, Return = ()>
+            + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
+            + Handler<monitor::TryBroadcastTransaction, Return = Result<()>>
+            + Handler<monitor::MonitorCetFinality, Return = Result<()>>
             + Actor<Stop = ()>,
     {
         let (monitor_addr, monitor_ctx) = Context::new(None);
@@ -119,13 +125,13 @@ where
         tasks.add(process_manager_ctx.run(process_manager::Actor::new(
             db.clone(),
             Role::Maker,
-            &projection_actor,
-            &position_metrics_actor,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &monitor_addr,
-            &oracle_addr,
+            projection_actor.clone().into(),
+            position_metrics_actor.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.clone().into(),
+            monitor_addr.into(),
+            oracle_addr.clone().into(),
         )));
 
         let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
@@ -143,7 +149,7 @@ where
                 rollover::maker::Actor::new(
                     executor.clone(),
                     oracle_pk,
-                    xtra::message_channel::MessageChannel::clone_channel(&oracle_addr),
+                    oracle_addr.clone().into(),
                     n_payouts,
                 )
             }
@@ -193,34 +199,21 @@ where
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
+                (rollover::PROTOCOL, libp2p_rollover_addr.into()),
                 (
-                    daemon::rollover::PROTOCOL,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(
-                        &libp2p_rollover_addr,
-                    ),
+                    collab_settlement::PROTOCOL,
+                    libp2p_collab_settlement_addr.into(),
                 ),
-                (
-                    daemon::collab_settlement::PROTOCOL,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(
-                        &libp2p_collab_settlement_addr,
-                    ),
-                ),
-                (
-                    xtra_libp2p_ping::PROTOCOL_NAME,
-                    xtra::message_channel::StrongMessageChannel::clone_channel(&pong_address),
-                ),
+                (xtra_libp2p_ping::PROTOCOL_NAME, pong_address.clone().into()),
             ],
             endpoint::Subscribers::new(
                 vec![
-                    ping_address.clone_channel(),
-                    maker_offer_address.clone_channel(),
+                    ping_address.clone().into(),
+                    maker_offer_address.clone().into(),
                 ],
-                vec![
-                    ping_address.clone_channel(),
-                    maker_offer_address.clone_channel(),
-                ],
+                vec![ping_address.into(), maker_offer_address.into()],
                 vec![],
-                vec![listener_actor.clone_channel()],
+                vec![listener_actor.into()],
             ),
         );
 
@@ -233,9 +226,9 @@ where
             inc_conn_ctx
                 .with_handler_timeout(Duration::from_secs(120))
                 .run(connection::Actor::new(
-                    Box::new(cfd_actor_addr.clone()),
-                    Box::new(cfd_actor_addr.clone()),
-                    Box::new(cfd_actor_addr.clone()),
+                    cfd_actor_addr.clone().into(),
+                    cfd_actor_addr.clone().into(),
+                    cfd_actor_addr.clone().into(),
                     identity.identity_sk,
                     heartbeat_interval,
                     p2p_socket,
