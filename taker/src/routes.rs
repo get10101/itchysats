@@ -36,6 +36,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
+use tracing::instrument;
 
 type Taker = TakerActorSystem<
     oracle::Actor,
@@ -54,6 +55,7 @@ pub struct IdentityInfo {
 }
 
 #[rocket::get("/feed")]
+#[instrument(name = "GET /feed", skip(rx))]
 pub async fn feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
@@ -148,6 +150,7 @@ pub struct CfdOrderRequest {
 }
 
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
+#[instrument(name = "POST /cfd/order", skip(taker))]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     taker: &State<Taker>,
@@ -170,6 +173,7 @@ pub async fn post_order_request(
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
+#[instrument(name = "POST /cfd/<id>/<action>", skip(taker))]
 pub async fn post_cfd_action(
     id: Uuid,
     action: String,
@@ -205,6 +209,7 @@ pub async fn post_cfd_action(
 }
 
 #[rocket::get("/alive")]
+#[instrument(name = "GET /alive")]
 pub fn get_health_check() {}
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -233,12 +238,14 @@ pub struct MarginResponse {
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]
+#[instrument(name = "GET /assets/<file>")]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
+#[instrument(name = "GET /<_paths>")]
 pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
@@ -253,6 +260,7 @@ pub struct WithdrawRequest {
 }
 
 #[rocket::post("/withdraw", data = "<withdraw_request>")]
+#[instrument(name = "POST /withdraw", skip(taker))]
 pub async fn post_withdraw_request(
     withdraw_request: Json<WithdrawRequest>,
     taker: &State<Taker>,
@@ -279,6 +287,7 @@ pub async fn post_withdraw_request(
 }
 
 #[rocket::get("/metrics")]
+#[instrument(name = "GET /metrics")]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
@@ -292,6 +301,7 @@ pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProb
 }
 
 #[rocket::put("/sync")]
+#[instrument(name = "PUT /sync", skip(taker))]
 pub async fn put_sync_wallet(
     taker: &State<Taker>,
     _auth: Authenticated,
@@ -311,6 +321,7 @@ pub struct HealthCheck {
 }
 
 #[rocket::get("/version")]
+#[instrument(name = "GET /version")]
 pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
         daemon_version: daemon::version::version().to_string(),

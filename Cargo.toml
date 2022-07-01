@@ -25,7 +25,7 @@ resolver = "2"
 xtra = { git = "https://github.com/Restioson/xtra", rev = "afff02dd0fc8b92ae264db8a5457773f8af95487" } # Unreleased
 maia = { git = "https://github.com/comit-network/maia", rev = "fc6b78b98407b10b55f8cfd152062ad77f98cd9f" } # Unreleased
 maia-core = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia-core" } # Pinned to support maia 0.1 and 0.2
-xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity", rev = "bebe45425ae44980186df7b96b41f70cad58a4bb" } # Unreleased
+xtra_productivity = { git = "https://github.com/Restioson/xtra-productivity", rev = "dcf76b6622c89dc6b5630605d8395d8265968406" } # Unreleased
 electrum-client = { git = "https://github.com/comit-network/rust-electrum-client/", branch = "do-not-ignore-empty-lines" }
 
 [profile.dev.package.sqlx-macros]
