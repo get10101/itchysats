@@ -132,6 +132,7 @@ where
                 let supported_protocols = supported_inbound_protocols.clone();
 
                 async move {
+                    let now = std::time::Instant::now();
                     let result = tokio_extras::time::timeout(
                         connection_timeout,
                         multistream_select::listener_select_proto(stream, &supported_protocols),
@@ -144,6 +145,7 @@ where
                         },
                     )
                     .await;
+                    tracing::info!(elapsed = ?now.elapsed().as_millis(), "Listener negotiated protocol");
 
                     match result {
                         Ok(Ok((protocol, stream))) => Ok(Ok((stream, *protocol))),

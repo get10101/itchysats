@@ -281,6 +281,7 @@ impl Endpoint {
             .instrument(tracing::debug_span!("open yamux stream"))
             .await?;
 
+        let now = std::time::Instant::now();
         let (protocol, stream) = tokio_extras::time::timeout(
             self.connection_timeout,
             multistream_select::dialer_select_proto(stream, protocols, Version::V1),
@@ -290,6 +291,7 @@ impl Endpoint {
         .await
         .map_err(|_timeout| Error::NegotiationTimeoutReached)?
         .map_err(Error::NegotiationFailed)?;
+        tracing::info!(elapsed = ?now.elapsed().as_millis(), "Dialer negotiated protocol");
 
         Ok((
             protocol,

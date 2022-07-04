@@ -17,6 +17,7 @@ use xtra_productivity::xtra_productivity;
 
 /// Small aggregate dedicated to keep everything that's related to one party
 /// (e.g. alice or bob) in one place
+#[derive(Clone)]
 pub struct Node {
     pub peer_id: PeerId,
     pub endpoint: Address<Endpoint>,
