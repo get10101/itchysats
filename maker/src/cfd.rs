@@ -287,7 +287,7 @@ where
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
         + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
         + xtra::Handler<connection::RegisterRollover, Return = ()>,
@@ -326,7 +326,7 @@ where
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
         + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
@@ -424,7 +424,9 @@ where
         // state
         let announcement = self
             .oracle
-            .send(oracle::GetAnnouncement(order_to_take.oracle_event_id))
+            .send(oracle::GetAnnouncements(vec![
+                order_to_take.oracle_event_id,
+            ]))
             .await??;
 
         // 5. Start up contract setup actor
@@ -432,7 +434,7 @@ where
             self.db.clone(),
             self.process_manager.clone(),
             (order_to_take.clone(), cfd.quantity(), self.n_payouts),
-            (self.oracle_pk, announcement),
+            (self.oracle_pk, announcement[0].clone()),
             self.wallet.clone().into(),
             self.wallet.clone().into(),
             (
@@ -765,7 +767,7 @@ where
 #[xtra_productivity]
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
         + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
