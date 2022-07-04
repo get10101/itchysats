@@ -38,10 +38,10 @@ use maia_deprecated::lock_descriptor;
 use maia_deprecated::renew_cfd_transactions;
 use maia_deprecated::spending_tx_sighash;
 use model::olivia;
-use model::payouts;
 use model::Cet;
 use model::CompleteFee;
 use model::Dlc;
+use model::Payouts;
 use model::Position;
 use model::RevokedCommit;
 use model::Role;
@@ -152,7 +152,7 @@ pub async fn new(
     let settlement_event_id = announcement.id;
     let payouts = HashMap::from_iter([(
         announcement.into(),
-        payouts::calculate(
+        Payouts::new(
             position,
             role,
             setup_params.price,
@@ -161,7 +161,8 @@ pub async fn new(
             setup_params.short_leverage,
             n_payouts,
             setup_params.fee_account.settle(),
-        )?,
+        )?
+        .settlement(),
     )]);
 
     let own_cfd_txs = tokio::task::spawn_blocking({
@@ -441,7 +442,7 @@ pub async fn roll_over(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        payouts::calculate(
+        Payouts::new(
             our_position,
             our_role,
             rollover_params.price,
@@ -450,7 +451,8 @@ pub async fn roll_over(
             rollover_params.short_leverage,
             n_payouts,
             complete_fee,
-        )?,
+        )?
+        .settlement(),
     )]);
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
