@@ -33,7 +33,7 @@ use model::TxFeeRate;
 use model::Usd;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Actor;
 use xtra::Address;
 use xtra::Context;

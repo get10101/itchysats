@@ -22,7 +22,7 @@ use shared_bin::catchers::default_catchers;
 use shared_bin::fairings;
 use shared_bin::logger;
 use std::net::SocketAddr;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Actor;
 use xtras::supervisor;
 use xtras::supervisor::always_restart;
@@ -31,7 +31,8 @@ use xtras::supervisor::always_restart;
 async fn main() -> Result<()> {
     let opts = Opts::parse();
 
-    logger::init(opts.log_level, opts.json, "maker").context("initialize logger")?;
+    logger::init(opts.log_level, opts.json, opts.instrumentation, "maker")
+        .context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 

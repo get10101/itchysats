@@ -66,7 +66,7 @@ impl xtra::Actor for Actor {
                 self.sender
                     .send(ConnectionStatus::Offline { reason: None })
                     .expect("Receiver to outlive this actor");
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio_extras::time::sleep(Duration::from_secs(2)).await;
 
                 ctx.stop_self();
             }

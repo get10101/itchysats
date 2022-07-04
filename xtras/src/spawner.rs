@@ -1,7 +1,7 @@
 use crate::SendAsyncSafe;
 use async_trait::async_trait;
 use futures::Future;
-use tokio_tasks::TaskMap;
+use tokio_extras::TaskMap;
 use uuid::Uuid;
 use xtra::Context;
 use xtra_productivity::xtra_productivity;

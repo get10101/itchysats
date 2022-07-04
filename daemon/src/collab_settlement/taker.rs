@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use model::libp2p::PeerId;
 use model::OrderId;
 use model::Price;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_productivity::xtra_productivity;

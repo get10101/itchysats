@@ -12,11 +12,11 @@ futures = { version = "0.3", default-features = false }
 model = { path = "../model" }
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
-tokio-tasks = { path = "../tokio-tasks" }
+tokio-extras = { path = "../tokio-extras" }
 tracing = "0.1"
 xtra = { version = "0.6" }
 xtra-libp2p = { path = "../xtra-libp2p" }
-xtra_productivity = "0.1"
+xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 xtras = { path = "../xtras" }
 
 [dev-dependencies]

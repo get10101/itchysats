@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use sqlite_db;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 

@@ -1,4 +1,3 @@
-use crate::future_ext::FutureExt;
 use crate::noise;
 use crate::setup_taker;
 use crate::version;
@@ -24,8 +23,11 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
-use tokio_tasks::Tasks;
+use tokio_extras::time::already_instrumented;
+use tokio_extras::FutureExt;
+use tokio_extras::Tasks;
 use tokio_util::codec::Framed;
+use tracing::Instrument;
 use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -177,7 +179,9 @@ impl Actor {
 
         let (mut write, mut read) = {
             let mut connection = TcpStream::connect(&maker_addr)
-                .timeout(self.connect_timeout)
+                .timeout(self.connect_timeout, |parent| {
+                    tracing::debug_span!(parent: parent, "TcpStream connect")
+                })
                 .await
                 .with_context(|| {
                     let seconds = self.connect_timeout.as_secs();
@@ -190,7 +194,7 @@ impl Actor {
                 &self.identity_sk,
                 &maker_identity.pk(),
             )
-            .timeout(TCP_TIMEOUT)
+            .timeout(TCP_TIMEOUT, already_instrumented)
             .await??;
 
             Framed::new(connection, EncryptedJsonCodec::new(noise)).split()
@@ -204,12 +208,13 @@ impl Actor {
                 peer_id: self.peer_id,
                 environment: self.environment.into(),
             })
-            .timeout(TCP_TIMEOUT)
+            .instrument(tracing::debug_span!("send hello"))
+            .timeout(TCP_TIMEOUT, |parent| parent.clone())
             .await??;
 
         match read
             .try_next()
-            .timeout(TCP_TIMEOUT)
+            .timeout(TCP_TIMEOUT, |parent| tracing::debug_span!(parent: parent, "receive hello"))
             .await
             .with_context(|| {
                 format!(
@@ -388,7 +393,7 @@ pub async fn connect(
                     "Tried connecting to {num_addresses} addresses without success, retrying in {seconds} seconds",
                 );
 
-                tokio::time::sleep(Duration::from_secs(seconds)).await;
+                tokio_extras::time::sleep(Duration::from_secs(seconds)).await;
             }
         }
     }

@@ -25,7 +25,7 @@ shared-bin = { path = "../shared-bin" }
 sqlite-db = { path = "../sqlite-db" }
 time = "0.3.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
-tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
+tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tracing = { version = "0.1" }
 uuid = "0.8"
 webbrowser = "0.7.1"

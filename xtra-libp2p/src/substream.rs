@@ -8,6 +8,8 @@ use pin_project::pin_project;
 use prometheus::HistogramTimer;
 use prometheus::IntCounter;
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Debug;
 use std::io::IoSlice;
 use std::io::IoSliceMut;
 use std::pin::Pin;
@@ -27,7 +29,6 @@ use std::task::Poll;
 ///
 /// Substreams are instrumented with prometheus metrics that track the duration they are alive for
 /// and how many bytes are read from and written to the stream.
-#[derive(Debug)]
 #[pin_project]
 pub struct Substream {
     #[pin]
@@ -44,6 +45,14 @@ pub struct Substream {
 
     /// The prometheus counter for the number of bytes written.
     written_counter: IntCounter,
+}
+
+impl Debug for Substream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Substream")
+            .field("inner", &self.inner)
+            .finish()
+    }
 }
 
 impl Substream {

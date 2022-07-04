@@ -10,7 +10,7 @@ use model::OrderId;
 use sqlite_db;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;

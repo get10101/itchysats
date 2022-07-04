@@ -5,7 +5,7 @@ use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::fmt;
 use time::OffsetDateTime;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;

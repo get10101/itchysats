@@ -4,4 +4,6 @@ disallowed-methods = [
   { path = "xtra::message_channel::MessageChannel::do_send", reason = "discards the return value, possibly swallowing an error" },
   { path = "xtra::Context::notify_interval", reason = "does not wait for response from the previous handler, prefer `xtra_ext::Address::send_interval`" },
   { path = "tokio::spawn", reason = "tasks can outlive the actor system, prefer spawn_with_handle()" },
+  { path = "tokio::time::sleep", reason = "is not instrumented, prefer tokio_extras::sleep" },
+  { path = "tokio::time::timeout", reason = "is not instrumented, prefer tokio_extras::timeout" },
 ]

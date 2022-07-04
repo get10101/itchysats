@@ -10,7 +10,6 @@ use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use std::time::Duration;
 use tracing::instrument;
-use tracing::Instrument;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -112,12 +111,7 @@ impl Actor {
         }
 
         // Only check the connection again after it had enough time to be established
-        tokio::time::sleep(CONNECTION_TIMEOUT)
-            .instrument(tracing::debug_span!(
-                "Wait connection timeout",
-                timeout_secs = CONNECTION_TIMEOUT.as_secs()
-            ))
-            .await;
+        tokio_extras::time::sleep(CONNECTION_TIMEOUT).await;
 
         anyhow::ensure!(
             self.is_connection_established().await?,

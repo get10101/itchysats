@@ -1,4 +1,3 @@
-use crate::future_ext::FutureExt;
 use crate::transaction_ext::TransactionExt;
 use crate::wallet;
 use crate::wire::Msg0;
@@ -53,6 +52,7 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 use std::time::Duration;
+use tokio_extras::FutureExt;
 use xtra::prelude::MessageChannel;
 
 /// How long contract setup protocol waits for the next message before giving up
@@ -108,7 +108,7 @@ pub async fn new(
         .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg0", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg0()?;
@@ -178,7 +178,7 @@ pub async fn new(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg1", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg1()?;
@@ -262,7 +262,7 @@ pub async fn new(
     .context("Failed to send Msg2")?;
     let msg2 = stream
         .select_next_some()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg2()?;
@@ -342,7 +342,7 @@ pub async fn new(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg3", CONTRACT_SETUP_MSG_TIMEOUT))?
         .try_into_msg3()?;
@@ -402,7 +402,7 @@ pub async fn roll_over(
     .context("Failed to send Msg0")?;
     let msg0 = stream
         .select_next_some()
-        .timeout(ROLLOVER_MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg0()?;
@@ -486,7 +486,7 @@ pub async fn roll_over(
 
     let msg1 = stream
         .select_next_some()
-        .timeout(ROLLOVER_MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg1()?;
@@ -627,7 +627,7 @@ pub async fn roll_over(
 
     let msg2 = stream
         .select_next_some()
-        .timeout(ROLLOVER_MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg2()?;
@@ -664,7 +664,7 @@ pub async fn roll_over(
         .context("Failed to send Msg3")?;
     let _ = stream
         .select_next_some()
-        .timeout(ROLLOVER_MSG_TIMEOUT)
+        .timeout(ROLLOVER_MSG_TIMEOUT, stream_select_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg3", ROLLOVER_MSG_TIMEOUT))?
         .try_into_msg3()?;
@@ -688,6 +688,10 @@ pub async fn roll_over(
         settlement_event_id: announcement.id,
         refund_timelock: rollover_params.refund_timelock,
     })
+}
+
+fn stream_select_next_span(parent: &tracing::Span) -> tracing::Span {
+    tracing::debug_span!(parent: parent, "SetupMsg stream select_next_some")
 }
 
 /// A convenience struct for storing PartyParams and PunishParams of both

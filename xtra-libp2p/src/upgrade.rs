@@ -132,9 +132,16 @@ where
                 let supported_protocols = supported_inbound_protocols.clone();
 
                 async move {
-                    let result = tokio::time::timeout(
+                    let result = tokio_extras::time::timeout(
                         connection_timeout,
                         multistream_select::listener_select_proto(stream, &supported_protocols),
+                        |parent| {
+                            tracing::debug_span!(
+                                parent: parent,
+                                "listener_select_proto",
+                                ?supported_protocols
+                            )
+                        },
                     )
                     .await;
 

@@ -58,7 +58,7 @@ impl Actor {
         self.endpoint
             .send(ListenOn(self.listen_address.clone()))
             .await?;
-        tokio::time::sleep(CONNECTION_TIMEOUT).await;
+        tokio_extras::time::sleep(CONNECTION_TIMEOUT).await;
 
         anyhow::ensure!(
             self.is_listening().await?,

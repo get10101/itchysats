@@ -1,6 +1,5 @@
 use crate::collab_settlement::protocol::*;
 use crate::command;
-use crate::future_ext::FutureExt;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Error;
@@ -16,7 +15,8 @@ use model::OrderId;
 use model::SettlementProposal;
 use model::SettlementTransaction;
 use std::collections::HashMap;
-use tokio_tasks::Tasks;
+use tokio_extras::FutureExt;
+use tokio_extras::Tasks;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
@@ -157,7 +157,7 @@ impl Actor {
 
                     let DialerSignature { dialer_signature } = framed
                         .next()
-                        .timeout(SETTLEMENT_MSG_TIMEOUT)
+                        .timeout(SETTLEMENT_MSG_TIMEOUT, |parent| tracing::debug_span!(parent: parent, "receive dialer signature"))
                         .await
                         .with_context(|| {
                             format!(

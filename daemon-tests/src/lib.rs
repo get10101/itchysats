@@ -42,7 +42,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::util::SubscriberInitExt;

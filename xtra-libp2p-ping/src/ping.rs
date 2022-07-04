@@ -6,7 +6,7 @@ use prometheus::Histogram;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::prelude::async_trait;
 use xtra::Address;
 use xtra::Context;
@@ -77,7 +77,7 @@ impl xtra::Actor for Actor {
                 );
                 // This code path should not be hit, but in case we run into an error this sleep
                 // prevents a continuous endless loup of restarts.
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio_extras::time::sleep(Duration::from_secs(2)).await;
 
                 ctx.stop_self();
             }

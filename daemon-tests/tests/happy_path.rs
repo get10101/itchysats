@@ -39,7 +39,7 @@ use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio_extras::time::sleep;
 
 macro_rules! confirm {
     (lock transaction, $id:expr, $maker:expr, $taker:expr) => {

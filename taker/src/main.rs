@@ -36,7 +36,7 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Actor;
 
 mod routes;
@@ -86,7 +86,7 @@ struct Opts {
     json: bool,
 
     /// If enabled, traces will be exported to the OTEL collector
-    #[clap(short, long)]
+    #[clap(long)]
     instrumentation: bool,
 
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace

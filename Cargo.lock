@@ -327,6 +327,7 @@ dependencies = [
  "async-stream",
  "futures",
  "tokio",
+ "tokio-extras",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
@@ -803,7 +804,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tokio-util 0.7.3",
  "tracing",
  "tracing-subscriber",
@@ -837,7 +838,7 @@ dependencies = [
  "sqlite-db",
  "time",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "tracing-subscriber",
  "xtra",
@@ -1884,7 +1885,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tokio-util 0.7.3",
  "tracing",
  "uuid 1.1.2",
@@ -4206,7 +4207,7 @@ dependencies = [
  "sqlite-db",
  "time",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "uuid 0.8.2",
  "webbrowser",
@@ -4357,6 +4358,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-extras"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "pin-project-lite",
+ "tokio",
+ "tracing",
+ "xtra",
+]
+
+[[package]]
 name = "tokio-io-timeout"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4408,15 +4420,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "tokio-tasks"
-version = "0.1.0"
-dependencies = [
- "futures",
- "tokio",
- "xtra",
 ]
 
 [[package]]
@@ -5241,7 +5244,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "xtra",
  "xtra_productivity",
@@ -5266,7 +5269,7 @@ dependencies = [
  "rand 0.8.4",
  "thiserror",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "tracing-subscriber",
  "void",
@@ -5291,7 +5294,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "tracing-subscriber",
  "xtra",
@@ -5311,7 +5314,7 @@ dependencies = [
  "prometheus",
  "rand 0.8.4",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "tracing-subscriber",
  "xtra",
@@ -5323,7 +5326,7 @@ dependencies = [
 [[package]]
 name = "xtra_productivity"
 version = "0.1.0"
-source = "git+https://github.com/Restioson/xtra-productivity?rev=dcf76b6622c89dc6b5630605d8395d8265968406#dcf76b6622c89dc6b5630605d8395d8265968406"
+source = "git+https://github.com/comit-network/xtra-productivity?rev=0bfd589b42a63149221dec7e95aca932875374dd#0bfd589b42a63149221dec7e95aca932875374dd"
 dependencies = [
  "quote",
  "syn",
@@ -5338,7 +5341,7 @@ dependencies = [
  "futures",
  "thiserror",
  "tokio",
- "tokio-tasks",
+ "tokio-extras",
  "tracing",
  "tracing-subscriber",
  "uuid 1.1.2",

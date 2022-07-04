@@ -2,7 +2,6 @@ use crate::collab_settlement;
 use crate::connection;
 use crate::connection::NoConnection;
 use crate::contract_setup;
-use crate::future_ext::FutureExt;
 use crate::metrics::time_to_first_position;
 use crate::rollover;
 use anyhow::anyhow;
@@ -45,7 +44,8 @@ use model::Usd;
 use sqlite_db;
 use std::collections::HashSet;
 use time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::FutureExt;
+use tokio_extras::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -448,7 +448,9 @@ impl<O, T, W> Actor<O, T, W> {
         match self
             .setup_actors
             .send(&order_id, contract_setup::Accepted)
-            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT, |parent| {
+                tracing::debug_span!(parent: parent, "send contract_setup::Accepted")
+            })
             .await
         {
             Ok(Ok(())) => Ok(()),
@@ -480,7 +482,9 @@ impl<O, T, W> Actor<O, T, W> {
         match self
             .setup_actors
             .send(&order_id, contract_setup::Rejected)
-            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT)
+            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT, |parent| {
+                tracing::debug_span!(parent: parent, "send contract_setup::Rejected")
+            })
             .await
         {
             Ok(Ok(())) => Ok(()),

@@ -54,7 +54,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -1208,7 +1208,7 @@ impl xtra::Actor for Actor {
                         }
                     }
 
-                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    tokio_extras::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         })

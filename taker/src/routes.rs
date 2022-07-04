@@ -150,7 +150,7 @@ pub struct CfdOrderRequest {
 }
 
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
-#[instrument(name = "POST /cfd/order", skip(taker))]
+#[instrument(name = "POST /cfd/order", skip(taker), err)]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     taker: &State<Taker>,
@@ -173,7 +173,7 @@ pub async fn post_order_request(
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
-#[instrument(name = "POST /cfd/<id>/<action>", skip(taker))]
+#[instrument(name = "POST /cfd/<id>/<action>", skip(taker), err)]
 pub async fn post_cfd_action(
     id: Uuid,
     action: String,
@@ -260,7 +260,7 @@ pub struct WithdrawRequest {
 }
 
 #[rocket::post("/withdraw", data = "<withdraw_request>")]
-#[instrument(name = "POST /withdraw", skip(taker))]
+#[instrument(name = "POST /withdraw", skip(taker), ret, err)]
 pub async fn post_withdraw_request(
     withdraw_request: Json<WithdrawRequest>,
     taker: &State<Taker>,
@@ -287,7 +287,7 @@ pub async fn post_withdraw_request(
 }
 
 #[rocket::get("/metrics")]
-#[instrument(name = "GET /metrics")]
+#[instrument(name = "GET /metrics", ret, err)]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
@@ -301,7 +301,7 @@ pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProb
 }
 
 #[rocket::put("/sync")]
-#[instrument(name = "PUT /sync", skip(taker))]
+#[instrument(name = "PUT /sync", skip(taker), err)]
 pub async fn put_sync_wallet(
     taker: &State<Taker>,
     _auth: Authenticated,
@@ -321,7 +321,7 @@ pub struct HealthCheck {
 }
 
 #[rocket::get("/version")]
-#[instrument(name = "GET /version")]
+#[instrument(name = "GET /version", ret)]
 pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
         daemon_version: daemon::version::version().to_string(),

@@ -27,7 +27,7 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use time::OffsetDateTime;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;

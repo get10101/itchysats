@@ -26,7 +26,9 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::time::Duration;
 use thiserror::Error;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
+use tracing::instrument;
+use tracing::Instrument;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -263,6 +265,7 @@ impl Endpoint {
         self.notify_connection_dropped(*peer).await;
     }
 
+    #[instrument(skip(self), ret, err)]
     async fn open_substream(
         &mut self,
         peer: PeerId,
@@ -273,12 +276,17 @@ impl Endpoint {
             .get_mut(&peer)
             .ok_or(Error::NoConnection(peer))?;
 
-        let stream = control.open_stream().await?;
+        let stream = control
+            .open_stream()
+            .instrument(tracing::debug_span!("open yamux stream"))
+            .await?;
 
-        let (protocol, stream) = tokio::time::timeout(
+        let (protocol, stream) = tokio_extras::time::timeout(
             self.connection_timeout,
             multistream_select::dialer_select_proto(stream, protocols, Version::V1),
+            |parent| tracing::debug_span!(parent: parent, "dialer_select_proto", version = ?Version::V1)
         )
+        .instrument(tracing::debug_span!("timeout dialing select proto", timeout_secs = self.connection_timeout.as_secs()))
         .await
         .map_err(|_timeout| Error::NegotiationTimeoutReached)?
         .map_err(Error::NegotiationFailed)?;
@@ -402,10 +410,13 @@ impl Endpoint {
                 let connection_timeout = self.connection_timeout;
 
                 async move {
-                    let (peer, control, incoming_substreams, worker) =
-                        tokio::time::timeout(connection_timeout, transport.dial(msg.0)?)
-                            .await
-                            .context("Dialing timed out")??;
+                    let (peer, control, incoming_substreams, worker) = tokio_extras::time::timeout(
+                        connection_timeout,
+                        transport.dial(msg.0)?,
+                        |parent| tracing::debug_span!(parent: parent, "transport dial"),
+                    )
+                    .await
+                    .context("Dialing timed out")??;
 
                     let _ = this
                         .send_async_safe(NewConnection {

@@ -23,7 +23,7 @@ use model::Position;
 use model::Role;
 use model::RolloverVersion;
 use model::TxFeeRate;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 

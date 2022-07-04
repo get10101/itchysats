@@ -19,10 +19,10 @@ rust_decimal_macros = "1.25"
 sqlite-db = { path = "../sqlite-db" }
 time = "0.3.11"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
-tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
+tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 xtra = { version = "0.6", features = ["instrumentation"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
-xtra_productivity = { version = "0.1", features = ["tracing"] }
+xtra_productivity = { version = "0.1", features = ["instrumentation"] }

@@ -4,7 +4,6 @@ use crate::bitcoin::secp256k1::ecdsa::Signature;
 use crate::bitcoin::Transaction;
 use crate::collab_settlement::PROTOCOL;
 use crate::command;
-use crate::future_ext::FutureExt;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -18,6 +17,7 @@ use model::Price;
 use model::SettlementTransaction;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio_extras::FutureExt;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
@@ -59,7 +59,9 @@ pub async fn dialer(
 
     if let Decision::Reject = framed
         .next()
-        .timeout(DECISION_TIMEOUT)
+        .timeout(DECISION_TIMEOUT, |parent| {
+            tracing::debug_span!(parent: parent, "receive decision")
+        })
         .await
         .with_context(|| {
             format!(

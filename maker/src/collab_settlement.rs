@@ -10,7 +10,7 @@ use model::CollaborativeSettlement;
 use model::Identity;
 use model::SettlementProposal;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -236,7 +236,7 @@ impl Actor {
         let timeout = {
             let this = ctx.address().expect("self to be alive");
             async move {
-                tokio::time::sleep(INITIATE_TIMEOUT).await;
+                tokio_extras::time::sleep(INITIATE_TIMEOUT).await;
 
                 let _ = this
                     .send(InitiateTimeoutReached {

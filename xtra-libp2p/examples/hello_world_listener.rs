@@ -8,8 +8,7 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
 use std::time::Duration;
-use tokio::time::sleep;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use tracing::Level;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -73,7 +72,7 @@ async fn main() -> Result<()> {
         supervisor::Actor::with_policy(listener_constructor, always_restart::<listener::Error>());
     let _listener_supervisor = supervisor.create(None).spawn_global();
 
-    sleep(Duration::from_secs(opts.duration_secs)).await;
+    tokio_extras::time::sleep(Duration::from_secs(opts.duration_secs)).await;
 
     Ok(())
 }

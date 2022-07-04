@@ -30,7 +30,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::watch;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -605,7 +605,7 @@ mod tests {
             .expect_err("single UTXO to remain locked");
 
         // wait for lock on UTXO to expire
-        tokio::time::sleep(time_to_lock).await;
+        tokio_extras::time::sleep(time_to_lock).await;
 
         // after enough time has passed, our UTXO can once again be
         // used to build party params
