@@ -114,7 +114,8 @@ async fn main() -> Result<()> {
     let p2p_port = opts.p2p_port;
     let p2p_socket = format!("0.0.0.0:{p2p_port}").parse::<SocketAddr>().unwrap();
 
-    let db = sqlite_db::connect(data_dir.join("maker.sqlite")).await?;
+    let db =
+        sqlite_db::connect(data_dir.join("maker.sqlite"), opts.ignore_migration_errors).await?;
 
     // Create actors
 
