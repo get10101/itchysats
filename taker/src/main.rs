@@ -335,7 +335,7 @@ async fn main() -> Result<()> {
         .merge(("port", opts.http_address.port()))
         .merge(("cli_colors", false));
 
-    let db = sqlite_db::connect(data_dir.join("taker.sqlite")).await?;
+    let db = sqlite_db::connect(data_dir.join("taker.sqlite"), true).await?;
 
     // Create actors
 

@@ -38,6 +38,10 @@ pub struct Opts {
     #[clap(short, long)]
     pub json: bool,
 
+    /// If enabled the application will not fail if an error occurred during db migration.
+    #[clap(short, long)]
+    pub ignore_migration_errors: bool,
+
     /// If provided will be used for internal wallet instead of a random key. The keys will be
     /// derived according to Bip84
     #[clap(short, long)]

@@ -2,6 +2,7 @@ extern crate core;
 
 mod sqlx_ext; // Must come first because it is a macro.
 
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use chashmap_async::CHashMap;
@@ -72,7 +73,10 @@ impl Connection {
 /// If the database does not exist, it will be created. If it does exist, we load it and apply all
 /// pending migrations. If applying migrations fails, the old database is backed up next to it and a
 /// new one is created.
-pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<Connection>> {
+pub fn connect(
+    path: PathBuf,
+    ignore_migration_errors: bool,
+) -> BoxFuture<'static, Result<Connection>> {
     async move {
         let pool = SqlitePool::connect_with(
             SqliteConnectOptions::new()
@@ -92,6 +96,10 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<Connection>> {
             }
             Err(e) => e,
         };
+
+        if !ignore_migration_errors {
+            bail!("Could not access database due to '{error:#}'. Please backup your database and start again or disable failsafe mode. Your db path is: {path_display}");
+        }
 
         // Attempt to recover from _some_ problems during migration.
         // These two can happen if someone tampered with the migrations or messed with the DB.
@@ -114,7 +122,7 @@ pub fn connect(path: PathBuf) -> BoxFuture<'static, Result<Connection>> {
             tracing::info!("Starting with a new database!");
 
             // recurse to reconnect (async recursion requires a `BoxFuture`)
-            return connect(path).await;
+            return connect(path, ignore_migration_errors).await;
         }
 
         Err(error)
