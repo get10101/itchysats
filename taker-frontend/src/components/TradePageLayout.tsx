@@ -21,13 +21,12 @@ import History from "./History";
 import PromoBanner from "./PromoBanner";
 
 interface TradePageLayoutProps {
-    children: JSX.Element;
     cfds: Cfd[];
     connectedToMaker: ConnectionStatus;
     showPromoBanner: boolean;
 }
 
-export function TradePageLayout({ children, cfds, connectedToMaker, showPromoBanner }: TradePageLayoutProps) {
+export function TradePageLayout({ cfds, connectedToMaker, showPromoBanner }: TradePageLayoutProps) {
     return (
         <VStack w={"100%"}>
             {showPromoBanner && <PromoBanner />}

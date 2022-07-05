@@ -205,15 +205,11 @@ export const App = () => {
                     />
                     <Route
                         element={
-                            // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
-
-
-                                <TradePageLayout
-                                    cfds={cfds}
-                                    connectedToMaker={connectedToMaker}
-                                    showPromoBanner={isWithinPromoPeriod}
-                                />
-
+                            <TradePageLayout
+                                cfds={cfds}
+                                connectedToMaker={connectedToMaker}
+                                showPromoBanner={isWithinPromoPeriod}
+                            />
                         }
                     >
                         <Route
