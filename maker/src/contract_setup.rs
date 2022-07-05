@@ -245,7 +245,7 @@ impl Actor {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     fn handle(&mut self, msg: wire::SetupMsg) {
         if let Err(e) = self.forward_protocol_msg(msg).await {

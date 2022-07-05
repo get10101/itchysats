@@ -82,7 +82,7 @@ pub struct HelloWorld {
     tasks: Tasks,
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream) {
         tracing::info!("New hello world stream from {}", msg.peer);

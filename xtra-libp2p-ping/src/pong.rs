@@ -9,7 +9,7 @@ pub struct Actor {
     tasks: Tasks,
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, message: NewInboundSubstream) {
         let NewInboundSubstream { stream, peer } = message;

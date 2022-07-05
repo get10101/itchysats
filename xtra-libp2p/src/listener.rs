@@ -93,7 +93,7 @@ impl Actor {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: endpoint::ListenAddressRemoved, ctx: &mut xtra::Context<Self>) {
         if msg.address == self.listen_address {

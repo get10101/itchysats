@@ -539,7 +539,7 @@ impl Actor {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle_msg_from_taker(&mut self, msg: cfd::FromTaker) {
         let msg_str = msg.msg.name();

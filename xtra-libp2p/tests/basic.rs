@@ -389,7 +389,7 @@ impl Actor for EndpointSubscriberStats {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl EndpointSubscriberStats {
     async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
         self.connected_peers.insert(msg.peer);
@@ -430,7 +430,7 @@ struct HelloWorld {
     tasks: Tasks,
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream) {
         tracing::info!("New hello world stream from {}", msg.peer);

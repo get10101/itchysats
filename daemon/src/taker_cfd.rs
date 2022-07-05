@@ -104,7 +104,7 @@ where
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl<O, W> Actor<O, W> {
     async fn handle_current_offers(&mut self, msg: xtra_libp2p_offer::taker::LatestMakerOffers) {
         let takers_perspective_of_maker_offers = msg.0.map(|mut maker_offers| {

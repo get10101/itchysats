@@ -42,7 +42,7 @@ impl xtra::Actor for WalletActor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl WalletActor {
     async fn handle(&mut self, msg: wallet::BuildPartyParams) -> Result<PartyParams> {
         self.mock.lock().await.build_party_params(msg)
