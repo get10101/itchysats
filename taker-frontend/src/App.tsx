@@ -184,6 +184,7 @@ export const App = () => {
     return (
         <Routes>
             <Route
+                path="/"
                 element={
                     <MainPageLayout
                         outdatedWarningIsVisible={outdatedWarningIsVisible}
@@ -198,43 +199,41 @@ export const App = () => {
                     />
                 }
             >
-                <Route path="/">
+                <Route
+                    path="wallet"
+                    element={<Wallet walletInfo={walletInfo} />}
+                />
+                <Route
+                    element={
+                        <TradePageLayout
+                            cfds={cfds}
+                            connectedToMaker={connectedToMaker}
+                            showPromoBanner={isWithinPromoPeriod}
+                        />
+                    }
+                >
                     <Route
-                        path="wallet"
-                        element={<Wallet walletInfo={walletInfo} />}
-                    />
-                    <Route
+                        path="long"
                         element={
-                            <TradePageLayout
-                                cfds={cfds}
+                            <Trade
+                                offer={longOffer}
                                 connectedToMaker={connectedToMaker}
-                                showPromoBanner={isWithinPromoPeriod}
+                                walletBalance={walletInfo ? walletInfo.balance : 0}
+                                isLong={true}
                             />
                         }
-                    >
-                        <Route
-                            path="long"
-                            element={
-                                <Trade
-                                    offer={longOffer}
-                                    connectedToMaker={connectedToMaker}
-                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    isLong={true}
-                                />
-                            }
-                        />
-                        <Route
-                            path="short"
-                            element={
-                                <Trade
-                                    offer={shortOffer}
-                                    connectedToMaker={connectedToMaker}
-                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                    isLong={false}
-                                />
-                            }
-                        />
-                    </Route>
+                    />
+                    <Route
+                        path="short"
+                        element={
+                            <Trade
+                                offer={shortOffer}
+                                connectedToMaker={connectedToMaker}
+                                walletBalance={walletInfo ? walletInfo.balance : 0}
+                                isLong={false}
+                            />
+                        }
+                    />
                 </Route>
             </Route>
         </Routes>
