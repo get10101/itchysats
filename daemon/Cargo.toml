@@ -45,7 +45,7 @@ statrs = "0.15"
 thiserror = "1"
 time = { version = "0.3.11", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
-tokio-tasks = { path = "../tokio-tasks", features = ["xtra"] }
+tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = { version = "1.1", features = ["serde", "v4"] }
@@ -55,7 +55,7 @@ xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
 xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
 xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
-xtra_productivity = { version = "0.1.0" }
+xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 xtras = { path = "../xtras" }
 
 [dev-dependencies]

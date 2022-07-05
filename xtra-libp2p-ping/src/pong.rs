@@ -1,6 +1,6 @@
 use crate::protocol;
 use async_trait::async_trait;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
 

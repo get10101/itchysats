@@ -27,7 +27,7 @@ pub fn subscribe<const N: usize>(
 
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                _ = tokio_extras::time::sleep(Duration::from_secs(5)) => {
                     tracing::trace!("No message from BitMex in the last 5 seconds, pinging");
                     let _ = connection.send(tungstenite::Message::Ping([0u8; 32].to_vec())).await;
                 },

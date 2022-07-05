@@ -9,7 +9,6 @@ use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use libp2p_tcp::TokioTcpConfig;
 use std::time::Duration;
-use tokio::time::sleep;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra_libp2p::dialer;
@@ -56,7 +55,7 @@ async fn main() -> Result<()> {
         supervisor::Actor::with_policy(dialer_constructor, always_restart::<dialer::Error>());
     let _dialer_supervisor = supervisor.create(None).spawn_global();
 
-    sleep(Duration::from_secs(1)).await;
+    tokio_extras::time::sleep(Duration::from_secs(1)).await;
 
     let stream = endpoint_addr
         .send(OpenSubstream::single_protocol(

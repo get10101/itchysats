@@ -10,11 +10,11 @@ async-trait = "0.1.56"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
-tokio-tasks = { path = "../tokio-tasks" }
+tokio-extras = { path = "../tokio-extras" }
 tracing = { version = "0.1" }
 uuid = { version = "1.1", features = ["v4"] }
 xtra = { version = "0.6", features = ["instrumentation"] }
-xtra_productivity = { version = "0.1.0" }
+xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }

@@ -35,12 +35,14 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use tokio::select;
 use tokio::sync::watch;
+use tracing::instrument;
 use uuid::Uuid;
 
 pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sled::Tree>>;
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]
+#[instrument(name = "GET /feed", skip(rx))]
 pub async fn maker_feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
@@ -126,6 +128,7 @@ fn empty_leverage() -> Vec<Leverage> {
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]
+#[instrument(name = "PUT /offer", skip(maker), err)]
 pub async fn put_offer_params(
     offer_params: Json<CfdNewOfferParamsRequest>,
     maker: &State<Maker>,
@@ -154,6 +157,7 @@ pub async fn put_offer_params(
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
+#[instrument(name = "POST /cfd/<id>/<action>", skip(maker), err)]
 pub async fn post_cfd_action(
     id: Uuid,
     action: String,
@@ -199,18 +203,21 @@ pub fn get_health_check() {}
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]
+#[instrument(name = "GET /assets/<file>")]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
+#[instrument(name = "GET /<_paths>")]
 pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }
 
 #[rocket::put("/sync")]
+#[instrument(name = "PUT /sync", skip(maker), err)]
 pub async fn put_sync_wallet(
     maker: &State<Maker>,
     _auth: Authenticated,
@@ -225,6 +232,7 @@ pub async fn put_sync_wallet(
 }
 
 #[rocket::get("/cfds")]
+#[instrument(name = "GET /cfds", skip(rx), ret, err)]
 pub async fn get_cfds<'r>(
     rx: &State<Feeds>,
     _auth: Authenticated,
@@ -242,6 +250,7 @@ pub async fn get_cfds<'r>(
 }
 
 #[rocket::get("/takers")]
+#[instrument(name = "GET /takers", skip(rx), ret, err)]
 pub async fn get_takers<'r>(
     rx: &State<Feeds>,
     _auth: Authenticated,
@@ -254,6 +263,7 @@ pub async fn get_takers<'r>(
 }
 
 #[rocket::get("/metrics")]
+#[instrument(name = "GET /metrics", ret, err)]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
@@ -272,6 +282,7 @@ pub struct HealthCheck {
 }
 
 #[rocket::get("/version")]
+#[instrument(name = "GET /version", ret)]
 pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
         daemon_version: daemon::version::version().to_string(),

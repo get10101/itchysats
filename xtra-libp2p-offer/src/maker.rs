@@ -115,7 +115,7 @@ impl xtra::Actor for Actor {
 
                 // This code path should not be hit, but in case we run into an error this sleep
                 // prevents a continuous endless loup of restarts.
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio_extras::time::sleep(Duration::from_secs(2)).await;
 
                 ctx.stop_self();
             }

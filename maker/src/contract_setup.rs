@@ -22,7 +22,7 @@ use model::Identity;
 use model::Order;
 use model::Role;
 use model::Usd;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;

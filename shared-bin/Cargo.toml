@@ -13,9 +13,12 @@ atty = "0.2"
 daemon = { path = "../daemon" }
 http-api-problem = { version = "0.53.0", features = ["rocket"] }
 model = { path = "../model" }
+opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.10.0" }
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
 serde = { version = "1", features = ["derive"] }
 time = "0.3.11"
 tracing = { version = "0.1" }
+tracing-opentelemetry = "0.17.3"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }

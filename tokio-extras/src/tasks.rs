@@ -2,6 +2,10 @@ use crate::future_ext::FutureExt;
 use futures::future::RemoteHandle;
 use futures::Future;
 
+pub use task_map::*;
+
+mod task_map;
+
 /// Struct controlling the lifetime of the async tasks, such as
 /// running actors and periodic notifications. If it gets dropped, all
 /// tasks are cancelled.

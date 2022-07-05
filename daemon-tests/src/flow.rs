@@ -54,13 +54,15 @@ where
         }
     };
 
-    let val = tokio::time::timeout(NEXT_WAIT_TIME, wait_until_predicate)
-        .await
-        .with_context(|| {
-            let seconds = NEXT_WAIT_TIME.as_secs();
+    let val = tokio_extras::time::timeout(NEXT_WAIT_TIME, wait_until_predicate, |parent| {
+        tracing::debug_span!(parent: parent, "wait until predicate")
+    })
+    .await
+    .with_context(|| {
+        let seconds = NEXT_WAIT_TIME.as_secs();
 
-            format!("Value channel did not satisfy predicate within {seconds} seconds")
-        })??;
+        format!("Value channel did not satisfy predicate within {seconds} seconds")
+    })??;
 
     Ok(val)
 }

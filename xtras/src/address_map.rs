@@ -131,7 +131,7 @@ impl<'a, K, A> Disconnected<'a, K, A> {
 mod tests {
     use super::*;
     use std::time::Duration;
-    use tokio_tasks::Tasks;
+    use tokio_extras::Tasks;
     use xtra::Context;
 
     #[tokio::test]
@@ -143,7 +143,7 @@ mod tests {
         map.insert("addr_1", addr_1.clone());
 
         addr_1.send(Shutdown).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio_extras::time::sleep(Duration::from_secs(2)).await;
 
         let (addr_2, _ctx_2) = Context::new(None);
         map.insert("addr_2", addr_2); // inserting another address should GC `addr_1`

@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use std::time::Duration;
+use tracing::instrument;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -21,6 +22,7 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 /// Polls Endpoint at startup to check whether connection got established correctly, and
 /// then listens for ConnectionDropped message to stop itself.
 /// Should be used in conjunction with supervisor maintaining resilient connection.
+#[derive(Debug)]
 pub struct Actor {
     endpoint: Address<Endpoint>,
     connect_address: Multiaddr,
@@ -38,6 +40,7 @@ impl Actor {
         }
     }
 
+    #[instrument(err)]
     async fn connect(&self) -> Result<(), Error> {
         self.endpoint
             .send(Connect(self.connect_address.clone()))
@@ -86,6 +89,7 @@ impl Actor {
             .expect("to always have peer id if successfully started")
     }
 
+    #[instrument(ret, err)]
     async fn is_connection_established(&self) -> Result<bool> {
         Ok(self
             .endpoint
@@ -95,6 +99,7 @@ impl Actor {
             .contains(&self.peer_id()))
     }
 
+    #[instrument(err)]
     async fn dial(&self) -> Result<()> {
         if self.is_connection_established().await? {
             tracing::info!("Connection is already established, no need to connect");
@@ -106,7 +111,7 @@ impl Actor {
         }
 
         // Only check the connection again after it had enough time to be established
-        tokio::time::sleep(CONNECTION_TIMEOUT).await;
+        tokio_extras::time::sleep(CONNECTION_TIMEOUT).await;
 
         anyhow::ensure!(
             self.is_connection_established().await?,

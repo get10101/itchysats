@@ -23,7 +23,7 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -241,7 +241,7 @@ impl xtra::Actor for Actor {
         let maker_response_timeout = {
             let this = ctx.address().expect("self to be alive");
             async move {
-                tokio::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
+                tokio_extras::time::sleep(MAKER_RESPONSE_TIMEOUT).await;
 
                 let _ = this
                     .send(MakerResponseTimeoutReached {

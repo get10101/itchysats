@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use time::Duration;
 use time::OffsetDateTime;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 

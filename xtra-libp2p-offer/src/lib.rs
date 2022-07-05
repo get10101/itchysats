@@ -80,7 +80,7 @@ mod tests {
                         .await
                         .unwrap();
 
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    tokio_extras::time::sleep(Duration::from_millis(200)).await;
                 }
             }
         });
@@ -192,7 +192,7 @@ mod tests {
         loop {
             match fut().await {
                 Some(t) => return t,
-                None => tokio::time::sleep(Duration::from_millis(200)).await,
+                None => tokio_extras::time::sleep(Duration::from_millis(200)).await,
             }
         }
     }

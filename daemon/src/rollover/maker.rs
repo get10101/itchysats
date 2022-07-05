@@ -1,5 +1,4 @@
 use crate::command;
-use crate::future_ext::FutureExt;
 use crate::oracle;
 use crate::oracle::NoAnnouncement;
 use crate::rollover::protocol::*;
@@ -24,7 +23,8 @@ use model::Role;
 use model::RolloverVersion;
 use model::TxFeeRate;
 use std::collections::HashMap;
-use tokio_tasks::Tasks;
+use tokio_extras::FutureExt;
+use tokio_extras::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
@@ -164,6 +164,10 @@ impl Actor {
             short_funding_rate,
         } = msg;
 
+        fn next_rollover_span(parent: &tracing::Span) -> tracing::Span {
+            tracing::debug_span!(parent: parent, "next rollover message")
+        }
+
         let (mut framed, _, from_params) =
             self.pending_protocols.remove(&order_id).with_context(|| {
                 format!("No active protocol for {order_id} when accepting rollover")
@@ -228,7 +232,7 @@ impl Actor {
 
                     let msg0 = framed
                         .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                         .await
                         .with_context(|| format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT))?
                         .context("Empty stream instead of Msg0")?
@@ -269,7 +273,7 @@ impl Actor {
 
                     let msg1 = framed
                         .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                         .await
                         .with_context(|| format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT))?
                         .context("Empty stream instead of Msg1")?
@@ -299,7 +303,7 @@ impl Actor {
 
                     let msg2 = framed
                         .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT)
+                        .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                         .await
                         .with_context(|| format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT))?
                         .context("Empty stream instead of Msg2")?

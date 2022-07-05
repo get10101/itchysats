@@ -30,7 +30,7 @@ where
         F: Send + Sync + Fn() -> M,
     {
         while self.send(constructor()).await.is_ok() {
-            tokio::time::sleep(duration).await
+            tokio_extras::time::sleep(duration).await
         }
         let type_name = std::any::type_name::<M>();
 

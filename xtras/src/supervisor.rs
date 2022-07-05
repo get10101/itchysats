@@ -8,7 +8,7 @@ use std::fmt;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Address;
 use xtra::Context;
 use xtra_productivity::xtra_productivity;
@@ -49,7 +49,7 @@ where
     let wait_time = wait_time;
     Box::new(move |_: &E| {
         Box::pin(async move {
-            tokio::time::sleep(wait_time).await;
+            tokio_extras::time::sleep(wait_time).await;
             true
         })
     })
@@ -326,7 +326,7 @@ mod tests {
             "Right after shutdown, supervisor should wait for {wait_time_seconds}s to respawn the actor"
         );
 
-        tokio::time::sleep(wait_time + Duration::from_secs(1)).await;
+        tokio_extras::time::sleep(wait_time + Duration::from_secs(1)).await;
 
         let metrics = supervisor.send(GetMetrics).await.unwrap();
         assert_eq!(

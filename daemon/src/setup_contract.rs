@@ -1,4 +1,3 @@
-use crate::future_ext::FutureExt;
 use crate::shared_protocol::format_expect_msg_within;
 use crate::shared_protocol::verify_adaptor_signature;
 use crate::shared_protocol::verify_cets;
@@ -36,6 +35,7 @@ use model::CET_TIMELOCK;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::time::Duration;
+use tokio_extras::FutureExt;
 use xtra::prelude::MessageChannel;
 
 /// How long contract setup protocol waits for the next message before giving up
@@ -78,12 +78,16 @@ pub async fn new(
         publish_pk,
     };
 
+    fn stream_next_span(parent: &tracing::Span) -> tracing::Span {
+        tracing::debug_span!(parent: parent, "SetupMsg stream next")
+    }
+
     sink.send(SetupMsg::Msg0(Msg0::from((own_params.clone(), own_punish))))
         .await
         .context("Failed to send Msg0")?;
     let msg0 = stream
         .next()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg0", CONTRACT_SETUP_MSG_TIMEOUT))?
         .context("Empty stream instead of Msg0")?
@@ -154,7 +158,7 @@ pub async fn new(
 
     let msg1 = stream
         .next()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg1", CONTRACT_SETUP_MSG_TIMEOUT))?
         .context("Empty stream instead of Msg1")?
@@ -239,7 +243,7 @@ pub async fn new(
     .context("Failed to send Msg2")?;
     let msg2 = stream
         .next()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
         .context("Empty stream instead of Msg2")?
@@ -320,7 +324,7 @@ pub async fn new(
         .context("Failed to send Msg3")?;
     let _ = stream
         .next()
-        .timeout(CONTRACT_SETUP_MSG_TIMEOUT)
+        .timeout(CONTRACT_SETUP_MSG_TIMEOUT, stream_next_span)
         .await
         .with_context(|| format_expect_msg_within("Msg3", CONTRACT_SETUP_MSG_TIMEOUT))?
         .context("Empty stream instead of Msg3")?

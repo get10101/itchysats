@@ -1,8 +1,11 @@
+use crate::time::Timeout;
 use futures::future::RemoteHandle;
 use futures::Future;
 use futures::FutureExt as _;
 use std::any::Any;
 use std::any::TypeId;
+use std::time::Duration;
+use tracing::Span;
 
 pub trait FutureExt: Future + Sized {
     /// Spawn the `Future` of a task in the runtime and return a
@@ -12,6 +15,12 @@ pub trait FutureExt: Future + Sized {
     where
         Self: Send + Any + 'static,
         Self::Output: Send;
+
+    /// Limit the future's time of execution to a certain duration, cancelling it and returning
+    /// an error if time runs out. This is instrumented, unlike `tokio::time::timeout`. The
+    /// `child_span` function constructs the span for the child future from the span of the parent
+    /// (timeout) future.
+    fn timeout(self, duration: Duration, child_span: impl FnOnce(&Span) -> Span) -> Timeout<Self>;
 }
 
 impl<F> FutureExt for F
@@ -34,14 +43,18 @@ where
         tokio::spawn(future);
         handle
     }
+
+    fn timeout(self, duration: Duration, child_span: impl FnOnce(&Span) -> Span) -> Timeout<F> {
+        crate::time::timeout(duration, self, child_span)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time::sleep;
     use std::panic;
     use std::time::Duration;
-    use tokio::time::sleep;
 
     #[tokio::test]
     async fn spawning_a_regular_future_does_not_panic() {

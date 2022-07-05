@@ -36,7 +36,7 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::Actor;
 
 mod routes;
@@ -84,6 +84,10 @@ struct Opts {
     /// If enabled logs will be in json format
     #[clap(short, long)]
     json: bool,
+
+    /// If enabled, traces will be exported to the OTEL collector
+    #[clap(long)]
+    instrumentation: bool,
 
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
     #[clap(short, long, default_value = "Debug")]
@@ -284,7 +288,8 @@ async fn main() -> Result<()> {
     let network = opts.network();
     let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
-    logger::init(opts.log_level, opts.json).context("initialize logger")?;
+    logger::init(opts.log_level, opts.json, opts.instrumentation, "taker")
+        .context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 

@@ -1,5 +1,4 @@
 use crate::command;
-use crate::future_ext::FutureExt;
 use crate::oracle;
 use crate::oracle::NoAnnouncement;
 use crate::rollover;
@@ -20,7 +19,8 @@ use model::OrderId;
 use model::Role;
 use model::Timestamp;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::FutureExt;
+use tokio_extras::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
@@ -142,7 +142,9 @@ impl Actor {
 
                     match framed
                         .next()
-                        .timeout(DECISION_TIMEOUT)
+                        .timeout(DECISION_TIMEOUT, |parent| {
+                            tracing::debug_span!(parent: parent, "receive decision")
+                        })
                         .await
                         .with_context(|| {
                             format!(
@@ -198,9 +200,13 @@ impl Actor {
                                 .await
                                 .context("Failed to send Msg0")?;
 
+                            fn next_rollover_span(parent: &tracing::Span) -> tracing::Span {
+                                tracing::debug_span!(parent: parent, "next rollover message")
+                            }
+
                             let msg0 = framed
                                 .next()
-                                .timeout(ROLLOVER_MSG_TIMEOUT)
+                                .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                                 .await
                                 .with_context(|| {
                                     format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT)
@@ -240,7 +246,7 @@ impl Actor {
 
                             let msg1 = framed
                                 .next()
-                                .timeout(ROLLOVER_MSG_TIMEOUT)
+                                .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                                 .await
                                 .with_context(|| {
                                     format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT)
@@ -275,7 +281,7 @@ impl Actor {
 
                             let msg2 = framed
                                 .next()
-                                .timeout(ROLLOVER_MSG_TIMEOUT)
+                                .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                                 .await
                                 .with_context(|| {
                                     format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT)

@@ -8,7 +8,7 @@ use libp2p_core::multiaddr::Protocol;
 use libp2p_core::Multiaddr;
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;

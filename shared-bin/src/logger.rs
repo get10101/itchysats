@@ -1,15 +1,28 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
+use opentelemetry::sdk::trace;
+use opentelemetry::sdk::Resource;
+use opentelemetry::KeyValue;
 use time::macros::format_description;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer;
+use tracing_subscriber::Registry;
 
 pub use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 #[allow(clippy::print_stdout)] // because the logger is only initialized at the end of this function but we want to print a warning
-pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
+pub fn init(
+    level: LevelFilter,
+    json_format: bool,
+    instrumentation: bool,
+    service_name: &'static str,
+) -> Result<()> {
     if level == LevelFilter::OFF {
         return Ok(());
     }
@@ -31,23 +44,45 @@ pub fn init(level: LevelFilter, json_format: bool) -> Result<()> {
     };
     let filter = filter.add_directive(format!("{level}").parse()?);
 
-    let builder = tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
         .with_ansi(is_terminal);
 
-    let result = if json_format {
-        builder.json().with_timer(UtcTime::rfc_3339()).try_init()
+    let fmt_layer = if json_format {
+        fmt_layer.json().with_timer(UtcTime::rfc_3339()).boxed()
     } else {
-        builder
+        fmt_layer
             .compact()
             .with_timer(UtcTime::new(format_description!(
                 "[year]-[month]-[day] [hour]:[minute]:[second]"
             )))
-            .try_init()
+            .boxed()
     };
 
-    result.map_err(|e| anyhow!("Failed to init logger: {e}"))?;
+    let fmt_layer = fmt_layer.with_filter(filter);
+
+    let telemetry = if instrumentation {
+        opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+        let cfg = trace::Config::default()
+            .with_resource(Resource::new([KeyValue::new("service.name", service_name)]));
+
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_trace_config(cfg)
+            .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+            .install_batch(opentelemetry::runtime::Tokio)
+            .context("Failed to initialise OTLP exporter")?;
+
+        Some(tracing_opentelemetry::layer().with_tracer(tracer))
+    } else {
+        None
+    };
+
+    Registry::default()
+        .with(telemetry)
+        .with(fmt_layer)
+        .try_init()
+        .context("Failed to init logger")?;
 
     tracing::info!("Initialized logger");
 

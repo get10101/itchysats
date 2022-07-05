@@ -7,7 +7,7 @@ status = [
   "clippy (maker)",
   "clippy (shared-bin)",
   "clippy (daemon-tests)",
-  "clippy (tokio-tasks)",
+  "clippy (tokio-extras)",
   "clippy (xtras)",
   "clippy (bdk-ext)",
   "clippy (model)",

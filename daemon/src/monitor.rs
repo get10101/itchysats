@@ -25,7 +25,7 @@ use serde_json::Value;
 use sqlite_db;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio_tasks::Tasks;
+use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 

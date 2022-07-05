@@ -15,7 +15,6 @@ pub mod cfd;
 mod collab_settlement;
 mod connection;
 mod contract_setup;
-mod future_ext;
 mod metrics;
 mod rollover;
 pub mod routes;
@@ -37,6 +36,10 @@ pub struct Opts {
     /// If enabled logs will be in json format
     #[clap(short, long)]
     pub json: bool,
+
+    /// If enabled, traces will be exported to the OTEL collector
+    #[clap(long)]
+    pub instrumentation: bool,
 
     /// If enabled the application will not fail if an error occurred during db migration.
     #[clap(short, long)]

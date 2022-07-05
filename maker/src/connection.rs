@@ -1,7 +1,6 @@
 use crate::cfd;
 use crate::collab_settlement;
 use crate::contract_setup;
-use crate::future_ext::FutureExt;
 use crate::rollover;
 use anyhow::bail;
 use anyhow::Context;
@@ -26,7 +25,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use tokio_tasks::Tasks;
+use tokio_extras::time::already_instrumented;
+use tokio_extras::FutureExt;
+use tokio_extras::Tasks;
 use tokio_util::codec::Framed;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
@@ -188,7 +189,9 @@ impl Connection {
 
         self.write
             .send(msg)
-            .timeout(TCP_TIMEOUT)
+            .timeout(TCP_TIMEOUT, |parent| {
+                tracing::debug_span!(parent: parent, "send to taker")
+            })
             .await
             .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))??;
         Ok(())
@@ -624,7 +627,7 @@ async fn upgrade(
     tracing::debug!(%taker_address, "Upgrade new connection");
 
     let transport_state = noise::responder_handshake(&mut stream, &noise_priv_key)
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(20), already_instrumented)
         .await
         .context("Failed to complete noise handshake within 20 seconds")??;
     let taker_id = Identity::new(transport_state.get_remote_public_key()?);
@@ -634,7 +637,9 @@ async fn upgrade(
 
     let first_message = read
         .try_next()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(10), |parent| {
+            tracing::debug_span!(parent: parent, "receive message from taker")
+        })
         .await
         .context("No message from taker within 10 seconds")?
         .context("Failed to read first message on stream")?
