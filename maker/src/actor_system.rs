@@ -49,7 +49,7 @@ use xtras::supervisor::always_restart_after;
 use xtras::HandlerTimeoutExt;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
-const PING_INTERVAL: Duration = Duration::from_secs(5);
+const PING_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Duration between the restart attempts after a supervised actor has quit with
 /// a failure.
