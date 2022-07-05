@@ -118,7 +118,9 @@ impl Opts {
             None => match network {
                 Network::Mainnet { .. } => MAINNET_MAKER.to_string(),
                 Network::Testnet { .. } => TESTNET_MAKER.to_string(),
-                Network::Signet { .. } => bail!("No maker default URL configured for signet"),
+                Network::Signet { .. } | Network::Regtest { .. } => {
+                    bail!("No maker default URL configured for {network:?}")
+                }
             },
         };
 
@@ -127,8 +129,8 @@ impl Opts {
             None => match network {
                 Network::Mainnet { .. } => parse_x25519_pubkey(MAINNET_MAKER_ID)?,
                 Network::Testnet { .. } => parse_x25519_pubkey(TESTNET_MAKER_ID)?,
-                Network::Signet { .. } => {
-                    bail!("No maker default public key configured for signet")
+                Network::Signet { .. } | Network::Regtest { .. } => {
+                    bail!("No maker default public key configured for {network:?}")
                 }
             },
         };
@@ -138,8 +140,8 @@ impl Opts {
             None => match network {
                 Network::Mainnet { .. } => MAINNET_MAKER_PEER_ID.parse()?,
                 Network::Testnet { .. } => TESTNET_MAKER_PEER_ID.parse()?,
-                Network::Signet { .. } => {
-                    bail!("No maker default peer id configured for signet")
+                Network::Signet { .. } | Network::Regtest { .. } => {
+                    bail!("No maker default peer id configured for {network:?}")
                 }
             },
         };
@@ -189,6 +191,15 @@ enum Network {
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
     },
+    /// Run on regtest
+    Regtest {
+        /// URL to the electrum backend to use for the wallet.
+        #[clap(long)]
+        electrum: String,
+
+        #[clap(subcommand)]
+        withdraw: Option<Withdraw>,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -214,6 +225,7 @@ impl Network {
             Network::Mainnet { electrum, .. } => electrum,
             Network::Testnet { electrum, .. } => electrum,
             Network::Signet { electrum, .. } => electrum,
+            Network::Regtest { electrum, .. } => electrum,
         }
     }
 
@@ -222,13 +234,14 @@ impl Network {
             Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
             Network::Testnet { .. } => bitcoin::Network::Testnet,
             Network::Signet { .. } => bitcoin::Network::Signet,
+            Network::Regtest { .. } => bitcoin::Network::Regtest,
         }
     }
 
     fn price_feed_network(&self) -> xtra_bitmex_price_feed::Network {
         match self {
             Network::Mainnet { .. } => xtra_bitmex_price_feed::Network::Mainnet,
-            Network::Testnet { .. } | Network::Signet { .. } => {
+            Network::Testnet { .. } | Network::Signet { .. } | Network::Regtest { .. } => {
                 xtra_bitmex_price_feed::Network::Testnet
             }
         }
@@ -239,6 +252,7 @@ impl Network {
             Network::Mainnet { .. } => base.join("mainnet"),
             Network::Testnet { .. } => base.join("testnet"),
             Network::Signet { .. } => base.join("signet"),
+            Network::Regtest { .. } => base.join("regtest"),
         }
     }
 
@@ -247,6 +261,18 @@ impl Network {
             Network::Mainnet { withdraw, .. } => withdraw,
             Network::Testnet { withdraw, .. } => withdraw,
             Network::Signet { withdraw, .. } => withdraw,
+            Network::Regtest { withdraw, .. } => withdraw,
+        }
+    }
+}
+
+impl std::fmt::Debug for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Network::Mainnet { .. } => "mainnet".fmt(f),
+            Network::Testnet { .. } => "testnet".fmt(f),
+            Network::Signet { .. } => "signet".fmt(f),
+            Network::Regtest { .. } => "regtest".fmt(f),
         }
     }
 }

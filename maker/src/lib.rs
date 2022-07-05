@@ -84,6 +84,15 @@ pub enum Network {
         #[clap(subcommand)]
         withdraw: Option<Withdraw>,
     },
+    /// Run on regtest
+    Regtest {
+        /// URL to the electrum backend to use for the wallet.
+        #[clap(long)]
+        electrum: String,
+
+        #[clap(subcommand)]
+        withdraw: Option<Withdraw>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -109,6 +118,7 @@ impl Network {
             Network::Mainnet { electrum, .. } => electrum,
             Network::Testnet { electrum, .. } => electrum,
             Network::Signet { electrum, .. } => electrum,
+            Network::Regtest { electrum, .. } => electrum,
         }
     }
 
@@ -117,13 +127,14 @@ impl Network {
             Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
             Network::Testnet { .. } => bitcoin::Network::Testnet,
             Network::Signet { .. } => bitcoin::Network::Signet,
+            Network::Regtest { .. } => bitcoin::Network::Regtest,
         }
     }
 
     pub fn price_feed_network(&self) -> xtra_bitmex_price_feed::Network {
         match self {
             Network::Mainnet { .. } => xtra_bitmex_price_feed::Network::Mainnet,
-            Network::Testnet { .. } | Network::Signet { .. } => {
+            Network::Testnet { .. } | Network::Signet { .. } | Network::Regtest { .. } => {
                 xtra_bitmex_price_feed::Network::Testnet
             }
         }
@@ -134,6 +145,7 @@ impl Network {
             Network::Mainnet { .. } => base.join("mainnet"),
             Network::Testnet { .. } => base.join("testnet"),
             Network::Signet { .. } => base.join("signet"),
+            Network::Regtest { .. } => base.join("regtest"),
         }
     }
 
@@ -142,6 +154,7 @@ impl Network {
             Network::Mainnet { withdraw, .. } => withdraw,
             Network::Testnet { withdraw, .. } => withdraw,
             Network::Signet { withdraw, .. } => withdraw,
+            Network::Regtest { withdraw, .. } => withdraw,
         }
     }
 }
