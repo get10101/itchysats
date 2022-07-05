@@ -107,6 +107,8 @@ fn base_directives(env: EnvFilter) -> Result<EnvFilter> {
         .add_directive("libp2p_noise=warn".parse()?)
         .add_directive("xtra_libp2p_offer=debug".parse()?)
         .add_directive("xtras=info".parse()?)
+        .add_directive("h2=info".parse()?) // h2 spans originate from rocket and can spam a lot
+        .add_directive("tower=info".parse()?)
         .add_directive("_=off".parse()?) // rocket logs headers on INFO and uses `_` as the log target for it?
         .add_directive("rocket=off".parse()?) // disable rocket logs: we have our own
         .add_directive("xtra=warn".parse()?)
