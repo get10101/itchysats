@@ -2,35 +2,26 @@ use crate::protocol;
 use async_trait::async_trait;
 use model::MakerOffers;
 use xtra::prelude::MessageChannel;
-use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::Actor as _;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
-use xtras::spawner;
-use xtras::spawner::SpawnFallible;
-use xtras::SendAsyncSafe;
 
 pub struct Actor {
     maker_offers: MessageChannel<LatestMakerOffers, ()>,
-    spawner: xtra::Address<spawner::Actor>,
 }
 
 impl Actor {
     pub fn new(maker_offers: MessageChannel<LatestMakerOffers, ()>) -> Self {
-        let spawner = spawner::Actor::new().create(None).spawn_global();
-
-        Self {
-            maker_offers,
-            spawner,
-        }
+        Self { maker_offers }
     }
 }
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle(&mut self, msg: NewInboundSubstream) {
+    async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
         let NewInboundSubstream { peer, stream } = msg;
         let maker_offers = self.maker_offers.clone();
+
+        let this = ctx.address().expect("self to be alive");
 
         let task = async move {
             let offers = protocol::recv(stream).await?;
@@ -45,13 +36,7 @@ impl Actor {
         let err_handler =
             move |e| async move { tracing::debug!(%peer, "Failed to process maker offers: {e:#}") };
 
-        if let Err(e) = self
-            .spawner
-            .send_async_safe(SpawnFallible::new(task, err_handler))
-            .await
-        {
-            tracing::warn!("Failed to spawn task to process new offers: {e:#}");
-        };
+        tokio_extras::spawn_fallible(&this, task, err_handler);
     }
 }
 

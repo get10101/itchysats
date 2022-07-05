@@ -6,6 +6,7 @@ use prometheus::Histogram;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
+use tokio_extras::spawn_fallible;
 use xtra::prelude::async_trait;
 use xtra::Address;
 use xtra::Context;
@@ -15,8 +16,6 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
-use xtras::spawner;
-use xtras::spawner::SpawnFallible;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
@@ -39,7 +38,6 @@ pub struct Actor {
     endpoint: Address<Endpoint>,
     ping_interval: Duration,
     connected_peers: HashSet<PeerId>,
-    spawner: Option<Address<spawner::Actor>>,
     latencies: HashMap<PeerId, Duration>,
 }
 
@@ -49,7 +47,6 @@ impl Actor {
             endpoint,
             ping_interval,
             connected_peers: HashSet::default(),
-            spawner: None,
             latencies: HashMap::default(),
         }
     }
@@ -61,10 +58,6 @@ impl xtra::Actor for Actor {
 
     async fn started(&mut self, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we just started");
-
-        let (addr, fut) = spawner::Actor::new().create(None).run();
-        tokio_extras::spawn(&this, fut);
-        self.spawner = Some(addr);
 
         match self.endpoint.send(GetConnectionStats).await {
             Ok(connection_stats) => self
@@ -114,33 +107,29 @@ impl Actor {
             let endpoint = self.endpoint.clone();
             let this = ctx.address().expect("we are alive");
 
-            let ping_fut = async move {
-                tracing::trace!(%peer, "Sending ping");
+            let ping_fut = {
+                let this = this.clone();
 
-                let stream = endpoint
-                    .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
-                    .await??;
-                let latency = protocol::send(stream).await?;
+                async move {
+                    tracing::trace!(%peer, "Sending ping");
 
-                this.send_async_safe(RecordLatency { peer, latency })
-                    .await?;
+                    let stream = endpoint
+                        .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
+                        .await??;
+                    let latency = protocol::send(stream).await?;
 
-                anyhow::Ok(())
+                    this.send_async_safe(RecordLatency { peer, latency })
+                        .await?;
+
+                    anyhow::Ok(())
+                }
             };
 
             let err_handler = move |e| async move {
                 tracing::warn!(%peer, "Outbound ping protocol failed: {e:#}")
             };
 
-            if let Err(e) = self
-                .spawner
-                .as_ref()
-                .expect("some after constructor")
-                .send_async_safe(SpawnFallible::new(ping_fut, err_handler))
-                .await
-            {
-                tracing::error!("Failed to spawn ping task: {e:#}");
-            };
+            spawn_fallible(&this, ping_fut, err_handler);
         }
     }
 

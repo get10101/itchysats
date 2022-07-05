@@ -4,38 +4,30 @@ use async_trait::async_trait;
 use model::MakerOffers;
 use std::collections::HashSet;
 use std::time::Duration;
-use xtra::spawn::TokioGlobalSpawnExt;
-use xtra::Actor as _;
+use tokio_extras::spawn_fallible;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
-use xtras::spawner;
-use xtras::spawner::SpawnFallible;
-use xtras::SendAsyncSafe;
 
 pub struct Actor {
     endpoint: xtra::Address<Endpoint>,
     connected_peers: HashSet<PeerId>,
-    spawner: xtra::Address<spawner::Actor>,
     latest_offers: Option<MakerOffers>,
 }
 
 impl Actor {
     pub fn new(endpoint: xtra::Address<Endpoint>) -> Self {
-        let spawner = spawner::Actor::new().create(None).spawn_global();
-
         Self {
             endpoint,
             connected_peers: HashSet::default(),
-            spawner,
             latest_offers: None,
         }
     }
 
-    async fn send_offers(&self, peer: PeerId) {
+    async fn send_offers(&self, peer: PeerId, ctx: &mut xtra::Context<Self>) {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
 
@@ -54,33 +46,32 @@ impl Actor {
         let err_handler =
             move |e| async move { tracing::debug!(%peer, "Failed to send offers: {e:#}") };
 
-        if let Err(e) = self
-            .spawner
-            .send_async_safe(SpawnFallible::new(task, err_handler))
-            .await
-        {
-            tracing::warn!("Failed to spawn task to send offers: {e:#}");
-        };
+        let this = ctx.address().expect("self to be alive");
+        spawn_fallible(&this, task, err_handler);
     }
 }
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, msg: NewOffers) {
+    async fn handle(&mut self, msg: NewOffers, ctx: &mut xtra::Context<Self>) {
         self.latest_offers = msg.0;
 
         for peer in self.connected_peers.iter().copied() {
-            self.send_offers(peer).await
+            self.send_offers(peer, ctx).await
         }
     }
 }
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle_connection_established(&mut self, msg: endpoint::ConnectionEstablished) {
+    async fn handle_connection_established(
+        &mut self,
+        msg: endpoint::ConnectionEstablished,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         tracing::trace!("Adding newly established connection: {:?}", msg.peer);
         self.connected_peers.insert(msg.peer);
-        self.send_offers(msg.peer).await;
+        self.send_offers(msg.peer, ctx).await;
     }
 
     async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
