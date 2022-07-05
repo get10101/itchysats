@@ -25,7 +25,6 @@ import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
-import "intro.js/introjs.css";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -36,7 +35,6 @@ import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
 import PromoBanner from "./components/PromoBanner";
-import { Tour } from "./components/Tour";
 import Trade from "./components/Trade";
 import { Wallet } from "./components/Wallet";
 import { fetchDaemonVersion, fetchGithubVersion } from "./fetchVersion";
@@ -211,7 +209,6 @@ export const App = () => {
 
     return (
         <>
-            <Tour />
             {outdatedWarningIsVisible
                 && (
                     <Alert status="info">
