@@ -4,17 +4,11 @@ import {
     AccordionIcon,
     AccordionItem,
     AccordionPanel,
-    Alert,
-    AlertDescription,
-    AlertIcon,
-    AlertTitle,
     Box,
     Button,
     ButtonGroup,
     Center,
-    CloseButton,
     HStack,
-    Spacer,
     Text,
     useColorModeValue,
     useDisclosure,
@@ -34,6 +28,7 @@ import { SemVer } from "semver";
 import Footer from "./components/Footer";
 import History from "./components/History";
 import Nav from "./components/NavBar";
+import OutdatedWarning from "./components/OutdatedWarning";
 import PromoBanner from "./components/PromoBanner";
 import Trade from "./components/Trade";
 import { Wallet } from "./components/Wallet";
@@ -210,18 +205,7 @@ export const App = () => {
     return (
         <>
             {outdatedWarningIsVisible
-                && (
-                    <Alert status="info">
-                        <AlertIcon />
-                        <AlertTitle>Your daemon is outdated!</AlertTitle>
-                        <AlertDescription>
-                            Upgrade now to get the best ItchySats experience. The latest version is '{githubVersion
-                                ?.version}' but your version is '{daemonVersion?.version}'.
-                        </AlertDescription>
-                        <Spacer />
-                        <CloseButton alignSelf="flex-start" position="relative" right={-1} top={-1} onClick={onClose} />
-                    </Alert>
-                )}
+                && <OutdatedWarning githubVersion={githubVersion} daemonVersion={daemonVersion} onClose={onClose} />}
 
             <Nav
                 walletInfo={walletInfo}
