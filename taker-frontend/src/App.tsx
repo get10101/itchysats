@@ -1,32 +1,15 @@
-import {
-    Accordion,
-    AccordionButton,
-    AccordionIcon,
-    AccordionItem,
-    AccordionPanel,
-    Box,
-    Button,
-    ButtonGroup,
-    Center,
-    HStack,
-    Text,
-    useColorModeValue,
-    useDisclosure,
-    useToast,
-    VStack,
-} from "@chakra-ui/react";
+import { Box, Center, useColorModeValue, useDisclosure, useToast } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Link as ReachLink } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
 import Footer from "./components/Footer";
-import History from "./components/History";
+import { PageLayout } from "./components/Layout";
 import Nav from "./components/NavBar";
 import OutdatedWarning from "./components/OutdatedWarning";
 import PromoBanner from "./components/PromoBanner";
@@ -40,7 +23,6 @@ import {
     IdentityInfo,
     intoCfd,
     intoMakerOffer,
-    isClosed,
     LeverageDetails,
     MakerOffer,
     WalletInfo,
@@ -284,112 +266,3 @@ export const App = () => {
         </>
     );
 };
-
-interface PageLayoutProps {
-    children: JSX.Element;
-    cfds: Cfd[];
-    connectedToMaker: ConnectionStatus;
-    showPromoBanner: boolean;
-}
-
-function PageLayout({ children, cfds, connectedToMaker, showPromoBanner }: PageLayoutProps) {
-    return (
-        <VStack w={"100%"}>
-            {showPromoBanner && <PromoBanner />}
-            <NavigationButtons />
-            <Outlet />
-            <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
-        </VStack>
-    );
-}
-
-interface HistoryLayoutProps {
-    cfds: Cfd[];
-    connectedToMaker: ConnectionStatus;
-}
-
-function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
-    const closedPositions = cfds.filter((cfd) => isClosed(cfd));
-
-    return (
-        <VStack padding={3} w={"100%"}>
-            <History
-                connectedToMaker={connectedToMaker}
-                cfds={cfds.filter((cfd) => !isClosed(cfd))}
-            />
-
-            {closedPositions.length > 0
-                && (
-                    <Accordion allowToggle maxWidth={VIEWPORT_WIDTH_PX} width={"100%"}>
-                        <AccordionItem>
-                            <h2>
-                                <AccordionButton>
-                                    <AccordionIcon />
-                                    <Box w={"100%"} textAlign="center">
-                                        Show Closed Positions
-                                    </Box>
-                                    <AccordionIcon />
-                                </AccordionButton>
-                            </h2>
-                            <AccordionPanel pb={4}>
-                                <History
-                                    cfds={closedPositions}
-                                    connectedToMaker={connectedToMaker}
-                                />
-                            </AccordionPanel>
-                        </AccordionItem>
-                    </Accordion>
-                )}
-        </VStack>
-    );
-}
-
-function NavigationButtons() {
-    const location = useLocation();
-    const isLongSelected = location.pathname.includes("long");
-    const isShortSelected = !isLongSelected;
-
-    const unSelectedButton = "transparent";
-    const selectedButton = useColorModeValue("grey.400", "black.400");
-    const buttonBorder = useColorModeValue("grey.400", "black.400");
-    const buttonText = useColorModeValue("black", "white");
-
-    return (
-        <HStack>
-            <Center>
-                <ButtonGroup
-                    padding="3"
-                    spacing="6"
-                    id={"longShortButtonSwitch"}
-                >
-                    <Button
-                        as={ReachLink}
-                        to="/long"
-                        color={isLongSelected ? selectedButton : unSelectedButton}
-                        bg={isLongSelected ? selectedButton : unSelectedButton}
-                        border={buttonBorder}
-                        isActive={isLongSelected}
-                        size="lg"
-                        h={10}
-                        w={"40"}
-                    >
-                        <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
-                    </Button>
-                    <Button
-                        as={ReachLink}
-                        to="/short"
-                        color={isShortSelected ? selectedButton : unSelectedButton}
-                        bg={isShortSelected ? selectedButton : unSelectedButton}
-                        border={buttonBorder}
-                        isActive={isShortSelected}
-                        size="lg"
-                        h={10}
-                        w={"40"}
-                    >
-                        <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
-                    </Button>
-                </ButtonGroup>
-            </Center>
-        </HStack>
-    );
-}
