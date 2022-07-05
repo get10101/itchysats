@@ -25,7 +25,6 @@ use serde_json::Value;
 use sqlite_db;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -114,7 +113,6 @@ pub struct Actor {
     cfds: HashMap<OrderId, MonitorParams>,
     executor: command::Executor,
     client: bdk::electrum_client::Client,
-    tasks: Tasks,
     state: State<Event>,
     db: sqlite_db::Connection,
 }
@@ -340,7 +338,6 @@ impl Actor {
             client,
             executor,
             state: State::new(latest_block),
-            tasks: Tasks::default(),
             db,
         })
     }
@@ -551,10 +548,13 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.clone().send_interval(Duration::from_secs(20), || Sync));
+        tokio_extras::spawn(
+            &this,
+            this.clone().send_interval(Duration::from_secs(20), || Sync),
+        );
 
-        self.tasks.add_fallible(
+        tokio_extras::spawn_fallible(
+            &this.clone(),
             {
                 let db = self.db.clone();
 

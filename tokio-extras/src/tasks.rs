@@ -2,8 +2,12 @@ use crate::future_ext::FutureExt;
 use futures::future::RemoteHandle;
 use futures::Future;
 
+#[cfg(feature = "xtra")]
+pub use actor_scoped::*;
 pub use task_map::*;
 
+#[cfg(feature = "xtra")]
+mod actor_scoped;
 mod task_map;
 
 /// Struct controlling the lifetime of the async tasks, such as

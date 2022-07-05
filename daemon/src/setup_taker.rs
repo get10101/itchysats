@@ -23,7 +23,6 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use std::time::Duration;
-use tokio_extras::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -41,7 +40,6 @@ pub struct Actor {
     sign: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
     maker: xtra::Address<connection::Actor>,
     setup_msg_sender: Option<UnboundedSender<wire::SetupMsg>>,
-    tasks: Tasks,
     executor: command::Executor,
 }
 
@@ -67,7 +65,6 @@ impl Actor {
             sign,
             maker,
             setup_msg_sender: None,
-            tasks: Tasks::default(),
             executor: command::Executor::new(db, process_manager),
         }
     }
@@ -127,7 +124,7 @@ impl Actor {
         );
 
         let this = ctx.address().expect("self to be alive");
-        self.tasks.add(async move {
+        tokio_extras::spawn(&this.clone(), async move {
             let _: Result<(), xtra::Error> = match contract_future.await {
                 Ok(dlc) => this.send(SetupSucceeded { dlc }).await,
                 Err(error) => this.send(SetupFailed { error }).await,
@@ -222,6 +219,7 @@ impl xtra::Actor for Actor {
         let address = ctx
             .address()
             .expect("actor to be able to give address to itself");
+        let this = address.clone();
 
         let res = self
             .maker
@@ -251,7 +249,7 @@ impl xtra::Actor for Actor {
             }
         };
 
-        self.tasks.add(maker_response_timeout);
+        tokio_extras::spawn(&this, maker_response_timeout);
     }
 
     async fn stopped(self) -> Self::Stop {}

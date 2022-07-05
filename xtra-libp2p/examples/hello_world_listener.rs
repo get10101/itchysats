@@ -8,7 +8,6 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
 use std::time::Duration;
-use tokio_extras::Tasks;
 use tracing::Level;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -49,7 +48,7 @@ async fn main() -> Result<()> {
     tracing::info!("Connect to this listener by using the multiaddr: {multiaddr_str}. e.g:");
     tracing::info!("cargo run --example hello_world_dialer -- --multiaddr {multiaddr_str}");
 
-    let hello_world_addr = HelloWorld::default().create(None).spawn_global();
+    let hello_world_addr = HelloWorld.create(None).spawn_global();
 
     let endpoint_addr = Endpoint::new(
         Box::new(TokioTcpConfig::new),
@@ -77,20 +76,21 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Default)]
-pub struct HelloWorld {
-    tasks: Tasks,
-}
+#[derive(Copy, Clone)]
+pub struct HelloWorld;
 
 #[xtra_productivity(message_impl = false)]
 impl HelloWorld {
-    async fn handle(&mut self, msg: NewInboundSubstream) {
+    async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
         tracing::info!("New hello world stream from {}", msg.peer);
 
-        self.tasks
-            .add_fallible(hello_world_listener(msg.stream), move |e| async move {
+        tokio_extras::spawn_fallible(
+            &ctx.address().unwrap(),
+            hello_world_listener(msg.stream),
+            move |e| async move {
                 tracing::warn!("Hello world protocol with peer {} failed: {}", msg.peer, e);
-            });
+            },
+        );
     }
 }
 

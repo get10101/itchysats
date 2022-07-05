@@ -87,7 +87,7 @@ mod tests {
         let ping_address = ping::Actor::new(endpoint_address.clone(), Duration::from_secs(1))
             .create(None)
             .spawn_global();
-        let pong_address = pong::Actor::default().create(None).spawn_global();
+        let pong_address = pong::Actor.create(None).spawn_global();
 
         let endpoint = Endpoint::new(
             Box::new(MemoryTransport::default),

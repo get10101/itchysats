@@ -27,7 +27,6 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use time::OffsetDateTime;
-use tokio_extras::Tasks;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::AddressMap;
@@ -61,7 +60,6 @@ pub struct Actor<O, W> {
     libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     oracle_actor: xtra::Address<O>,
     n_payouts: usize,
-    tasks: Tasks,
     current_maker_offers: Option<MakerOffers>,
     maker_identity: Identity,
     maker_peer_id: PeerId,
@@ -96,7 +94,6 @@ where
             libp2p_collab_settlement_actor,
             n_payouts,
             setup_actors: AddressMap::default(),
-            tasks: Tasks::default(),
             current_maker_offers: None,
             maker_identity,
             maker_peer_id,
@@ -176,7 +173,11 @@ where
     W: xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>
         + xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>,
 {
-    async fn handle_take_offer(&mut self, msg: TakeOffer) -> Result<()> {
+    async fn handle_take_offer(
+        &mut self,
+        msg: TakeOffer,
+        ctx: &mut xtra::Context<Self>,
+    ) -> Result<()> {
         let TakeOffer {
             order_id,
             quantity,
@@ -238,7 +239,7 @@ where
             .await?
             .with_context(|| format!("Announcement {price_event_id} not found"))?;
 
-        let addr = setup_taker::Actor::new(
+        let (addr, fut) = setup_taker::Actor::new(
             self.db.clone(),
             self.process_manager_actor.clone(),
             (
@@ -253,8 +254,10 @@ where
             self.conn_actor.clone(),
         )
         .create(None)
-        .spawn(&mut self.tasks);
+        .run();
 
+        tokio_extras::spawn(&ctx.address().expect("self to be alive"), fut);
+        tracing::info!("Spawned taker setup actor");
         disconnected.insert(addr);
 
         Ok(())

@@ -10,7 +10,6 @@ use model::OrderId;
 use sqlite_db;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio_extras::Tasks;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -19,7 +18,6 @@ use xtras::SendInterval;
 pub struct Actor {
     db: sqlite_db::Connection,
     libp2p_rollover: Address<rollover::taker::Actor>,
-    tasks: Tasks,
 }
 
 impl Actor {
@@ -30,7 +28,6 @@ impl Actor {
         Self {
             db,
             libp2p_rollover,
-            tasks: Tasks::default(),
         }
     }
 }
@@ -125,8 +122,10 @@ impl xtra::Actor for Actor {
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.send_interval(Duration::from_secs(5 * 60), || AutoRollover));
+        tokio_extras::spawn(
+            &this.clone(),
+            this.send_interval(Duration::from_secs(5 * 60), || AutoRollover),
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

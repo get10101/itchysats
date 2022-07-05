@@ -192,7 +192,7 @@ where
             always_restart_after(RESTART_INTERVAL),
         );
 
-        let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
+        let pong_address = pong::Actor.create(None).spawn(&mut tasks);
 
         let endpoint = Endpoint::new(
             Box::new(TokioTcpConfig::new),

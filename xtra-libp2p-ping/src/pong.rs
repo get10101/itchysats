@@ -1,24 +1,26 @@
 use crate::protocol;
 use async_trait::async_trait;
-use tokio_extras::Tasks;
+use xtra::Context;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
 
-#[derive(Default)]
-pub struct Actor {
-    tasks: Tasks,
-}
+#[derive(Copy, Clone)]
+pub struct Actor;
 
 #[xtra_productivity(message_impl = false)]
 impl Actor {
-    async fn handle(&mut self, message: NewInboundSubstream) {
+    async fn handle(&mut self, message: NewInboundSubstream, ctx: &mut Context<Self>) {
         let NewInboundSubstream { stream, peer } = message;
 
         let future = protocol::recv(stream);
 
-        self.tasks.add_fallible(future, move |e| async move {
-            tracing::debug!(%peer, "Inbound ping protocol failed: {e}");
-        });
+        tokio_extras::spawn_fallible(
+            &ctx.address().expect("self to be alive"),
+            future,
+            move |e| async move {
+                tracing::debug!(%peer, "Inbound ping protocol failed: {e}");
+            },
+        );
     }
 }
 

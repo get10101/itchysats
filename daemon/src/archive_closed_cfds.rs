@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use sqlite_db;
 use std::time::Duration;
-use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -11,15 +10,11 @@ const ARCHIVE_CFDS_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 pub struct Actor {
     db: sqlite_db::Connection,
-    tasks: Tasks,
 }
 
 impl Actor {
     pub fn new(db: sqlite_db::Connection) -> Self {
-        Self {
-            db,
-            tasks: Tasks::default(),
-        }
+        Self { db }
     }
 }
 
@@ -29,8 +24,10 @@ impl xtra::Actor for Actor {
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks
-            .add(this.send_interval(ARCHIVE_CFDS_INTERVAL, || ArchiveCfds));
+        tokio_extras::spawn(
+            &this.clone(),
+            this.send_interval(ARCHIVE_CFDS_INTERVAL, || ArchiveCfds),
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}
