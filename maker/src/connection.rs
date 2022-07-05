@@ -111,7 +111,6 @@ pub struct Actor {
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
     rollover_actors: AddressMap<OrderId, rollover::Actor>,
-    tasks: Tasks,
 }
 
 /// A connection to a taker.
@@ -228,7 +227,6 @@ impl Actor {
             setup_actors: AddressMap::default(),
             settlement_actors: AddressMap::default(),
             rollover_actors: AddressMap::default(),
-            tasks: Tasks::default(),
         }
     }
 
@@ -303,7 +301,7 @@ impl Actor {
 
         let noise_priv_key = self.noise_priv_key.clone();
 
-        self.tasks.add(async move {
+        tokio_extras::spawn(&this.clone(), async move {
             let mut tasks = Tasks::default();
 
             loop {

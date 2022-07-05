@@ -274,7 +274,7 @@ where
             move || xtra_libp2p_offer::taker::Actor::new(cfd_actor_addr.clone().into())
         });
 
-        let pong_address = pong::Actor::default().create(None).spawn(&mut tasks);
+        let pong_address = pong::Actor.create(None).spawn(&mut tasks);
 
         let (supervisor, ping_actor) = supervisor::Actor::new({
             move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)

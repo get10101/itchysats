@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use time::Duration;
 use time::OffsetDateTime;
-use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -36,7 +35,6 @@ pub struct Actor {
     announcements: HashMap<BitMexPriceEventId, (OffsetDateTime, Vec<XOnlyPublicKey>)>,
     pending_attestations: HashSet<BitMexPriceEventId>,
     executor: command::Executor,
-    tasks: Tasks,
     db: sqlite_db::Connection,
     client: reqwest::Client,
 }
@@ -155,7 +153,6 @@ impl Actor {
             announcements: HashMap::new(),
             pending_attestations: HashSet::new(),
             executor,
-            tasks: Tasks::default(),
             db,
             client: reqwest::Client::new(),
         }
@@ -172,7 +169,8 @@ impl Actor {
             let this = ctx.address().expect("self to be alive");
             let client = self.client.clone();
 
-            self.tasks.add_fallible(
+            tokio_extras::spawn_fallible(
+                &this.clone(),
                 async move {
                     let url = event_id.to_olivia_url();
 
@@ -221,7 +219,8 @@ impl Actor {
             let this = ctx.address().expect("self to be alive");
             let client = self.client.clone();
 
-            self.tasks.add_fallible(
+            tokio_extras::spawn_fallible(
+                &this.clone(),
                 async move {
                     let url = event_id.to_olivia_url();
 
@@ -335,12 +334,13 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        self.tasks.add(
+        tokio_extras::spawn(
+            &this,
             this.clone()
                 .send_interval(SYNC_ANNOUNCEMENTS_INTERVAL, || SyncAnnouncements),
         );
 
-        self.tasks.add({
+        tokio_extras::spawn(&this.clone(), {
             let db = self.db.clone();
             async move {
                 let pending_attestations = db

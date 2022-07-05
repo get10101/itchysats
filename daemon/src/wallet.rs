@@ -30,7 +30,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::watch;
-use tokio_extras::Tasks;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -91,7 +90,6 @@ pub struct Actor<B, DB> {
     wallet: bdk::Wallet<DB>,
     blockchain_client: B,
     used_utxos: LockedUtxos,
-    tasks: Tasks,
     sender: watch::Sender<Option<WalletInfo>>,
 }
 
@@ -131,7 +129,6 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
         let (sender, receiver) = watch::channel(None);
         let actor = Self {
             wallet,
-            tasks: Tasks::default(),
             sender,
             used_utxos: LockedUtxos::new(time_to_lock),
             blockchain_client: ElectrumBlockchain::from(client),
@@ -304,7 +301,7 @@ where
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        self.tasks.add(this.send_interval(SYNC_INTERVAL, || Sync));
+        tokio_extras::spawn(&this.clone(), this.send_interval(SYNC_INTERVAL, || Sync));
     }
 
     async fn stopped(self) -> Self::Stop {}
@@ -444,6 +441,7 @@ mod tests {
     use itertools::Itertools;
     use rand::thread_rng;
     use std::collections::HashSet;
+    use tokio_extras::Tasks;
     use xtra::Actor as _;
 
     impl Actor<(), bdk::database::MemoryDatabase> {
@@ -458,7 +456,6 @@ mod tests {
 
             Ok(Self {
                 wallet,
-                tasks: Tasks::default(),
                 sender,
                 used_utxos: LockedUtxos {
                     inner: HashSet::default(),

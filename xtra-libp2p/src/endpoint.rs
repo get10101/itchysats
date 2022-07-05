@@ -30,6 +30,8 @@ use tokio_extras::Tasks;
 use tracing::instrument;
 use tracing::Instrument;
 use xtra::message_channel::MessageChannel;
+use xtra::Address;
+use xtra::Context;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
@@ -52,7 +54,6 @@ use xtras::SendAsyncSafe;
 /// Opening a new substream can be achieved by sending the [`OpenSubstream`] message.
 pub struct Endpoint {
     transport_fn: Box<dyn Fn() -> Boxed<Connection> + Send + 'static>,
-    tasks: Tasks,
     controls: HashMap<PeerId, (yamux::Control, Tasks)>,
     inbound_substream_channels: HashMap<&'static str, MessageChannel<NewInboundSubstream, ()>>,
     listen_addresses: HashSet<Multiaddr>,
@@ -241,7 +242,6 @@ impl Endpoint {
 
         Self {
             transport_fn,
-            tasks: Tasks::default(),
             inbound_substream_channels: verify_unique_handlers(inbound_substream_handlers),
             controls: HashMap::default(),
             listen_addresses: HashSet::default(),
@@ -251,14 +251,14 @@ impl Endpoint {
         }
     }
 
-    async fn drop_connection(&mut self, peer: &PeerId) {
+    async fn drop_connection(&mut self, this: &Address<Self>, peer: &PeerId) {
         let (mut control, tasks) = match self.controls.remove(peer) {
             None => return,
             Some(control) => control,
         };
 
         // TODO: Evaluate whether dropping and closing has to be in a particular order.
-        self.tasks.add(async move {
+        tokio_extras::spawn(this, async move {
             let _ = control.close().await;
             drop(tasks);
         });
@@ -300,7 +300,7 @@ impl Endpoint {
 
 #[xtra_productivity]
 impl Endpoint {
-    async fn handle(&mut self, msg: NewConnection, ctx: &mut xtra::Context<Self>) {
+    async fn handle(&mut self, msg: NewConnection, ctx: &mut Context<Self>) {
         self.inflight_connections.remove(&msg.peer);
         let this = ctx.address().expect("we are alive");
 
@@ -366,19 +366,21 @@ impl Endpoint {
         self.notify_listen_address_removed(msg.address).await;
     }
 
-    async fn handle(&mut self, msg: FailedToConnect) {
+    async fn handle(&mut self, msg: FailedToConnect, ctx: &mut Context<Self>) {
         tracing::debug!("Failed to connect: {:#}", msg.error);
         let peer = msg.peer;
 
         self.inflight_connections.remove(&peer);
-        self.drop_connection(&peer).await;
+        self.drop_connection(&ctx.address().expect("self to be alive"), &peer)
+            .await;
     }
 
-    async fn handle(&mut self, msg: ExistingConnectionFailed) {
+    async fn handle(&mut self, msg: ExistingConnectionFailed, ctx: &mut Context<Self>) {
         tracing::debug!("Connection failed: {:#}", msg.error);
         let peer = msg.peer;
 
-        self.drop_connection(&peer).await;
+        self.drop_connection(&ctx.address().expect("self to be alive"), &peer)
+            .await;
     }
 
     async fn handle(&mut self, _: GetConnectionStats) -> ConnectionStats {
@@ -388,7 +390,7 @@ impl Endpoint {
         }
     }
 
-    async fn handle(&mut self, msg: Connect, ctx: &mut xtra::Context<Self>) -> Result<(), Error> {
+    async fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Result<(), Error> {
         let this = ctx.address().expect("we are alive");
 
         let peer = msg
@@ -404,7 +406,8 @@ impl Endpoint {
         let mut transport = (self.transport_fn)();
 
         self.inflight_connections.insert(peer);
-        self.tasks.add_fallible(
+        tokio_extras::spawn_fallible(
+            &this.clone(),
             {
                 let this = this.clone();
                 let connection_timeout = self.connection_timeout;
@@ -438,17 +441,19 @@ impl Endpoint {
         Ok(())
     }
 
-    async fn handle(&mut self, msg: Disconnect) {
-        self.drop_connection(&msg.0).await;
+    async fn handle(&mut self, msg: Disconnect, ctx: &mut Context<Self>) {
+        self.drop_connection(&ctx.address().expect("self to be alive"), &msg.0)
+            .await;
     }
 
-    async fn handle(&mut self, msg: ListenOn, ctx: &mut xtra::Context<Self>) {
+    async fn handle(&mut self, msg: ListenOn, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we are alive");
         let listen_address = msg.0.clone();
 
         let mut transport = (self.transport_fn)();
 
-        self.tasks.add_fallible(
+        tokio_extras::spawn_fallible::<_, _, _, (), _, _, _>(
+            &this.clone(),
             {
                 let this = this.clone();
                 let listen_address = listen_address.clone();

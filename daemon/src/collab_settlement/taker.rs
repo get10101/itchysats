@@ -6,14 +6,12 @@ use async_trait::async_trait;
 use model::libp2p::PeerId;
 use model::OrderId;
 use model::Price;
-use tokio_extras::Tasks;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
     endpoint: Address<Endpoint>,
-    tasks: Tasks,
     executor: command::Executor,
     n_payouts: usize,
 }
@@ -22,7 +20,6 @@ impl Actor {
     pub fn new(endpoint: Address<Endpoint>, executor: command::Executor, n_payouts: usize) -> Self {
         Self {
             endpoint,
-            tasks: Tasks::default(),
             executor,
             n_payouts,
         }
@@ -45,7 +42,7 @@ pub struct Settle {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle(&mut self, msg: Settle) -> Result<()> {
+    pub async fn handle(&mut self, msg: Settle, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let Settle {
             order_id,
             price,
@@ -60,7 +57,8 @@ impl Actor {
             .await
             .context("could not start closing position")?;
 
-        self.tasks.add_fallible(
+        tokio_extras::spawn_fallible(
+            &ctx.address().expect("self to be alive"),
             {
                 let endpoint = self.endpoint.clone();
                 let executor = self.executor.clone();

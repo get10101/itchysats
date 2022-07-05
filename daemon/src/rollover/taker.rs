@@ -20,7 +20,6 @@ use model::Role;
 use model::Timestamp;
 use std::time::Duration;
 use tokio_extras::FutureExt;
-use tokio_extras::Tasks;
 use xtra::message_channel::MessageChannel;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
@@ -41,7 +40,6 @@ pub struct Actor {
     get_announcement:
         MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
     n_payouts: usize,
-    tasks: Tasks,
     executor: command::Executor,
 }
 
@@ -73,7 +71,6 @@ impl Actor {
     ) -> Self {
         Self {
             endpoint,
-            tasks: Tasks::default(),
             executor,
             get_announcement,
             oracle_pk,
@@ -98,7 +95,7 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    pub async fn handle(&mut self, msg: ProposeRollover) {
+    pub async fn handle(&mut self, msg: ProposeRollover, ctx: &mut xtra::Context<Self>) {
         let ProposeRollover {
             order_id,
             maker_peer_id,
@@ -115,7 +112,8 @@ impl Actor {
             }
         };
 
-        self.tasks.add_fallible(
+        tokio_extras::spawn_fallible(
+            &ctx.address().expect("self to be alive"),
             {
                 let executor = self.executor.clone();
                 let get_announcement = self.get_announcement.clone();
