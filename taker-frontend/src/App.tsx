@@ -1,4 +1,4 @@
-import { Box, Center, useColorModeValue, useDisclosure, useToast } from "@chakra-ui/react";
+import { useDisclosure, useToast } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -8,10 +8,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
-import Footer from "./components/Footer";
-import Nav from "./components/NavBar";
-import OutdatedWarning from "./components/OutdatedWarning";
-import PromoBanner from "./components/PromoBanner";
+import { MainPageLayout } from "./components/MainPageLayout";
 import Trade from "./components/Trade";
 import { TradePageLayout } from "./components/TradePageLayout";
 import { Wallet } from "./components/Wallet";
@@ -185,84 +182,65 @@ export const App = () => {
     }, [navigate, pathname]);
 
     return (
-        <>
-            {outdatedWarningIsVisible
-                && <OutdatedWarning githubVersion={githubVersion} daemonVersion={daemonVersion} onClose={onClose} />}
-
-            <Nav
-                walletInfo={walletInfo}
-                connectedToMaker={connectedToMaker}
-                nextFundingEvent={nextFundingEvent}
-                referencePrice={referencePrice}
-            />
-            <Center>
-                <Box
-                    maxWidth={(VIEWPORT_WIDTH + 200) + "px"}
-                    width={"100%"}
-                    bgGradient={useColorModeValue(
-                        "linear(to-r, white 5%, gray.800, white 95%)",
-                        "linear(to-r, gray.800 5%, white, gray.800 95%)",
-                    )}
-                >
-                    <Center>
-                        <Box
-                            textAlign="center"
-                            padding={3}
-                            bg={useColorModeValue(BG_LIGHT, BG_DARK)}
-                            maxWidth={VIEWPORT_WIDTH_PX}
-                            marginTop={`${HEADER_HEIGHT}px`}
-                            minHeight={`calc(100vh - ${FOOTER_HEIGHT}px - ${HEADER_HEIGHT}px)`}
-                            width={"100%"}
-                        >
-                            <Routes>
-                                <Route path="/">
-                                    <Route
-                                        path="wallet"
-                                        element={<Wallet walletInfo={walletInfo} />}
-                                    />
-                                    <Route
-                                        element={
-                                            // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
+        <Routes>
+            <Route
+                element={
+                    <MainPageLayout
+                        outdatedWarningIsVisible={outdatedWarningIsVisible}
+                        githubVersion={githubVersion}
+                        daemonVersion={daemonVersion}
+                        onClose={onClose}
+                        walletInfo={walletInfo}
+                        connectedToMaker={connectedToMaker}
+                        nextFundingEvent={nextFundingEvent}
+                        referencePrice={referencePrice}
+                        identityOrUndefined={identityOrUndefined}
+                    />
+                }
+            >
+                <Route path="/">
+                    <Route
+                        path="wallet"
+                        element={<Wallet walletInfo={walletInfo} />}
+                    />
+                    <Route
+                        element={
+                            // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
 
 
-                                                <TradePageLayout
-                                                    cfds={cfds}
-                                                    connectedToMaker={connectedToMaker}
-                                                    showPromoBanner={isWithinPromoPeriod}
-                                                />
+                                <TradePageLayout
+                                    cfds={cfds}
+                                    connectedToMaker={connectedToMaker}
+                                    showPromoBanner={isWithinPromoPeriod}
+                                />
 
-                                        }
-                                    >
-                                        <Route
-                                            path="long"
-                                            element={
-                                                <Trade
-                                                    offer={longOffer}
-                                                    connectedToMaker={connectedToMaker}
-                                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                                    isLong={true}
-                                                />
-                                            }
-                                        />
-                                        <Route
-                                            path="short"
-                                            element={
-                                                <Trade
-                                                    offer={shortOffer}
-                                                    connectedToMaker={connectedToMaker}
-                                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                                    isLong={false}
-                                                />
-                                            }
-                                        />
-                                    </Route>
-                                </Route>
-                            </Routes>
-                        </Box>
-                    </Center>
-                </Box>
-            </Center>
-            <Footer identityInfo={identityOrUndefined} daemonVersion={daemonVersion?.version} />
-        </>
+                        }
+                    >
+                        <Route
+                            path="long"
+                            element={
+                                <Trade
+                                    offer={longOffer}
+                                    connectedToMaker={connectedToMaker}
+                                    walletBalance={walletInfo ? walletInfo.balance : 0}
+                                    isLong={true}
+                                />
+                            }
+                        />
+                        <Route
+                            path="short"
+                            element={
+                                <Trade
+                                    offer={shortOffer}
+                                    connectedToMaker={connectedToMaker}
+                                    walletBalance={walletInfo ? walletInfo.balance : 0}
+                                    isLong={false}
+                                />
+                            }
+                        />
+                    </Route>
+                </Route>
+            </Route>
+        </Routes>
     );
 };
