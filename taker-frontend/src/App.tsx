@@ -9,11 +9,11 @@ import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
 import Footer from "./components/Footer";
-import { PageLayout } from "./components/Layout";
 import Nav from "./components/NavBar";
 import OutdatedWarning from "./components/OutdatedWarning";
 import PromoBanner from "./components/PromoBanner";
 import Trade from "./components/Trade";
+import { TradePageLayout } from "./components/TradePageLayout";
 import { Wallet } from "./components/Wallet";
 import { fetchDaemonVersion, fetchGithubVersion } from "./fetchVersion";
 import {
@@ -225,7 +225,7 @@ export const App = () => {
                                             // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
 
 
-                                                <PageLayout
+                                                <TradePageLayout
                                                     cfds={cfds}
                                                     connectedToMaker={connectedToMaker}
                                                     showPromoBanner={isWithinPromoPeriod}

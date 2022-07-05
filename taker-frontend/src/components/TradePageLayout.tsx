@@ -20,14 +20,14 @@ import { Cfd, ConnectionStatus, isClosed } from "../types";
 import History from "./History";
 import PromoBanner from "./PromoBanner";
 
-interface PageLayoutProps {
+interface TradePageLayoutProps {
     children: JSX.Element;
     cfds: Cfd[];
     connectedToMaker: ConnectionStatus;
     showPromoBanner: boolean;
 }
 
-export function PageLayout({ children, cfds, connectedToMaker, showPromoBanner }: PageLayoutProps) {
+export function TradePageLayout({ children, cfds, connectedToMaker, showPromoBanner }: TradePageLayoutProps) {
     return (
         <VStack w={"100%"}>
             {showPromoBanner && <PromoBanner />}
