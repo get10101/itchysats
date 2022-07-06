@@ -8,6 +8,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::ecdsa::Signature;
 use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
@@ -578,4 +579,12 @@ pub(crate) async fn build_and_verify_cets_and_refund(
         .collect::<Result<HashMap<_, _>>>()?;
 
     Ok((cets, refund_tx))
+}
+
+#[async_trait]
+pub trait GetAnnouncements {
+    async fn get_announcements(
+        &self,
+        events: Vec<BitMexPriceEventId>,
+    ) -> Result<Vec<olivia::Announcement>>;
 }
