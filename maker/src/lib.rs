@@ -5,6 +5,7 @@ use daemon::bdk;
 use daemon::bdk::bitcoin;
 use daemon::bdk::bitcoin::Amount;
 use shared_bin::logger::LevelFilter;
+use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -40,6 +41,12 @@ pub struct Opts {
     /// If enabled, traces will be exported to the OTEL collector
     #[clap(long)]
     pub instrumentation: bool,
+
+    /// OTEL collector endpoint address
+    ///
+    /// If not specified it defaults to the local collector endpoint.
+    #[clap(long, default_value = LOCAL_COLLECTOR_ENDPOINT )]
+    pub collector_endpoint: String,
 
     /// If enabled the application will not fail if an error occurred during db migration.
     #[clap(short, long)]
