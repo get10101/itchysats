@@ -21,7 +21,7 @@ hkdf = "0.12"
 itertools = "0.10"
 libp2p-core = { version = "0.33", default-features = false }
 libp2p-noise = "0.36"
-libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] }
+libp2p-tcp = { version = "0.34", default-features = false, features = ["tokio"] }
 maia = "0.2.0"
 maia-core = "0.1.1"
 maia-deprecated = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia" } # includes subtract-fee bug, needed for protocols over legacy networking

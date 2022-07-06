@@ -14,7 +14,7 @@ daemon = { path = "../daemon" }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 http-api-problem = { version = "0.53.0", features = ["rocket"] }
-libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] }
+libp2p-tcp = { version = "0.34", default-features = false, features = ["tokio"] }
 maia = "0.2.0"
 maia-core = "0.1.1"
 model = { path = "../model" }

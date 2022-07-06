@@ -775,7 +775,7 @@ dependencies = [
  "futures",
  "hkdf",
  "itertools",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "libp2p-noise",
  "libp2p-tcp",
  "maia 0.1.1",
@@ -1723,6 +1723,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "libp2p-core"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbf9b94cefab7599b2d3dff2f93bee218c6621d68590b23ede4485813cbcece6"
+dependencies = [
+ "asn1_der",
+ "bs58",
+ "ed25519-dalek",
+ "either",
+ "fnv",
+ "futures",
+ "futures-timer",
+ "instant",
+ "lazy_static",
+ "log",
+ "multiaddr",
+ "multihash",
+ "multistream-select",
+ "parking_lot 0.12.0",
+ "pin-project",
+ "prost 0.10.4",
+ "prost-build 0.10.4",
+ "rand 0.8.4",
+ "ring",
+ "rw-stream-sink",
+ "sha2 0.10.2",
+ "smallvec",
+ "thiserror",
+ "unsigned-varint",
+ "void",
+ "zeroize",
+]
+
+[[package]]
 name = "libp2p-noise"
 version = "0.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1732,7 +1766,7 @@ dependencies = [
  "curve25519-dalek 3.2.0",
  "futures",
  "lazy_static",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "log",
  "prost 0.10.4",
  "prost-build 0.10.4",
@@ -1746,16 +1780,16 @@ dependencies = [
 
 [[package]]
 name = "libp2p-tcp"
-version = "0.33.0"
+version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f4933e38ef21b50698aefc87799c24f2a365c9d3f6cf50471f3f6a0bc410892"
+checksum = "8a6771dc19aa3c65d6af9a8c65222bfc8fcd446630ddca487acd161fa6096f3b"
 dependencies = [
  "futures",
  "futures-timer",
  "if-addrs",
  "ipnet",
  "libc",
- "libp2p-core",
+ "libp2p-core 0.34.0",
  "log",
  "socket2",
  "tokio",
@@ -2009,7 +2043,7 @@ dependencies = [
  "conquer-once",
  "hex",
  "itertools",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "maia 0.1.1",
  "maia 0.2.0",
  "maia-core",
@@ -3951,7 +3985,7 @@ dependencies = [
  "chashmap-async",
  "futures",
  "hex",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "maia 0.2.0",
  "maia-core",
  "model",
@@ -4194,7 +4228,7 @@ dependencies = [
  "hex",
  "http-api-problem",
  "itertools",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "model",
  "prometheus",
  "rocket",
@@ -5260,7 +5294,7 @@ dependencies = [
  "clap",
  "conquer-once",
  "futures",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "libp2p-noise",
  "libp2p-tcp",
  "multistream-select",
