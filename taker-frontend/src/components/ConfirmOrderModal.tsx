@@ -126,18 +126,19 @@ export default function ConfirmOrderModal({
                                     <BitcoinAmount btc={feeForFirstSettlementInterval} />
                                 </Td>
                             </Tr>
-                            <FundingRateTooltip
-                                fundingRateHourly={fundingRateHourly}
-                                fundingRateAnnualized={fundingRateAnnualized}
-                                disabled={!fundingRateHourly}
-                            >
-                                <Tr>
-                                    <Td>
+
+                            <Tr>
+                                <Td>
+                                    <FundingRateTooltip
+                                        fundingRateHourly={fundingRateHourly}
+                                        fundingRateAnnualized={fundingRateAnnualized}
+                                        disabled={!fundingRateHourly}
+                                    >
                                         <Text as={"b"}>Perpetual Cost</Text>
-                                    </Td>
-                                    <Td>Hourly @ {fundingRateHourly}%</Td>
-                                </Tr>
-                            </FundingRateTooltip>
+                                    </FundingRateTooltip>
+                                </Td>
+                                <Td>Hourly @ {fundingRateHourly}%</Td>
+                            </Tr>
                         </Tbody>
                     </Table>
                 </ModalBody>
