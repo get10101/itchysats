@@ -9,6 +9,8 @@ use model::libp2p::PeerId;
 use rand::Rng;
 use sha2::Sha256;
 use std::convert::TryInto;
+use std::fmt;
+use std::fmt::Debug;
 use std::path::Path;
 
 /// Struct containing keys for both legacy and libp2p connections.
@@ -94,6 +96,12 @@ pub struct RandomSeed([u8; 256]);
 impl Seed for RandomSeed {
     fn seed(&self) -> Vec<u8> {
         self.0.to_vec()
+    }
+}
+
+impl Debug for RandomSeed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("RandomSeed").field(&"...").finish()
     }
 }
 

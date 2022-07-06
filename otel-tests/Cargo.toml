@@ -1,0 +1,15 @@
+[package]
+name = "otel-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Internal #[otel_test] macro to export test spans over OTLP"
+
+[dependencies]
+futures = "0.3"
+opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.10.0", features = ["grpc-sys", "trace", "openssl-vendored"] }
+otel-tests-macro = { path = "../otel-tests-macro" }
+tokio = { version = "1", features = ["macros"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.17.4"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
