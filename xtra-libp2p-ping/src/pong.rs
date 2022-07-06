@@ -7,7 +7,7 @@ use xtra_productivity::xtra_productivity;
 #[derive(Copy, Clone)]
 pub struct Actor;
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, message: NewInboundSubstream, ctx: &mut Context<Self>) {
         let NewInboundSubstream { stream, peer } = message;

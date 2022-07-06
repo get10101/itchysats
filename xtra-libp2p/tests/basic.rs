@@ -389,7 +389,7 @@ impl Actor for EndpointSubscriberStats {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl EndpointSubscriberStats {
     async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
         self.connected_peers.insert(msg.peer);
@@ -428,7 +428,7 @@ struct GetListenAddresses;
 #[derive(Default)]
 struct HelloWorld;
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
         tracing::info!("New hello world stream from {}", msg.peer);

@@ -26,7 +26,7 @@ impl xtra::Actor for PriceFeedActor {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl PriceFeedActor {
     async fn handle(
         &mut self,

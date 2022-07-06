@@ -176,7 +176,7 @@ where
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl<T, R, S> Actor<T, R>
 where
     T: xtra::Actor<Stop = S>,

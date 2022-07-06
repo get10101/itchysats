@@ -32,7 +32,7 @@ impl xtra::Actor for OracleActor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl OracleActor {
     async fn handle(
         &mut self,

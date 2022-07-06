@@ -168,7 +168,7 @@ mod tests {
         async fn stopped(self) -> Self::Stop {}
     }
 
-    #[xtra_productivity(message_impl = false)]
+    #[xtra_productivity]
     impl OffersReceiver {
         async fn handle(&mut self, msg: LatestMakerOffers) {
             self.latest_offers = msg.0;

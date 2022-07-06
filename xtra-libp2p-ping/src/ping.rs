@@ -151,7 +151,7 @@ impl Actor {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle_connection_established(&mut self, msg: endpoint::ConnectionEstablished) {
         tracing::trace!(

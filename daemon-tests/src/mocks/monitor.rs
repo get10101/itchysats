@@ -31,7 +31,7 @@ impl xtra::Actor for MonitorActor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl MonitorActor {
     async fn handle(&mut self, _: monitor::Sync) {}
 

@@ -76,7 +76,7 @@ impl xtra::Actor for Actor {
     async fn stopped(self) -> Self::Stop {}
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle_connection_established(&mut self, msg: endpoint::ConnectionEstablished) {
         tracing::debug!(

@@ -15,7 +15,7 @@ impl Actor {
     }
 }
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
         let NewInboundSubstream { peer, stream } = msg;

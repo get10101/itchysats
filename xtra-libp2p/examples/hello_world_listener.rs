@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
 #[derive(Copy, Clone)]
 pub struct HelloWorld;
 
-#[xtra_productivity(message_impl = false)]
+#[xtra_productivity]
 impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
         tracing::info!("New hello world stream from {}", msg.peer);
