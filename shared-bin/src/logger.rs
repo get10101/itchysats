@@ -4,6 +4,7 @@ use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::trace;
 use opentelemetry::sdk::Resource;
 use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
 use time::macros::format_description;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
@@ -14,6 +15,9 @@ pub use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+/// Default local collector endpoint, compatible with jaeger
+pub const LOCAL_COLLECTOR_ENDPOINT: &str = "http://localhost:4317";
+
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 #[allow(clippy::print_stdout)] // because the logger is only initialized at the end of this function but we want to print a warning
@@ -22,6 +26,7 @@ pub fn init(
     json_format: bool,
     instrumentation: bool,
     service_name: &'static str,
+    collector_endpoint: &str,
 ) -> Result<()> {
     if level == LevelFilter::OFF {
         return Ok(());
@@ -69,7 +74,11 @@ pub fn init(
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
             .with_trace_config(cfg)
-            .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+            .with_exporter(
+                opentelemetry_otlp::new_exporter()
+                    .tonic()
+                    .with_endpoint(collector_endpoint),
+            )
             .install_batch(opentelemetry::runtime::Tokio)
             .context("Failed to initialise OTLP exporter")?;
 

@@ -32,6 +32,7 @@ use shared_bin::catchers::default_catchers;
 use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
+use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -88,6 +89,12 @@ struct Opts {
     /// If enabled, traces will be exported to the OTEL collector
     #[clap(long)]
     instrumentation: bool,
+
+    /// OTEL collector endpoint address
+    ///
+    /// If not specified it defaults to the local collector endpoint.
+    #[clap(long, default_value = LOCAL_COLLECTOR_ENDPOINT )]
+    collector_endpoint: String,
 
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
     #[clap(short, long, default_value = "Debug")]
@@ -288,8 +295,14 @@ async fn main() -> Result<()> {
     let network = opts.network();
     let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
-    logger::init(opts.log_level, opts.json, opts.instrumentation, "taker")
-        .context("initialize logger")?;
+    logger::init(
+        opts.log_level,
+        opts.json,
+        opts.instrumentation,
+        "taker",
+        &opts.collector_endpoint,
+    )
+    .context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 

@@ -31,8 +31,14 @@ use xtras::supervisor::always_restart;
 async fn main() -> Result<()> {
     let opts = Opts::parse();
 
-    logger::init(opts.log_level, opts.json, opts.instrumentation, "maker")
-        .context("initialize logger")?;
+    logger::init(
+        opts.log_level,
+        opts.json,
+        opts.instrumentation,
+        "maker",
+        &opts.collector_endpoint,
+    )
+    .context("initialize logger")?;
     tracing::info!("Running version: {}", daemon::version::version());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 
