@@ -25,6 +25,7 @@ use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -1078,9 +1079,9 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(!self.is_in_collaborative_settlement());
-        anyhow::ensure!(self.role == Role::Taker);
-        anyhow::ensure!(self.can_settle_collaboratively());
+        ensure!(!self.is_in_collaborative_settlement());
+        ensure!(self.role == Role::Taker);
+        ensure!(self.can_settle_collaboratively());
 
         let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1101,15 +1102,15 @@ impl Cfd {
         n_payouts: usize,
         proposed_settlement_transaction: &Transaction,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(!self.is_in_collaborative_settlement());
-        anyhow::ensure!(self.role == Role::Maker);
-        anyhow::ensure!(self.can_settle_collaboratively());
+        ensure!(!self.is_in_collaborative_settlement());
+        ensure!(self.role == Role::Maker);
+        ensure!(self.can_settle_collaboratively());
 
         let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
         let local_settlement_transaction = settlement_tx.unsigned_transaction();
 
-        anyhow::ensure!(
+        ensure!(
             *local_settlement_transaction == *proposed_settlement_transaction,
             "Proposed collab settlement does not equal locally created one. Local: {local_settlement_transaction:?}, proposed: {proposed_settlement_transaction:?}"
         );
@@ -1176,10 +1177,10 @@ impl Cfd {
         proposal: SettlementProposal,
         n_payouts: usize,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(!self.is_in_collaborative_settlement());
-        anyhow::ensure!(self.role == Role::Maker);
-        anyhow::ensure!(self.can_settle_collaboratively());
-        anyhow::ensure!(proposal.order_id == self.id);
+        ensure!(!self.is_in_collaborative_settlement());
+        ensure!(self.role == Role::Maker);
+        ensure!(self.can_settle_collaboratively());
+        ensure!(proposal.order_id == self.id);
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
@@ -1217,10 +1218,10 @@ impl Cfd {
         self,
         theirs: &SettlementProposal,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(self.role == Role::Maker);
+        ensure!(self.role == Role::Maker);
 
         let ours = self.settlement_proposal;
-        anyhow::ensure!(
+        ensure!(
             self.settlement_proposal.as_ref() == Some(theirs),
             "Settlement proposal mismatch: calculated {ours:?}, got {theirs:?}",
         );
@@ -1246,7 +1247,7 @@ impl Cfd {
 
     pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
         let version = self.version;
-        anyhow::ensure!(
+        ensure!(
             version <= 1,
             "Rejecting contract setup not allowed because cfd in version {version}",
         );
@@ -1370,7 +1371,7 @@ impl Cfd {
     }
 
     pub fn handle_cet_timelock_expired(self) -> Result<CfdEvent> {
-        anyhow::ensure!(!self.is_final());
+        ensure!(!self.is_final());
 
         let cfd_event = self
             .cet
@@ -1429,7 +1430,7 @@ impl Cfd {
     }
 
     pub fn manual_commit_to_blockchain(&self) -> Result<CfdEvent> {
-        anyhow::ensure!(!self.is_closed());
+        ensure!(!self.is_closed());
 
         let dlc = self.dlc.as_ref().context("Cannot commit without a DLC")?;
 
@@ -1522,7 +1523,7 @@ impl Cfd {
                 tracing::debug!("Peer ID {peer_id} invoking a protocol on CFD that got created without counterparty peer ID");
             }
             Some(counterparty_peer_id) => {
-                anyhow::ensure!(
+                ensure!(
                     counterparty_peer_id == *peer_id,
                     "Peer ID mismatch. CFD was created with {counterparty_peer_id}, but
                 protocol got invoked by {peer_id}"

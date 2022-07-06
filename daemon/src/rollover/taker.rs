@@ -1,6 +1,7 @@
 use crate::rollover;
 use crate::rollover::protocol::*;
 use anyhow::Context;
+use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Txid;
 use bdk_ext::keypair;
@@ -75,8 +76,7 @@ impl<E, O> Actor<E, O> {
 }
 
 impl<E, O> Actor<E, O> {
-    #[tracing::instrument(skip(self))]
-    async fn open_substream(&self, peer_id: PeerId) -> anyhow::Result<Substream> {
+    async fn open_substream(&self, peer_id: PeerId) -> Result<Substream> {
         let substream = self
             .endpoint
             .send(OpenSubstream::single_protocol(

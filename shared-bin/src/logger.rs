@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
@@ -95,7 +96,7 @@ pub fn init(
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
 
         opentelemetry::global::set_error_handler(|error| {
-            ::tracing::error!(target: "opentelemetry", "OpenTelemetry error occurred: {:#}", anyhow::anyhow!(error));
+            ::tracing::error!(target: "opentelemetry", "OpenTelemetry error occurred: {:#}", anyhow!(error));
         })
         .expect("to be able to set error handler");
 

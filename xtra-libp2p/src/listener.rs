@@ -2,6 +2,7 @@ use crate::endpoint;
 use crate::Endpoint;
 use crate::GetConnectionStats;
 use crate::ListenOn;
+use anyhow::ensure;
 use anyhow::Result;
 use async_trait::async_trait;
 use libp2p_core::Multiaddr;
@@ -53,7 +54,7 @@ impl Actor {
 
     #[instrument(skip(self), err)]
     async fn listen(&self) -> Result<()> {
-        anyhow::ensure!(
+        ensure!(
             !self.is_listening().await?,
             "We should not be listening yet"
         );
@@ -63,7 +64,7 @@ impl Actor {
             .await?;
         tokio_extras::time::sleep(CONNECTION_TIMEOUT).await;
 
-        anyhow::ensure!(
+        ensure!(
             self.is_listening().await?,
             "Endpoint did not start listening in time"
         );
