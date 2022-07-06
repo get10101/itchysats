@@ -33,6 +33,7 @@ pub mod olivia;
 mod payouts;
 mod rollover;
 pub mod shared_protocol;
+pub mod transaction_ext;
 
 pub use cfd::*;
 pub use contract_setup::SetupParams;
@@ -40,6 +41,7 @@ pub use payouts::Payouts;
 pub use rollover::BaseDlcParams;
 pub use rollover::RolloverParams;
 pub use rollover::Version as RolloverVersion;
+pub use transaction_ext::TransactionExt;
 
 /// The time-to-live of a CFD after it is first created or rolled
 /// over.
