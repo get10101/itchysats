@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add new argument to the maker: `ignore-migration-errors`. If enabled, the maker will start if an error occurred when opening the database, if not, it will fail fast. This can come handy to prevent accidentally creating a new empty database in case database migration was unsuccessful.
+- New metrics: the maker tracks how many offers have been sent (`offer_messages_sent_total`) and the taker tracks how many offers have been received (`offer_messages_received_total`).
 
 ## [0.4.21] - 2022-06-27
 

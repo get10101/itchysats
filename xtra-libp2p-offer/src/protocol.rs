@@ -8,6 +8,23 @@ use futures::SinkExt;
 use futures::StreamExt;
 use model::MakerOffers;
 
+static MESSAGES_SENT: conquer_once::Lazy<prometheus::IntCounter> = conquer_once::Lazy::new(|| {
+    prometheus::register_int_counter!(
+        "offer_messages_sent_total",
+        "The number of offer messages sent over the libp2p connection.",
+    )
+    .unwrap()
+});
+
+static MESSAGES_RECEIVED: conquer_once::Lazy<prometheus::IntCounter> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_int_counter!(
+            "offer_messages_received_total",
+            "The number of offer messages received over the libp2p connection.",
+        )
+        .unwrap()
+    });
+
 pub(crate) async fn send<S>(sink: S, offers: Option<MakerOffers>) -> Result<(), JsonCodecError>
 where
     S: AsyncWriteExt + Unpin,
@@ -15,6 +32,7 @@ where
     let mut framed = FramedWrite::new(sink, JsonCodec::<Option<MakerOffers>, ()>::new());
 
     framed.send(offers).await?;
+    MESSAGES_SENT.inc();
 
     Ok(())
 }
@@ -26,6 +44,7 @@ where
     let mut framed = FramedRead::new(stream, JsonCodec::<(), Option<MakerOffers>>::new());
 
     let offers = framed.next().await.ok_or(ReceiveError::Terminated)??;
+    MESSAGES_RECEIVED.inc();
 
     Ok(offers)
 }
