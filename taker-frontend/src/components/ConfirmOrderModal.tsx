@@ -27,7 +27,7 @@ interface Props {
     position: "long" | "short";
     isOpen: boolean;
     onClose: any;
-    onSubmit: (req: CfdOrderRequestPayload) => void;
+    onSubmit: ([req]: [CfdOrderRequestPayload]) => void;
     isSubmitting: boolean;
     quantity: number;
     price: number;
@@ -150,12 +150,12 @@ export default function ConfirmOrderModal({
                             colorScheme="teal"
                             isLoading={isSubmitting}
                             onClick={() => {
-                                onSubmit({
+                                onSubmit([{
                                     order_id: orderId,
                                     quantity,
                                     position,
                                     leverage,
-                                });
+                                }]);
 
                                 onClose();
                             }}
