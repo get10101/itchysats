@@ -32,21 +32,29 @@ use model::Price;
 use model::TxFeeRate;
 use model::Usd;
 use model::SETTLEMENT_INTERVAL;
+use opentelemetry::sdk::trace;
+use opentelemetry::sdk::Resource;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Once;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_extras::Tasks;
-use tracing::subscriber::DefaultGuard;
+use tracing::instrument;
 use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer;
+use tracing_subscriber::Registry;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
 use xtra_libp2p::libp2p::Multiaddr;
@@ -61,6 +69,7 @@ fn oracle_pk() -> XOnlyPublicKey {
         .unwrap()
 }
 
+#[instrument]
 pub async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start(&MakerConfig::default()).await;
     let taker = Taker::start(
@@ -73,7 +82,7 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
@@ -112,7 +121,7 @@ impl Default for MakerConfig {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
@@ -176,6 +185,7 @@ impl Maker {
         &mut self.feeds.connected_takers
     }
 
+    #[instrument(name = "Start maker")]
     pub async fn start(config: &MakerConfig) -> Self {
         let port = match config.dedicated_port {
             Some(port) => port,
@@ -350,6 +360,7 @@ impl Taker {
         &mut self.system.maker_online_status_feed_receiver
     }
 
+    #[instrument(name = "Start taker")]
     pub async fn start(
         config: &TakerConfig,
         maker_address: SocketAddr,
@@ -546,25 +557,47 @@ fn dummy_price() -> Decimal {
     dec!(50_000)
 }
 
-pub fn init_tracing() -> DefaultGuard {
-    let filter = EnvFilter::from_default_env()
-        // apply warning level globally
-        .add_directive(LevelFilter::WARN.into())
-        // log traces from test itself
-        .add_directive("happy_path=debug".parse().unwrap())
-        .add_directive("wire=trace".parse().unwrap())
-        .add_directive("taker=debug".parse().unwrap())
-        .add_directive("maker=debug".parse().unwrap())
-        .add_directive("daemon=debug".parse().unwrap())
-        .add_directive("xtra_libp2p=debug".parse().unwrap())
-        .add_directive("xtra_libp2p_offer=debug".parse().unwrap())
-        .add_directive("xtra_libp2p_ping=debug".parse().unwrap())
-        .add_directive("rocket=warn".parse().unwrap());
+static INIT_OTLP_EXPORTER: Once = Once::new();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_test_writer()
-        .set_default()
+pub fn init_tracing() {
+    INIT_OTLP_EXPORTER.call_once(|| {
+        let cfg = trace::Config::default().with_resource(Resource::new([KeyValue::new(
+            "service.name",
+            "daemon-tests",
+        )]));
+
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_trace_config(cfg)
+            .with_exporter(
+                opentelemetry_otlp::new_exporter()
+                    .grpcio()
+                    .with_endpoint("localhost:4317"),
+            )
+            .install_simple()
+            .unwrap();
+
+        let filter = EnvFilter::from_default_env()
+            // apply warning level globally
+            .add_directive(LevelFilter::WARN.into())
+            // log traces from test itself
+            .add_directive("happy_path=debug".parse().unwrap())
+            .add_directive("wire=trace".parse().unwrap())
+            .add_directive("taker=debug".parse().unwrap())
+            .add_directive("maker=debug".parse().unwrap())
+            .add_directive("daemon=debug".parse().unwrap())
+            .add_directive("xtra_libp2p=debug".parse().unwrap())
+            .add_directive("xtra_libp2p_offer=debug".parse().unwrap())
+            .add_directive("xtra_libp2p_ping=debug".parse().unwrap())
+            .add_directive("rocket=warn".parse().unwrap());
+
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_test_writer()
+            .with_filter(filter);
+        let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        Registry::default().with(telemetry).with(fmt_layer).init();
+    })
 }
 
 pub async fn mock_oracle_announcements(

@@ -13,7 +13,6 @@ use daemon_tests::flow::next;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
-use daemon_tests::init_tracing;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::mock_oracle_announcements;
 use daemon_tests::mocks::oracle::dummy_wrong_attestation;
@@ -40,6 +39,7 @@ use model::SETTLEMENT_INTERVAL;
 use rust_decimal_macros::dec;
 use std::time::Duration;
 use tokio_extras::time::sleep;
+use traced_tests::traced_test;
 
 macro_rules! confirm {
     (lock transaction, $id:expr, $maker:expr, $taker:expr) => {
@@ -125,9 +125,8 @@ macro_rules! expire {
     };
 }
 
-#[tokio::test]
+#[traced_test]
 async fn taker_receives_order_from_maker_on_publication() {
-    let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     assert!(is_next_offers_none(taker.offers_feed()).await.unwrap());
@@ -192,9 +191,8 @@ fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
     assert_eq!(received.funding_rate_hourly_percent, "0.00100");
 }
 
-#[tokio::test]
+#[traced_test]
 async fn taker_takes_order_and_maker_rejects() {
-    let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
@@ -224,9 +222,8 @@ async fn taker_takes_order_and_maker_rejects() {
     wait_next_state!(order_id, maker, taker, CfdState::Rejected);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn another_offer_is_automatically_created_after_taker_takes_order() {
-    let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
@@ -275,9 +272,8 @@ async fn another_offer_is_automatically_created_after_taker_takes_order() {
     )
 }
 
-#[tokio::test]
+#[traced_test]
 async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
-    let _guard = init_tracing();
     let (mut maker, mut taker) = start_both().await;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
@@ -318,15 +314,13 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
     wait_next_state!(order_id, maker, taker, CfdState::Open);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn collaboratively_close_an_open_cfd_maker_going_short() {
-    let _guard = init_tracing();
     collaboratively_close_an_open_cfd(Position::Short).await;
 }
 
-#[tokio::test]
+#[traced_test]
 async fn collaboratively_close_an_open_cfd_maker_going_long() {
-    let _guard = init_tracing();
     collaboratively_close_an_open_cfd(Position::Long).await;
 }
 
@@ -358,15 +352,13 @@ async fn collaboratively_close_an_open_cfd(maker_position: Position) {
     wait_next_state!(order_id, maker, taker, CfdState::Closed);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn force_close_an_open_cfd_maker_going_short() {
-    let _guard = init_tracing();
     force_close_open_cfd(Position::Short).await;
 }
 
-#[tokio::test]
+#[traced_test]
 async fn force_close_an_open_cfd_maker_going_long() {
-    let _guard = init_tracing();
     force_close_open_cfd(Position::Long).await;
 }
 
@@ -401,9 +393,8 @@ async fn force_close_open_cfd(maker_position: Position) {
     wait_next_state!(order_id, maker, taker, CfdState::Closed);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn rollover_an_open_cfd_maker_going_short() {
-    let _guard = init_tracing();
     let (mut maker, mut taker, order_id, fee_structure) =
         prepare_rollover(Position::Short, OliviaData::example_0()).await;
 
@@ -422,9 +413,8 @@ async fn rollover_an_open_cfd_maker_going_short() {
     .await;
 }
 
-#[tokio::test]
+#[traced_test]
 async fn rollover_an_open_cfd_maker_going_long() {
-    let _guard = init_tracing();
     let (mut maker, mut taker, order_id, fee_structure) =
         prepare_rollover(Position::Long, OliviaData::example_0()).await;
 
@@ -443,11 +433,10 @@ async fn rollover_an_open_cfd_maker_going_long() {
     .await;
 }
 
-#[tokio::test]
+#[traced_test]
 async fn double_rollover_an_open_cfd() {
     // double rollover ensures that both parties properly succeeded and can do another rollover
 
-    let _guard = init_tracing();
     let (mut maker, mut taker, order_id, fee_structure) =
         prepare_rollover(Position::Short, OliviaData::example_0()).await;
 
@@ -483,10 +472,8 @@ async fn double_rollover_an_open_cfd() {
 /// The contract setup is done with `example_0`.
 /// The first rollover is done with `example_1`.
 /// The second rollover is done with `example_0` (we re-use it)
-#[tokio::test]
+#[traced_test]
 async fn retry_rollover_an_open_cfd() {
-    let _guard = init_tracing();
-
     let contract_setup_oracle_data = OliviaData::example_0();
     let contract_setup_oracle_data_announcement = contract_setup_oracle_data.announcement();
     let (mut maker, mut taker, order_id, fee_structure) =
@@ -677,9 +664,8 @@ async fn rollover(
     );
 }
 
-#[tokio::test]
+#[traced_test]
 async fn maker_rejects_rollover_of_open_cfd() {
-    let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
@@ -701,9 +687,8 @@ async fn maker_rejects_rollover_of_open_cfd() {
     wait_next_state!(order_id, maker, taker, CfdState::Open);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn maker_rejects_rollover_after_commit_finality() {
-    let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
@@ -734,9 +719,8 @@ async fn maker_rejects_rollover_after_commit_finality() {
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn maker_accepts_rollover_after_commit_finality() {
-    let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
@@ -771,9 +755,8 @@ async fn maker_accepts_rollover_after_commit_finality() {
     );
 }
 
-#[tokio::test]
+#[traced_test]
 async fn maker_rejects_collab_settlement_after_commit_finality() {
-    let _guard = init_tracing();
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(OliviaData::example_0().announcement(), Position::Short).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -800,9 +783,8 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn maker_accepts_collab_settlement_after_commit_finality() {
-    let _guard = init_tracing();
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(OliviaData::example_0().announcement(), Position::Short).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
@@ -829,9 +811,8 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn open_cfd_is_refunded() {
-    let _guard = init_tracing();
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id, _) =
         start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
@@ -849,10 +830,8 @@ async fn open_cfd_is_refunded() {
     wait_next_state!(order_id, maker, taker, CfdState::Refunded);
 }
 
-#[tokio::test]
+#[traced_test]
 async fn taker_notices_lack_of_maker() {
-    let _guard = init_tracing();
-
     let maker_config = MakerConfig::default()
         .with_dedicated_port(35123)
         .with_dedicated_libp2p_port(35124); // set fixed ports so the taker can reconnect
@@ -893,10 +872,8 @@ async fn taker_notices_lack_of_maker() {
     );
 }
 
-#[tokio::test]
+#[traced_test]
 async fn maker_notices_lack_of_taker() {
-    let _guard = init_tracing();
-
     let (mut maker, taker) = start_both().await;
     assert_eq!(
         vec![taker.id],

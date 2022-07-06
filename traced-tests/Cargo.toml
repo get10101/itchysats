@@ -1,0 +1,12 @@
+[package]
+name = "traced-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Internal #[traced_test] macro intended to be used with daemon-tests"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+syn = { version = "1", features = ["full"] }

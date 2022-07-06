@@ -8,6 +8,7 @@ members = [
   "shared-bin",
   "daemon-tests",
   "tokio-extras",
+  "traced-tests",
   "xtras",
   "xtra-bitmex-price-feed",
   "bdk-ext",
