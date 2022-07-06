@@ -1,41 +1,16 @@
-import {
-    Accordion,
-    AccordionButton,
-    AccordionIcon,
-    AccordionItem,
-    AccordionPanel,
-    Alert,
-    AlertDescription,
-    AlertIcon,
-    AlertTitle,
-    Box,
-    Button,
-    ButtonGroup,
-    Center,
-    CloseButton,
-    HStack,
-    Spacer,
-    Text,
-    useColorModeValue,
-    useDisclosure,
-    useToast,
-    VStack,
-} from "@chakra-ui/react";
+import { useDisclosure, useToast } from "@chakra-ui/react";
 import dayjs from "dayjs";
 import isBetween from "dayjs/plugin/isBetween";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Link as ReachLink } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
-import Footer from "./components/Footer";
-import History from "./components/History";
-import Nav from "./components/NavBar";
-import PromoBanner from "./components/PromoBanner";
+import { MainPageLayout } from "./components/MainPageLayout";
 import Trade from "./components/Trade";
+import { TradePageLayout } from "./components/TradePageLayout";
 import { Wallet } from "./components/Wallet";
 import { fetchDaemonVersion, fetchGithubVersion } from "./fetchVersion";
 import {
@@ -45,7 +20,6 @@ import {
     IdentityInfo,
     intoCfd,
     intoMakerOffer,
-    isClosed,
     LeverageDetails,
     MakerOffer,
     WalletInfo,
@@ -208,204 +182,60 @@ export const App = () => {
     }, [navigate, pathname]);
 
     return (
-        <>
-            {outdatedWarningIsVisible
-                && (
-                    <Alert status="info">
-                        <AlertIcon />
-                        <AlertTitle>Your daemon is outdated!</AlertTitle>
-                        <AlertDescription>
-                            Upgrade now to get the best ItchySats experience. The latest version is '{githubVersion
-                                ?.version}' but your version is '{daemonVersion?.version}'.
-                        </AlertDescription>
-                        <Spacer />
-                        <CloseButton alignSelf="flex-start" position="relative" right={-1} top={-1} onClick={onClose} />
-                    </Alert>
-                )}
-
-            <Nav
-                walletInfo={walletInfo}
-                connectedToMaker={connectedToMaker}
-                nextFundingEvent={nextFundingEvent}
-                referencePrice={referencePrice}
-            />
-            <Center>
-                <Box
-                    maxWidth={(VIEWPORT_WIDTH + 200) + "px"}
-                    width={"100%"}
-                    bgGradient={useColorModeValue(
-                        "linear(to-r, white 5%, gray.800, white 95%)",
-                        "linear(to-r, gray.800 5%, white, gray.800 95%)",
-                    )}
+        <Routes>
+            <Route
+                path="/"
+                element={
+                    <MainPageLayout
+                        outdatedWarningIsVisible={outdatedWarningIsVisible}
+                        githubVersion={githubVersion}
+                        daemonVersion={daemonVersion}
+                        onClose={onClose}
+                        walletInfo={walletInfo}
+                        connectedToMaker={connectedToMaker}
+                        nextFundingEvent={nextFundingEvent}
+                        referencePrice={referencePrice}
+                        identityOrUndefined={identityOrUndefined}
+                    />
+                }
+            >
+                <Route
+                    path="wallet"
+                    element={<Wallet walletInfo={walletInfo} />}
+                />
+                <Route
+                    element={
+                        <TradePageLayout
+                            cfds={cfds}
+                            connectedToMaker={connectedToMaker}
+                            showPromoBanner={isWithinPromoPeriod}
+                        />
+                    }
                 >
-                    <Center>
-                        <Box
-                            textAlign="center"
-                            padding={3}
-                            bg={useColorModeValue(BG_LIGHT, BG_DARK)}
-                            maxWidth={VIEWPORT_WIDTH_PX}
-                            marginTop={`${HEADER_HEIGHT}px`}
-                            minHeight={`calc(100vh - ${FOOTER_HEIGHT}px - ${HEADER_HEIGHT}px)`}
-                            width={"100%"}
-                        >
-                            <Routes>
-                                <Route path="/">
-                                    <Route
-                                        path="wallet"
-                                        element={<Wallet walletInfo={walletInfo} />}
-                                    />
-                                    <Route
-                                        element={
-                                            // @ts-ignore: ts-lint thinks that {children} is missing but react router is taking care of this for us
-
-
-                                                <PageLayout
-                                                    cfds={cfds}
-                                                    connectedToMaker={connectedToMaker}
-                                                    showPromoBanner={isWithinPromoPeriod}
-                                                />
-
-                                        }
-                                    >
-                                        <Route
-                                            path="long"
-                                            element={
-                                                <Trade
-                                                    offer={longOffer}
-                                                    connectedToMaker={connectedToMaker}
-                                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                                    isLong={true}
-                                                />
-                                            }
-                                        />
-                                        <Route
-                                            path="short"
-                                            element={
-                                                <Trade
-                                                    offer={shortOffer}
-                                                    connectedToMaker={connectedToMaker}
-                                                    walletBalance={walletInfo ? walletInfo.balance : 0}
-                                                    isLong={false}
-                                                />
-                                            }
-                                        />
-                                    </Route>
-                                </Route>
-                            </Routes>
-                        </Box>
-                    </Center>
-                </Box>
-            </Center>
-            <Footer identityInfo={identityOrUndefined} daemonVersion={daemonVersion?.version} />
-        </>
+                    <Route
+                        path="long"
+                        element={
+                            <Trade
+                                offer={longOffer}
+                                connectedToMaker={connectedToMaker}
+                                walletBalance={walletInfo ? walletInfo.balance : 0}
+                                isLong={true}
+                            />
+                        }
+                    />
+                    <Route
+                        path="short"
+                        element={
+                            <Trade
+                                offer={shortOffer}
+                                connectedToMaker={connectedToMaker}
+                                walletBalance={walletInfo ? walletInfo.balance : 0}
+                                isLong={false}
+                            />
+                        }
+                    />
+                </Route>
+            </Route>
+        </Routes>
     );
 };
-
-interface PageLayoutProps {
-    children: JSX.Element;
-    cfds: Cfd[];
-    connectedToMaker: ConnectionStatus;
-    showPromoBanner: boolean;
-}
-
-function PageLayout({ children, cfds, connectedToMaker, showPromoBanner }: PageLayoutProps) {
-    return (
-        <VStack w={"100%"}>
-            {showPromoBanner && <PromoBanner />}
-            <NavigationButtons />
-            <Outlet />
-            <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
-        </VStack>
-    );
-}
-
-interface HistoryLayoutProps {
-    cfds: Cfd[];
-    connectedToMaker: ConnectionStatus;
-}
-
-function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
-    const closedPositions = cfds.filter((cfd) => isClosed(cfd));
-
-    return (
-        <VStack padding={3} w={"100%"}>
-            <History
-                connectedToMaker={connectedToMaker}
-                cfds={cfds.filter((cfd) => !isClosed(cfd))}
-            />
-
-            {closedPositions.length > 0
-                && (
-                    <Accordion allowToggle maxWidth={VIEWPORT_WIDTH_PX} width={"100%"}>
-                        <AccordionItem>
-                            <h2>
-                                <AccordionButton>
-                                    <AccordionIcon />
-                                    <Box w={"100%"} textAlign="center">
-                                        Show Closed Positions
-                                    </Box>
-                                    <AccordionIcon />
-                                </AccordionButton>
-                            </h2>
-                            <AccordionPanel pb={4}>
-                                <History
-                                    cfds={closedPositions}
-                                    connectedToMaker={connectedToMaker}
-                                />
-                            </AccordionPanel>
-                        </AccordionItem>
-                    </Accordion>
-                )}
-        </VStack>
-    );
-}
-
-function NavigationButtons() {
-    const location = useLocation();
-    const isLongSelected = location.pathname.includes("long");
-    const isShortSelected = !isLongSelected;
-
-    const unSelectedButton = "transparent";
-    const selectedButton = useColorModeValue("grey.400", "black.400");
-    const buttonBorder = useColorModeValue("grey.400", "black.400");
-    const buttonText = useColorModeValue("black", "white");
-
-    return (
-        <HStack>
-            <Center>
-                <ButtonGroup
-                    padding="3"
-                    spacing="6"
-                    id={"longShortButtonSwitch"}
-                >
-                    <Button
-                        as={ReachLink}
-                        to="/long"
-                        color={isLongSelected ? selectedButton : unSelectedButton}
-                        bg={isLongSelected ? selectedButton : unSelectedButton}
-                        border={buttonBorder}
-                        isActive={isLongSelected}
-                        size="lg"
-                        h={10}
-                        w={"40"}
-                    >
-                        <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
-                    </Button>
-                    <Button
-                        as={ReachLink}
-                        to="/short"
-                        color={isShortSelected ? selectedButton : unSelectedButton}
-                        bg={isShortSelected ? selectedButton : unSelectedButton}
-                        border={buttonBorder}
-                        isActive={isShortSelected}
-                        size="lg"
-                        h={10}
-                        w={"40"}
-                    >
-                        <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
-                    </Button>
-                </ButtonGroup>
-            </Center>
-        </HStack>
-    );
-}
