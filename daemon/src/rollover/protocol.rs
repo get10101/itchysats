@@ -1,6 +1,5 @@
 use crate::bitcoin::secp256k1::SecretKey;
 use crate::bitcoin::PublicKey;
-use crate::command;
 use crate::shared_protocol::verify_adaptor_signature;
 use crate::shared_protocol::verify_cets;
 use crate::shared_protocol::verify_signature;
@@ -28,6 +27,7 @@ use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::Cet;
 use model::Dlc;
+use model::ExecuteOnCfd;
 use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
@@ -251,13 +251,15 @@ impl From<CompleteFee> for model::CompleteFee {
     }
 }
 
-pub(crate) async fn emit_completed(
+pub(crate) async fn emit_completed<E>(
     order_id: OrderId,
     dlc: Dlc,
     funding_fee: FundingFee,
     complete_fee: model::CompleteFee,
-    executor: &command::Executor,
-) {
+    executor: &E,
+) where
+    E: ExecuteOnCfd,
+{
     if let Err(e) = executor
         .execute(order_id, |cfd| {
             Ok(cfd.complete_rollover(dlc, funding_fee, Some(complete_fee)))
@@ -270,7 +272,10 @@ pub(crate) async fn emit_completed(
     tracing::info!(%order_id, "Rollover completed");
 }
 
-pub(crate) async fn emit_rejected(order_id: OrderId, executor: &command::Executor) {
+pub(crate) async fn emit_rejected<E>(order_id: OrderId, executor: &E)
+where
+    E: ExecuteOnCfd,
+{
     if let Err(e) = executor
         .execute(order_id, |cfd| {
             Ok(cfd.reject_rollover(anyhow!("maker decision")))
@@ -283,7 +288,10 @@ pub(crate) async fn emit_rejected(order_id: OrderId, executor: &command::Executo
     tracing::info!(%order_id, "Rollover rejected");
 }
 
-pub(crate) async fn emit_failed(order_id: OrderId, e: anyhow::Error, executor: &command::Executor) {
+pub(crate) async fn emit_failed<E>(order_id: OrderId, e: anyhow::Error, executor: &E)
+where
+    E: ExecuteOnCfd,
+{
     tracing::error!(%order_id, "Rollover failed: {e:#}");
 
     if let Err(e) = executor
