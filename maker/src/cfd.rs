@@ -15,7 +15,6 @@ use daemon::oracle;
 use daemon::oracle::NoAnnouncement;
 use daemon::process_manager;
 use daemon::projection;
-use daemon::rollover;
 use daemon::wallet;
 use daemon::wire;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;

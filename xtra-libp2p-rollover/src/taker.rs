@@ -1,5 +1,5 @@
-use crate::rollover;
-use crate::rollover::protocol::*;
+use crate::protocol::*;
+use crate::PROTOCOL;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -79,10 +79,7 @@ impl<E, O> Actor<E, O> {
     async fn open_substream(&self, peer_id: PeerId) -> Result<Substream> {
         let substream = self
             .endpoint
-            .send(OpenSubstream::single_protocol(
-                peer_id.inner(),
-                rollover::PROTOCOL,
-            ))
+            .send(OpenSubstream::single_protocol(peer_id.inner(), PROTOCOL))
             .await
             .context("Endpoint is disconnected")?
             .context("No connection to peer")?

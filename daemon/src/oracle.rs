@@ -438,7 +438,7 @@ impl AnnouncementsChannel {
 }
 
 #[async_trait]
-impl crate::rollover::protocol::GetAnnouncements for AnnouncementsChannel {
+impl rollover::protocol::GetAnnouncements for AnnouncementsChannel {
     async fn get_announcements(
         &self,
         events: Vec<BitMexPriceEventId>,
