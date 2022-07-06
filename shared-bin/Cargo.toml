@@ -20,5 +20,5 @@ rocket-basicauth = { path = "../rocket-basicauth" }
 serde = { version = "1", features = ["derive"] }
 time = "0.3.11"
 tracing = { version = "0.1" }
-tracing-opentelemetry = "0.17.3"
+tracing-opentelemetry = "0.17.4"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
