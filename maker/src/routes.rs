@@ -232,7 +232,7 @@ pub async fn put_sync_wallet(
 }
 
 #[rocket::get("/cfds")]
-#[instrument(name = "GET /cfds", skip(rx), ret, err)]
+#[instrument(name = "GET /cfds", skip(rx), err)]
 pub async fn get_cfds<'r>(
     rx: &State<Feeds>,
     _auth: Authenticated,
