@@ -20,7 +20,7 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 hkdf = "0.12"
 itertools = "0.10"
 libp2p-core = { version = "0.33", default-features = false }
-libp2p-noise = "0.36"
+libp2p-noise = "0.37"
 libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] }
 maia = "0.2.0"
 maia-core = "0.1.1"

@@ -775,7 +775,7 @@ dependencies = [
  "futures",
  "hkdf",
  "itertools",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "libp2p-noise",
  "libp2p-tcp",
  "maia 0.1.1",
@@ -1723,16 +1723,50 @@ dependencies = [
 ]
 
 [[package]]
-name = "libp2p-noise"
-version = "0.36.0"
+name = "libp2p-core"
+version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf2cee1dad1c83325bbd182a8e94555778699cec8a9da00086efb7522c4c15ad"
+checksum = "fbf9b94cefab7599b2d3dff2f93bee218c6621d68590b23ede4485813cbcece6"
+dependencies = [
+ "asn1_der",
+ "bs58",
+ "ed25519-dalek",
+ "either",
+ "fnv",
+ "futures",
+ "futures-timer",
+ "instant",
+ "lazy_static",
+ "log",
+ "multiaddr",
+ "multihash",
+ "multistream-select",
+ "parking_lot 0.12.0",
+ "pin-project",
+ "prost 0.10.4",
+ "prost-build 0.10.4",
+ "rand 0.8.4",
+ "ring",
+ "rw-stream-sink",
+ "sha2 0.10.2",
+ "smallvec",
+ "thiserror",
+ "unsigned-varint",
+ "void",
+ "zeroize",
+]
+
+[[package]]
+name = "libp2p-noise"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "762408cb5d84b49a600422d7f9a42c18012d8da6ebcd570f9a4a4290ba41fb6f"
 dependencies = [
  "bytes",
  "curve25519-dalek 3.2.0",
  "futures",
  "lazy_static",
- "libp2p-core",
+ "libp2p-core 0.34.0",
  "log",
  "prost 0.10.4",
  "prost-build 0.10.4",
@@ -1755,7 +1789,7 @@ dependencies = [
  "if-addrs",
  "ipnet",
  "libc",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "log",
  "socket2",
  "tokio",
@@ -2009,7 +2043,7 @@ dependencies = [
  "conquer-once",
  "hex",
  "itertools",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "maia 0.1.1",
  "maia 0.2.0",
  "maia-core",
@@ -3951,7 +3985,7 @@ dependencies = [
  "chashmap-async",
  "futures",
  "hex",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "maia 0.2.0",
  "maia-core",
  "model",
@@ -4194,7 +4228,7 @@ dependencies = [
  "hex",
  "http-api-problem",
  "itertools",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "model",
  "prometheus",
  "rocket",
@@ -5260,7 +5294,7 @@ dependencies = [
  "clap",
  "conquer-once",
  "futures",
- "libp2p-core",
+ "libp2p-core 0.33.0",
  "libp2p-noise",
  "libp2p-tcp",
  "multistream-select",
