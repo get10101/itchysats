@@ -68,6 +68,12 @@ pub fn init(
 
     let telemetry = if instrumentation {
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+
+        opentelemetry::global::set_error_handler(|error| {
+            ::tracing::error!(target: "opentelemetry", "OpenTelemetry error occurred: {:#}", anyhow::anyhow!(error));
+        })
+        .expect("to be able to set error handler");
+
         let cfg = trace::Config::default()
             .with_resource(Resource::new([KeyValue::new("service.name", service_name)]));
 
@@ -117,9 +123,11 @@ fn base_directives(env: EnvFilter) -> Result<EnvFilter> {
         .add_directive("xtra_libp2p_offer=debug".parse()?)
         .add_directive("xtras=info".parse()?)
         .add_directive("h2=info".parse()?) // h2 spans originate from rocket and can spam a lot
+        .add_directive("tonic=info".parse()?)
         .add_directive("tower=info".parse()?)
         .add_directive("_=off".parse()?) // rocket logs headers on INFO and uses `_` as the log target for it?
         .add_directive("rocket=off".parse()?) // disable rocket logs: we have our own
+        .add_directive("opentelemetry=off".parse()?) // enable via RUST_LOG if needed
         .add_directive("xtra=warn".parse()?)
         .add_directive("sled=warn".parse()?) // downgrade sled log level: it is spamming too much on DEBUG
         .add_directive("xtra_libp2p=info".parse()?);
