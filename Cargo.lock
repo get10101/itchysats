@@ -5214,7 +5214,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/Restioson/xtra?rev=afff02dd0fc8b92ae264db8a5457773f8af95487#afff02dd0fc8b92ae264db8a5457773f8af95487"
+source = "git+https://github.com/Restioson/xtra?rev=7e9fccc1e02dae3df4ba99126e6f1a0059673d7e#7e9fccc1e02dae3df4ba99126e6f1a0059673d7e"
 dependencies = [
  "async-trait",
  "catty",

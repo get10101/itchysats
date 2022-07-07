@@ -44,8 +44,8 @@ use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::supervisor;
 use xtras::supervisor::always_restart_after;
+use xtras::supervisor::Supervisor;
 use xtras::HandlerTimeoutExt;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -62,15 +62,6 @@ pub struct ActorSystem<O: 'static, W: 'static> {
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     executor: command::Executor,
     _tasks: Tasks,
-    _listener_supervisor: Address<supervisor::Actor<listener::Actor, listener::Error>>,
-    _ping_supervisor: Address<supervisor::Actor<ping::Actor, supervisor::UnitReason>>,
-    _collab_settlement_supervisor:
-        Address<supervisor::Actor<collab_settlement::maker::Actor, supervisor::UnitReason>>,
-    _rollover_supervisor:
-        Address<supervisor::Actor<rollover::maker::Actor, supervisor::UnitReason>>,
-    _maker_offer_supervisor:
-        Address<supervisor::Actor<xtra_libp2p_offer::maker::Actor, supervisor::UnitReason>>,
-    _position_metrics_actor: Address<position_metrics::Actor>,
     _pong_actor: Address<pong::Actor>,
 }
 
@@ -126,7 +117,7 @@ where
             db.clone(),
             Role::Maker,
             projection_actor.clone().into(),
-            position_metrics_actor.clone().into(),
+            position_metrics_actor.into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
@@ -134,15 +125,13 @@ where
             oracle_addr.clone().into(),
         )));
 
-        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) =
-            supervisor::Actor::new({
-                let executor = executor.clone();
-                move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
-            });
-        let collab_settlement_supervisor =
-            collab_settlement_supervisor.create(None).spawn(&mut tasks);
+        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
+            let executor = executor.clone();
+            move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
+        });
+        tasks.add(collab_settlement_supervisor.run_log_summary());
 
-        let (rollover_supervisor, libp2p_rollover_addr) = supervisor::Actor::new({
+        let (rollover_supervisor, libp2p_rollover_addr) = Supervisor::new({
             let executor = executor.clone();
             let oracle_addr = oracle_addr.clone();
             move || {
@@ -154,15 +143,15 @@ where
                 )
             }
         });
-        let rollover_supervisor = rollover_supervisor.create(None).spawn(&mut tasks);
+        tasks.add(rollover_supervisor.run_log_summary());
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
-        let (supervisor, maker_offer_address) = supervisor::Actor::new({
+        let (supervisor, maker_offer_address) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             move || xtra_libp2p_offer::maker::Actor::new(endpoint_addr.clone())
         });
-        let _maker_offer_supervisor = supervisor.create(None).spawn(&mut tasks);
+        tasks.add(supervisor.run_log_summary());
 
         let cfd_actor_addr = cfd::Actor::new(
             db.clone(),
@@ -182,12 +171,12 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let (ping_supervisor, ping_address) = supervisor::Actor::new({
+        let (ping_supervisor, ping_address) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL)
         });
 
-        let (listener_supervisor, listener_actor) = supervisor::Actor::with_policy(
+        let (listener_supervisor, listener_actor) = Supervisor::<_, listener::Error>::with_policy(
             move || listener::Actor::new(endpoint_addr.clone(), listen_multiaddr.clone()),
             always_restart_after(RESTART_INTERVAL),
         );
@@ -219,8 +208,8 @@ where
 
         tasks.add(endpoint_context.run(endpoint));
 
-        let listener_supervisor = listener_supervisor.create(None).spawn(&mut tasks);
-        let ping_supervisor = ping_supervisor.create(None).spawn(&mut tasks);
+        tasks.add(listener_supervisor.run_log_summary());
+        tasks.add(ping_supervisor.run_log_summary());
 
         tasks.add(
             inc_conn_ctx
@@ -258,12 +247,6 @@ where
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             executor,
             _tasks: tasks,
-            _listener_supervisor: listener_supervisor,
-            _ping_supervisor: ping_supervisor,
-            _rollover_supervisor: rollover_supervisor,
-            _collab_settlement_supervisor: collab_settlement_supervisor,
-            _maker_offer_supervisor,
-            _position_metrics_actor: position_metrics_actor,
             _pong_actor: pong_address,
         })
     }

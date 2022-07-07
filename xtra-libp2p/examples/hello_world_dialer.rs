@@ -15,8 +15,8 @@ use xtra_libp2p::dialer;
 use xtra_libp2p::endpoint::Subscribers;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
-use xtras::supervisor;
 use xtras::supervisor::always_restart;
+use xtras::supervisor::Supervisor;
 
 #[derive(Parser)]
 struct Opts {
@@ -52,8 +52,10 @@ async fn main() -> Result<()> {
     };
 
     let (supervisor, _dialer_actor) =
-        supervisor::Actor::with_policy(dialer_constructor, always_restart::<dialer::Error>());
-    let _dialer_supervisor = supervisor.create(None).spawn_global();
+        Supervisor::with_policy(dialer_constructor, always_restart::<dialer::Error>());
+
+    #[allow(clippy::disallowed_methods)]
+    tokio::spawn(supervisor.run());
 
     tokio_extras::time::sleep(Duration::from_secs(1)).await;
 

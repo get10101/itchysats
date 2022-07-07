@@ -24,8 +24,8 @@ use shared_bin::logger;
 use std::net::SocketAddr;
 use tokio_extras::Tasks;
 use xtra::Actor;
-use xtras::supervisor;
 use xtras::supervisor::always_restart;
+use xtras::supervisor::Supervisor;
 
 #[rocket::main]
 async fn main() -> Result<()> {
@@ -155,12 +155,12 @@ async fn main() -> Result<()> {
         endpoint_listen,
     )?;
 
-    let (supervisor, price_feed) = supervisor::Actor::with_policy(
+    let (supervisor, price_feed) = Supervisor::with_policy(
         move || xtra_bitmex_price_feed::Actor::new(opts.network.price_feed_network()),
         always_restart::<xtra_bitmex_price_feed::Error>(),
     );
 
-    let _supervisor_address = supervisor.create(None).spawn(&mut tasks);
+    tasks.add(supervisor.run_log_summary());
 
     let (proj_actor, projection_feeds) =
         projection::Actor::new(db.clone(), bitcoin_network, price_feed.clone().into());

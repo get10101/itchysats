@@ -16,8 +16,8 @@ use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
-use xtras::supervisor;
 use xtras::supervisor::always_restart;
+use xtras::supervisor::Supervisor;
 
 // Listen on TCP
 
@@ -68,8 +68,10 @@ async fn main() -> Result<()> {
         listener::Actor::new(endpoint_addr, endpoint_listen)
     };
     let (supervisor, _listener_actor) =
-        supervisor::Actor::with_policy(listener_constructor, always_restart::<listener::Error>());
-    let _listener_supervisor = supervisor.create(None).spawn_global();
+        Supervisor::with_policy(listener_constructor, always_restart::<listener::Error>());
+
+    #[allow(clippy::disallowed_methods)]
+    tokio::spawn(supervisor.run());
 
     tokio_extras::time::sleep(Duration::from_secs(opts.duration_secs)).await;
 
