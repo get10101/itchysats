@@ -23,7 +23,6 @@ use model::Price;
 use model::Role;
 use model::TxFeeRate;
 use model::Usd;
-use rayon::prelude::*;
 use sqlx::migrate::MigrateError;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Connection as _;
@@ -634,15 +633,17 @@ async fn load_cfd_events(
         select
             c.id as cfd_row_id,
             events.id as event_row_id,
-            name,
-            data,
-            created_at as "created_at: models::Timestamp"
+            events.name,
+            events.data,
+            events.created_at as "created_at: models::Timestamp"
         from
             events
         join
             cfds c on c.id = events.cfd_id
         where
             uuid = $1
+        order by
+            events.id
         limit $2,-1
             "#,
         id,
@@ -650,7 +651,7 @@ async fn load_cfd_events(
     )
     .fetch_all(&mut *conn)
     .await?
-    .into_par_iter()
+    .into_iter()
     .map(|row| {
         Ok((
             row.cfd_row_id.context("CFD with id not found {id}")?,
@@ -678,12 +679,10 @@ async fn load_cfd_events(
         }
     }
 
-    let mut events = events
+    let events = events
         .into_iter()
         .map(|(_, _, event)| event)
         .collect::<Vec<CfdEvent>>();
-
-    events.sort_unstable_by(CfdEvent::chronologically);
 
     Ok(events)
 }

@@ -368,48 +368,6 @@
       "nullable": []
     }
   },
-  "7d9268dcb6f72fd7c9495dcde388bf998445ada4539d6adb3d3cf693c6339b3b": {
-    "query": "\n\n        select\n            c.id as cfd_row_id,\n            events.id as event_row_id,\n            name,\n            data,\n            created_at as \"created_at: models::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_row_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "event_row_id",
-          "ordinal": 1,
-          "type_info": "Int64"
-        },
-        {
-          "name": "name",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at: models::Timestamp",
-          "ordinal": 4,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        true,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "8175b7702d6a0b28843f03a9b6f507a64a703ae2ff649b3a28f339f3abb70fce": {
     "query": "\n        INSERT INTO closed_cets\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.uuid = $1),\n            $2, $3, $4, $5\n        )\n        ",
     "describe": {
@@ -1057,6 +1015,48 @@
         false,
         false,
         false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "f72ab7ae71904c030803d1c014a94370192e3d1182827951592dd6bb3d5a6072": {
+    "query": "\n\n        select\n            c.id as cfd_row_id,\n            events.id as event_row_id,\n            events.name,\n            events.data,\n            events.created_at as \"created_at: models::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        order by\n            events.id\n        limit $2,-1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_row_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "event_row_id",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at: models::Timestamp",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": [
+        true,
         false,
         false,
         false,
