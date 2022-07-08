@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replace intermediate confirmation step in rollover protocol for the maker with a configurable flag which can be updated during runtime using the new `POST /rollover/config` endpoint.
+  On startup, rollovers are configured to be accepted by default.
+
 ## [0.5.1] - 2022-07-24
 
 ### Changed
