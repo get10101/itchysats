@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use libp2p_core::Multiaddr;
 use std::time::Duration;
+use tracing::instrument;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -40,6 +41,7 @@ impl Actor {
         ctx.stop_self();
     }
 
+    #[instrument(skip(self), ret, err)]
     async fn is_listening(&self) -> Result<bool> {
         Ok(self
             .endpoint
@@ -49,6 +51,7 @@ impl Actor {
             .contains(&self.listen_address))
     }
 
+    #[instrument(skip(self), err)]
     async fn listen(&self) -> Result<()> {
         anyhow::ensure!(
             !self.is_listening().await?,

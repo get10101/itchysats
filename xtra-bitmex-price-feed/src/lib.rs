@@ -5,6 +5,7 @@ use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::fmt;
 use time::OffsetDateTime;
+use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
@@ -56,9 +57,18 @@ impl xtra::Actor for Actor {
 
                         match quote {
                             Some(quote) => {
-                                tracing::debug!(bid = %quote.bid, ask = %quote.ask, timestamp = %quote.timestamp, "Received new quote");
-                                let is_our_address_disconnected =
-                                    this.send(NewQuoteReceived(quote)).await.is_err();
+                                let span = tracing::debug_span!(
+                                    "Received new quote",
+                                    bid = %quote.bid,
+                                    ask = %quote.ask,
+                                    timestamp = %quote.timestamp,
+                                );
+
+                                let is_our_address_disconnected = this
+                                    .send(NewQuoteReceived(quote))
+                                    .instrument(span)
+                                    .await
+                                    .is_err();
 
                                 // Our task should already be dead and the actor restarted if this
                                 // happens.

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::time::Duration;
+use tracing::Instrument;
 use xtra::address;
 
 #[async_trait]
@@ -29,8 +30,15 @@ where
     where
         F: Send + Sync + Fn() -> M,
     {
-        while self.send(constructor()).await.is_ok() {
-            tokio_extras::time::sleep(duration).await
+        let span = || {
+            tracing::debug_span!(
+                "Send message every interval",
+                interval_secs = %duration.as_secs()
+            )
+        };
+
+        while self.send(constructor()).instrument(span()).await.is_ok() {
+            tokio_extras::time::sleep_silent(duration).await
         }
         let type_name = std::any::type_name::<M>();
 

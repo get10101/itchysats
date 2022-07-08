@@ -26,6 +26,7 @@ use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_extras::Tasks;
+use tracing::instrument;
 use xtra::prelude::*;
 use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtra_libp2p::dialer;
@@ -115,6 +116,16 @@ where
     P: Handler<xtra_bitmex_price_feed::LatestQuote, Return = Option<xtra_bitmex_price_feed::Quote>>
         + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
+    #[instrument(
+        name = "Create TakerActorSystem",
+        skip_all,
+        fields(
+            %n_payouts,
+            connect_timeout_secs = %connect_timeout.as_secs(),
+            %environment,
+        )
+        err,
+    )]
     #[allow(clippy::too_many_arguments)]
     pub fn new<M>(
         db: sqlite_db::Connection,
@@ -328,6 +339,7 @@ where
         })
     }
 
+    #[instrument(skip(self), err)]
     pub async fn take_offer(
         &self,
         order_id: OrderId,
@@ -344,6 +356,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip(self), err)]
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
         self.executor
             .execute(order_id, |cfd| cfd.manual_commit_to_blockchain())
@@ -352,6 +365,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip(self), err)]
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
         let latest_quote = self
             .price_feed_actor
@@ -384,6 +398,7 @@ where
             .await?
     }
 
+    #[instrument(skip(self), ret, err)]
     pub async fn withdraw(
         &self,
         amount: Option<Amount>,
@@ -399,6 +414,7 @@ where
             .await?
     }
 
+    #[instrument(skip(self), err)]
     pub async fn sync_wallet(&self) -> Result<()> {
         self.wallet_actor.send(wallet::Sync).await?;
         Ok(())

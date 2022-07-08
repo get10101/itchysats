@@ -28,7 +28,6 @@ use tokio_extras::FutureExt;
 use tokio_extras::Tasks;
 use tokio_util::codec::Framed;
 use tracing::Instrument;
-use xtra::KeepRunning;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
 use xtras::AddressMap;
@@ -245,9 +244,20 @@ impl Actor {
         tracing::info!(address = %maker_addr, "Established connection to maker");
 
         let this = ctx.address().expect("self to be alive");
+        let weak = this.downgrade();
 
+        let sink = futures::sink::unfold((), move |(), message| {
+            this.send(message)
+                .instrument(tracing::debug_span!("Forward MakerStreamMessage"))
+        });
         let mut tasks = Tasks::default();
-        tasks.add(this.attach_stream(read.map(move |item| MakerStreamMessage { item })));
+        tasks.add_fallible(
+            read.map(move |item| Ok(MakerStreamMessage { item }))
+                .forward(sink),
+            move |e| async move {
+                tracing::warn!(address = ?weak, "Error forwarding MakerStreamMessage: {:#}", e);
+            },
+        );
 
         self.state = State::Connected {
             write,
@@ -256,12 +266,12 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle_wire_message(&mut self, message: MakerStreamMessage) -> KeepRunning {
+    async fn handle_wire_message(&mut self, message: MakerStreamMessage) {
         let msg = match message.item {
             Ok(msg) => msg,
             Err(e) => {
                 tracing::warn!("Error while receiving message from maker: {:#}", e);
-                return KeepRunning::Yes;
+                return;
             }
         };
 
@@ -337,7 +347,6 @@ impl Actor {
                 // `trace` level already.
             }
         }
-        KeepRunning::Yes
     }
 }
 
@@ -350,6 +359,7 @@ impl xtra::Actor for Actor {
 
 // TODO: Move the reconnection logic inside the connection::Actor instead of
 // depending on a watch channel
+#[tracing::instrument]
 pub async fn connect(
     mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     connection_actor_addr: xtra::Address<Actor>,

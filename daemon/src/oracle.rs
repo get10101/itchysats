@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use time::Duration;
 use time::OffsetDateTime;
+use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -169,38 +170,41 @@ impl Actor {
             let this = ctx.address().expect("self to be alive");
             let client = self.client.clone();
 
+            let this_clone = this.clone();
+            let task = async move {
+                let url = event_id.to_olivia_url();
+
+                tracing::debug!(event_id = %event_id, "Fetching announcement");
+
+                let response = client
+                    .get(url.clone())
+                    .send()
+                    .await
+                    .with_context(|| format!("Failed to GET {url}"))?;
+
+                let code = response.status();
+                if !code.is_success() {
+                    anyhow::bail!("GET {url} responded with {code}");
+                }
+
+                let announcement = response
+                    .json::<olivia::Announcement>()
+                    .await
+                    .context("Failed to deserialize as Announcement")?;
+
+                this.send(NewAnnouncementFetched {
+                    id: event_id,
+                    nonce_pks: announcement.nonce_pks,
+                    expected_outcome_time: announcement.expected_outcome_time,
+                })
+                .await?;
+
+                Ok(())
+            };
+
             tokio_extras::spawn_fallible(
-                &this.clone(),
-                async move {
-                    let url = event_id.to_olivia_url();
-
-                    tracing::debug!(event_id = %event_id, "Fetching announcement");
-
-                    let response = client
-                        .get(url.clone())
-                        .send()
-                        .await
-                        .with_context(|| format!("Failed to GET {url}"))?;
-
-                    let code = response.status();
-                    if !code.is_success() {
-                        anyhow::bail!("GET {url} responded with {code}");
-                    }
-
-                    let announcement = response
-                        .json::<olivia::Announcement>()
-                        .await
-                        .context("Failed to deserialize as Announcement")?;
-
-                    this.send(NewAnnouncementFetched {
-                        id: event_id,
-                        nonce_pks: announcement.nonce_pks,
-                        expected_outcome_time: announcement.expected_outcome_time,
-                    })
-                    .await?;
-
-                    Ok(())
-                },
+                &this_clone,
+                task.instrument(tracing::debug_span!("Fetch announcement")),
                 |e| async move {
                     tracing::debug!("Failed to fetch announcement: {:#}", e);
                 },
@@ -343,6 +347,7 @@ impl xtra::Actor for Actor {
         tokio_extras::spawn(&this.clone(), {
             let db = self.db.clone();
             async move {
+                let span = tracing::debug_span!("Register pending attestations to monitor");
                 let pending_attestations = db
                     .load_all_open_cfds::<Cfd>(())
                     .filter_map(|res| async move {
@@ -358,12 +363,14 @@ impl xtra::Actor for Actor {
                         }
                     })
                     .collect::<Vec<_>>()
+                    .instrument(span.clone())
                     .await;
 
                 let _: Result<(), xtra::Error> = this
                     .send(MonitorAttestations {
                         event_ids: pending_attestations,
                     })
+                    .instrument(span)
                     .await;
 
                 this.send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)

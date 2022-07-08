@@ -5,12 +5,22 @@ use anyhow::Result;
 use model::Cfd;
 use model::CfdEvent;
 use sqlite_db;
+use std::fmt;
+use std::fmt::Debug;
 use xtra::Address;
 
 #[derive(Clone)]
 pub struct Executor {
     db: sqlite_db::Connection,
     process_manager: Address<process_manager::Actor>,
+}
+
+impl Debug for Executor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Executor")
+            .field("process_manager", &self.process_manager)
+            .finish()
+    }
 }
 
 impl Executor {

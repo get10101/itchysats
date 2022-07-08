@@ -23,6 +23,7 @@ use model::Role;
 use model::Usd;
 use sqlite_db;
 use std::time::Duration;
+use tracing::Instrument;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 
@@ -249,7 +250,11 @@ impl xtra::Actor for Actor {
             }
         };
 
-        tokio_extras::spawn(&this, maker_response_timeout);
+        tokio_extras::spawn(
+            &this,
+            maker_response_timeout
+                .instrument(tracing::debug_span!("Wait for maker response timeout")),
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

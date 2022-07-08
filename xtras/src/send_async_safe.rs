@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::fmt;
+use tracing::instrument;
 use xtra::message_channel::MessageChannel;
 use xtra::refcount::RefCounter;
 
@@ -21,6 +22,7 @@ where
     A: xtra::Handler<M, Return = ()>,
     M: Send + 'static,
 {
+    #[instrument(skip(msg), err)]
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         let _ = self.send(msg).split_receiver().await;
 
@@ -39,6 +41,7 @@ where
     E: fmt::Display + Send + 'static,
     M: Send + 'static,
 {
+    #[instrument(skip(msg), err)]
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         if !self.is_connected() {
             return Err(xtra::Error::Disconnected);
@@ -65,6 +68,7 @@ impl<M, Rc: RefCounter> SendAsyncSafe<M, ()> for MessageChannel<M, (), Rc>
 where
     M: Send + 'static,
 {
+    #[instrument(skip(msg), err)]
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         let _ = self.send(msg).split_receiver().await;
 
@@ -83,6 +87,7 @@ where
     M: Send + 'static,
     Rc: RefCounter,
 {
+    #[instrument(skip(msg), err)]
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         if !self.is_connected() {
             return Err(xtra::Error::Disconnected);

@@ -2,7 +2,9 @@ use crate::future_ext::FutureExt;
 use futures::future::RemoteHandle;
 use futures::Future;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::hash;
+use tracing::Instrument;
 
 /// Struct controlling the lifetime of the async tasks, such as
 /// running actors and periodic notifications. If it gets dropped, all
@@ -38,13 +40,16 @@ where
         f: impl Future<Output = Result<(), E>> + Send + 'static,
         err_handler: impl FnOnce(E) -> EF + Send + 'static,
     ) where
-        E: Send + 'static,
+        E: Display + Send + 'static,
         EF: Future<Output = ()> + Send + 'static,
     {
         let fut = async move {
             match f.await {
                 Ok(()) => {}
-                Err(err) => err_handler(err).await,
+                Err(err) => {
+                    let span = tracing::error_span!("fallible task handle_error", %err);
+                    err_handler(err).instrument(span).await
+                }
             }
         };
 

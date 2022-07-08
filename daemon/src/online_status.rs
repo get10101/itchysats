@@ -37,6 +37,7 @@ impl Actor {
 impl xtra::Actor for Actor {
     type Stop = ();
 
+    #[tracing::instrument(name = "online_status::Actor started", skip_all)]
     async fn started(&mut self, ctx: &mut Context<Self>) {
         tracing::debug!(
             "Online status watch actor started. Monitoring for peer id changes: {:?}",

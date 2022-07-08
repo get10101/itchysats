@@ -17,6 +17,7 @@ use libp2p_core::Transport;
 use libp2p_noise as noise;
 use multistream_select::NegotiationError;
 use std::time::Duration;
+use tracing::Instrument;
 use void::Void;
 
 /// Upgrades the given [`Transport`].
@@ -131,7 +132,7 @@ where
             .then(move |stream| {
                 let supported_protocols = supported_inbound_protocols.clone();
 
-                async move {
+                let fut = async move {
                     let result = tokio_extras::time::timeout(
                         connection_timeout,
                         multistream_select::listener_select_proto(stream, &supported_protocols),
@@ -150,7 +151,9 @@ where
                         Ok(Err(e)) => Ok(Err(Error::NegotiationFailed(e))),
                         Err(_timeout) => Ok(Err(Error::NegotiationTimeoutReached)),
                     }
-                }
+                };
+
+                fut.instrument(tracing::debug_span!("Select protocol for incoming stream"))
             })
             .boxed();
 

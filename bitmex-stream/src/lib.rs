@@ -4,6 +4,7 @@ use futures::Stream;
 use futures::StreamExt;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite;
+use tracing::Instrument;
 
 pub use tokio_tungstenite::tungstenite::Error;
 
@@ -27,9 +28,13 @@ pub fn subscribe<const N: usize>(
 
         loop {
             tokio::select! {
-                _ = tokio_extras::time::sleep(Duration::from_secs(5)) => {
-                    tracing::trace!("No message from BitMex in the last 5 seconds, pinging");
-                    let _ = connection.send(tungstenite::Message::Ping([0u8; 32].to_vec())).await;
+                _ = tokio_extras::time::sleep_silent(Duration::from_secs(5)) => {
+                    let span = tracing::trace_span!("Ping BitMex");
+                    span.in_scope(|| tracing::trace!("No message from BitMex in the last 5 seconds, pinging"));
+                    let _ = connection
+                        .send(tungstenite::Message::Ping([0u8; 32].to_vec()))
+                        .instrument(span)
+                        .await;
                 },
                 msg = connection.next() => {
                     let msg = match msg {
