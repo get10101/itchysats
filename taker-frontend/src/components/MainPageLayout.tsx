@@ -2,7 +2,7 @@ import { Box, Center, useColorModeValue } from "@chakra-ui/react";
 import * as React from "react";
 import { Outlet } from "react-router-dom";
 import { SemVer } from "semver";
-import { BG_DARK, BG_LIGHT, FOOTER_HEIGHT, HEADER_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_WIDTH_PX } from "../App";
+import { AuthStatus, BG_DARK, BG_LIGHT, FOOTER_HEIGHT, HEADER_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_WIDTH_PX } from "../App";
 import { ConnectionStatus, IdentityInfo, WalletInfo } from "../types";
 import Footer from "./Footer";
 import Nav from "./NavBar";
@@ -37,7 +37,7 @@ export function MainPageLayout(
         <>
             {outdatedWarningIsVisible
                 && <OutdatedWarning githubVersion={githubVersion} daemonVersion={daemonVersion} onClose={onClose} />}
-
+            <AuthStatus />
             <Nav
                 walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}

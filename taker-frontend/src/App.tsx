@@ -5,9 +5,10 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
+import { AuthProvider, useAuth } from "./authProvider";
 import { MainPageLayout } from "./components/MainPageLayout";
 import Trade from "./components/Trade";
 import { TradePageLayout } from "./components/TradePageLayout";
@@ -26,6 +27,7 @@ import {
 } from "./types";
 import { useEventSource } from "./useEventSource";
 import useLatestEvent from "./useLatestEvent";
+import LoginPage from "./components/Login";
 
 export interface Offer {
     id?: string;
@@ -176,66 +178,119 @@ export const App = () => {
 
     const pathname = location.pathname;
     useEffect(() => {
+        if (pathname === "/login") {
+            return;
+        }
         if (pathname !== "/long" && pathname !== "/short" && pathname !== "/wallet") {
             navigate("/long");
         }
     }, [navigate, pathname]);
 
     return (
-        <Routes>
-            <Route
-                path="/"
-                element={
-                    <MainPageLayout
-                        outdatedWarningIsVisible={outdatedWarningIsVisible}
-                        githubVersion={githubVersion}
-                        daemonVersion={daemonVersion}
-                        onClose={onClose}
-                        walletInfo={walletInfo}
-                        connectedToMaker={connectedToMaker}
-                        nextFundingEvent={nextFundingEvent}
-                        referencePrice={referencePrice}
-                        identityOrUndefined={identityOrUndefined}
-                    />
-                }
-            >
+        <AuthProvider>
+            <Routes>
+                <Route path="login" element={<LoginPage />} />
                 <Route
-                    path="wallet"
-                    element={<Wallet walletInfo={walletInfo} />}
-                />
-                <Route
+                    path="/"
                     element={
-                        <TradePageLayout
-                            cfds={cfds}
+                        <MainPageLayout
+                            outdatedWarningIsVisible={outdatedWarningIsVisible}
+                            githubVersion={githubVersion}
+                            daemonVersion={daemonVersion}
+                            onClose={onClose}
+                            walletInfo={walletInfo}
                             connectedToMaker={connectedToMaker}
-                            showPromoBanner={isWithinPromoPeriod}
+                            nextFundingEvent={nextFundingEvent}
+                            referencePrice={referencePrice}
+                            identityOrUndefined={identityOrUndefined}
                         />
                     }
                 >
                     <Route
-                        path="long"
+                        path="wallet"
                         element={
-                            <Trade
-                                offer={longOffer}
-                                connectedToMaker={connectedToMaker}
-                                walletBalance={walletInfo ? walletInfo.balance : 0}
-                                isLong={true}
-                            />
+                            <RequireAuth>
+                                <Wallet walletInfo={walletInfo} />
+                            </RequireAuth>
                         }
                     />
                     <Route
-                        path="short"
                         element={
-                            <Trade
-                                offer={shortOffer}
+                            <TradePageLayout
+                                cfds={cfds}
                                 connectedToMaker={connectedToMaker}
-                                walletBalance={walletInfo ? walletInfo.balance : 0}
-                                isLong={false}
+                                showPromoBanner={isWithinPromoPeriod}
                             />
                         }
-                    />
+                    >
+                        <Route
+                            path="long"
+                            element={
+                                <RequireAuth>
+                                    <Trade
+                                        offer={longOffer}
+                                        connectedToMaker={connectedToMaker}
+                                        walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        isLong={true}
+                                    />
+                                </RequireAuth>
+                            }
+                        />
+
+                        <Route
+                            path="short"
+                            element={
+                                <RequireAuth>
+                                    <Trade
+                                        offer={shortOffer}
+                                        connectedToMaker={connectedToMaker}
+                                        walletBalance={walletInfo ? walletInfo.balance : 0}
+                                        isLong={false}
+                                    />
+                                </RequireAuth>
+                            }
+                        />
+                    </Route>
                 </Route>
-            </Route>
-        </Routes>
+            </Routes>
+        </AuthProvider>
     );
 };
+
+export function AuthStatus() {
+    let auth = useAuth();
+    let navigate = useNavigate();
+
+    if (!auth.user) {
+        return <p>You are not logged in.</p>;
+    }
+
+    return (
+        <p>
+            Welcome {auth.user}!{" "}
+            <button
+                onClick={() => {
+                    auth.signout(() => navigate("/"));
+                }}
+            >
+                Sign out
+            </button>
+        </p>
+    );
+}
+
+function RequireAuth({ children }: { children: JSX.Element }) {
+    let auth = useAuth();
+    let location = useLocation();
+
+    if (!auth.user) {
+        // Redirect them to the /login page, but save the current location they were
+        // trying to go to when they were redirected. This allows us to send them
+        // along to that page after they login, which is a nicer user experience
+        // than dropping them off on the home page.
+        return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    return children;
+}
+
