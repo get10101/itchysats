@@ -36,7 +36,7 @@ mod tests {
 
         let (maker_peer_id, maker_dialer_actor, maker_endpoint) = create_endpoint_with_identify(
             "0.4.22".to_string(),
-            Environment::Maker,
+            Environment::Unknown,
             Keypair::generate_ed25519().public(),
             HashSet::new(),
             HashSet::from(["some_maker_protocol".to_string()]),
@@ -90,7 +90,7 @@ mod tests {
         let expected_maker_peer_info = dialer::PeerInfo {
             wire_version: "0.3.0".to_string(),
             daemon_version: "0.4.22".to_string(),
-            environment: Environment::Maker,
+            environment: Environment::Unknown,
         };
 
         let expected_taker_peer_info = dialer::PeerInfo {

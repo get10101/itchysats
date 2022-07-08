@@ -52,7 +52,7 @@ pub struct PeerInfo {
 #[derive(Debug, thiserror::Error)]
 #[error("Conversion to peer info failed: {error}")]
 pub struct ConversionError {
-    #[source]
+    #[from]
     error: anyhow::Error,
 }
 
@@ -62,9 +62,7 @@ impl TryFrom<protocol::IdentifyMsg> for PeerInfo {
     fn try_from(identify_msg: protocol::IdentifyMsg) -> Result<Self, Self::Error> {
         let peer_info = PeerInfo {
             wire_version: identify_msg.wire_version(),
-            daemon_version: identify_msg
-                .daemon_version()
-                .map_err(|error| ConversionError { error })?,
+            daemon_version: identify_msg.daemon_version()?,
             environment: identify_msg.environment().into(),
         };
 

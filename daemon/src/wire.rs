@@ -690,10 +690,7 @@ impl From<crate::Environment> for Environment {
             crate::Environment::Test => Environment::Test,
 
             // LEGACY not sent over wire; fallback on maker side for legacy Hello messages.
-            // MAKER not sent over wire; fallback on maker side for legacy Hello messages.
-            crate::Environment::Maker
-            | crate::Environment::Legacy
-            | crate::Environment::Unknown => Environment::Unknown,
+            crate::Environment::Legacy | crate::Environment::Unknown => Environment::Unknown,
         }
     }
 }

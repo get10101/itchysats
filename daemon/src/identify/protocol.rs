@@ -113,7 +113,6 @@ pub enum Environment {
     Test,
     Legacy,
     Unknown,
-    Maker,
 }
 
 impl From<crate::Environment> for Environment {
@@ -126,7 +125,6 @@ impl From<crate::Environment> for Environment {
             crate::Environment::Test => Environment::Test,
             crate::Environment::Legacy => Environment::Legacy,
             crate::Environment::Unknown => Environment::Unknown,
-            crate::Environment::Maker => Environment::Maker,
         }
     }
 }
@@ -140,7 +138,6 @@ impl From<Environment> for crate::Environment {
             Environment::Binary => crate::Environment::Binary,
             Environment::Test => crate::Environment::Test,
             Environment::Legacy => crate::Environment::Legacy,
-            Environment::Maker => crate::Environment::Maker,
             Environment::Unknown => crate::Environment::Unknown,
         }
     }

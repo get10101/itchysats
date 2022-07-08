@@ -510,7 +510,6 @@ pub enum Environment {
     Test,
     Legacy,
     Unknown,
-    Maker,
 }
 
 impl Environment {

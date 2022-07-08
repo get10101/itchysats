@@ -197,7 +197,7 @@ where
             move || {
                 identify::listener::Actor::new(
                     daemon::version::version().to_string(),
-                    Environment::Maker,
+                    Environment::Unknown,
                     identity.public(),
                     HashSet::from([listen_multiaddr.clone()]),
                     ProtocolFactory::maker_listen_protocols(),
