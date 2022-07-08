@@ -242,7 +242,7 @@ impl Cfd {
                 commit_tx: None,
                 ..self
             },
-            LockConfirmed => Self {
+            LockConfirmed | LockConfirmedAfterFinality => Self {
                 monitor_lock_finality: false,
                 lock_tx: None,
                 ..self
@@ -253,10 +253,7 @@ impl Cfd {
                 ..self
             },
             // final states, don't monitor anything
-            CetConfirmed
-            | RefundConfirmed
-            | CollaborativeSettlementConfirmed
-            | LockConfirmedAfterFinality => Self {
+            CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self {
                 monitor_lock_finality: false,
                 monitor_commit_finality: false,
                 monitor_cet_timelock: false,
