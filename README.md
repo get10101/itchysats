@@ -44,7 +44,7 @@ Oracle price outcomes can be found [here](https://outcome.observer/h00.ooo/x/Bit
 ItchySats includes an internal wallet that is used to sign transactions during the DLC setup.
 Additionally, when a CFD is closed, your payout is sent to an address owned by this wallet.
 This wallet is completely under your control.
-You can withdraw from the wallet ay any time.
+You can withdraw from the wallet at any time.
 
 On Umbrel this wallet is derived from the Umbrel Seed, so the only thing you have to back up is the Umbrel seed.
 
@@ -53,7 +53,7 @@ Make sure to back up the `taker_seed` file that can be found in the data directo
 
 ### Safety
 
-ItchySays is currently Beta software.
+ItchySats is currently Beta software.
 We are doing our best to make ItchySats stable, but there could be unexpected bugs that result in positions being closed at an unfavorable point in time.
 Please be mindful of how much money you transfer to the internal wallet and how much you are willing to risk when opening a new CFD.
 
