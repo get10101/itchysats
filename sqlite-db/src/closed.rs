@@ -855,8 +855,8 @@ async fn load_cet_settlement(
         models::Settlement::Cet,
         r#"
         SELECT
-            closed_commit_txs.txid as "commit_txid: models::Txid",
-            closed_cets.txid as "txid: models::Txid",
+            closed_commit_txs.txid as "commit_txid!: models::Txid",
+            closed_cets.txid as "txid!: models::Txid",
             closed_cets.vout as "vout: models::Vout",
             closed_cets.payout as "payout: models::Payout",
             closed_cets.price as "price: models::Price"
@@ -887,7 +887,7 @@ async fn load_refund_settlement(
         models::Settlement::Refund,
         r#"
         SELECT
-            closed_commit_txs.txid as "commit_txid: models::Txid",
+            closed_commit_txs.txid as "commit_txid!: models::Txid",
             closed_refund_txs.txid as "txid: models::Txid",
             closed_refund_txs.vout as "vout: models::Vout",
             closed_refund_txs.payout as "payout: models::Payout"
@@ -958,7 +958,7 @@ async fn load_creation_timestamp(
     let row = sqlx::query!(
         r#"
         SELECT
-            event_log.created_at
+            event_log.created_at as "created_at!"
         FROM
             event_log
         JOIN

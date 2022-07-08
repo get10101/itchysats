@@ -70,24 +70,6 @@
       ]
     }
   },
-  "12a758d80dca77c52d5a17c9c2b286bdc537dee587289bf6eba94bf0fb16fc83": {
-    "query": "\n        SELECT\n            event_log.created_at\n        FROM\n            event_log\n        JOIN\n            closed_cfds on closed_cfds.id = event_log.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ORDER BY event_log.created_at ASC\n        LIMIT 1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "created_at",
-          "ordinal": 0,
-          "type_info": "Int64"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false
-      ]
-    }
-  },
   "1b0a898c7975e9d9eb313fe900b15c4672f11ff110e0ae16560d7f3d7b4fddc4": {
     "query": "\n            select\n                id as cfd_id,\n                uuid as \"uuid: models::OrderId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: models::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: models::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.uuid = $1\n            ",
     "describe": {
@@ -184,6 +166,24 @@
       "columns": [
         {
           "name": "first_seen_timestamp",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true
+      ]
+    }
+  },
+  "29fd4f6a72d9bd13fa1ea6e4966f7f941b54ffdef6e31e7bfd9937eee2e8d9c4": {
+    "query": "\n        SELECT\n            event_log.created_at as \"created_at!\"\n        FROM\n            event_log\n        JOIN\n            closed_cfds on closed_cfds.id = event_log.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ORDER BY event_log.created_at ASC\n        LIMIT 1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "created_at!",
           "ordinal": 0,
           "type_info": "Int64"
         }
@@ -302,6 +302,24 @@
       "nullable": []
     }
   },
+  "697d9ca427dd0d3d8b3a21640bb2f309d30fb34b8d57bf663fe282892b21dd5d": {
+    "query": "\n        SELECT\n            event_log_failed.created_at as \"created_at!: i64\"\n        FROM\n            event_log_failed\n        JOIN\n            failed_cfds on failed_cfds.id = event_log_failed.cfd_id\n        WHERE\n            failed_cfds.uuid = $1\n        ORDER BY event_log_failed.created_at ASC\n        LIMIT 1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "created_at!: i64",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true
+      ]
+    }
+  },
   "6a0e947eb3254ed994e44b0018ca9232d37bc405b37856b15be5a0ef81757af1": {
     "query": "\n            insert into rollover_completed_event_data (\n                cfd_id,\n                event_id,\n                settlement_event_id,\n                refund_timelock,\n                funding_fee,\n                rate,\n                identity,\n                identity_counterparty,\n                maker_address,\n                taker_address,\n                maker_lock_amount,\n                taker_lock_amount,\n                publish_sk,\n                publish_pk_counterparty,\n                revocation_secret,\n                revocation_pk_counterparty,\n                lock_tx,\n                lock_tx_descriptor,\n                commit_tx,\n                commit_adaptor_signature,\n                commit_descriptor,\n                refund_tx,\n                refund_signature,\n                complete_fee,\n                complete_fee_flow\n            ) values ( \n            (select id from cfds where cfds.uuid = $1),\n            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25\n            )\n        ",
     "describe": {
@@ -348,48 +366,6 @@
         "Right": 4
       },
       "nullable": []
-    }
-  },
-  "7d9268dcb6f72fd7c9495dcde388bf998445ada4539d6adb3d3cf693c6339b3b": {
-    "query": "\n\n        select\n            c.id as cfd_row_id,\n            events.id as event_row_id,\n            name,\n            data,\n            created_at as \"created_at: models::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        limit $2,-1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_row_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "event_row_id",
-          "ordinal": 1,
-          "type_info": "Int64"
-        },
-        {
-          "name": "name",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at: models::Timestamp",
-          "ordinal": 4,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 2
-      },
-      "nullable": [
-        true,
-        false,
-        false,
-        false,
-        false
-      ]
     }
   },
   "8175b7702d6a0b28843f03a9b6f507a64a703ae2ff649b3a28f339f3abb70fce": {
@@ -534,6 +510,42 @@
         "Right": 2
       },
       "nullable": []
+    }
+  },
+  "aedd751cc7dcf48f77e8b00fba501ca65e0020dac15e6ba985bd61166c137531": {
+    "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid!: models::Txid\",\n            closed_refund_txs.txid as \"txid: models::Txid\",\n            closed_refund_txs.vout as \"vout: models::Vout\",\n            closed_refund_txs.payout as \"payout: models::Payout\"\n        FROM\n            closed_refund_txs\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "commit_txid!: models::Txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid: models::Txid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vout: models::Vout",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "payout: models::Payout",
+          "ordinal": 3,
+          "type_info": "Int64"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true,
+        false,
+        false,
+        false
+      ]
     }
   },
   "b15920dbf09664b23c4bf64bf552b865a3280e186d3bd9ac424dc2e46493b6ea": {
@@ -683,6 +695,48 @@
         false,
         true,
         true
+      ]
+    }
+  },
+  "bb8f154cf74c332f6c5880f6f528310501dfd8169127107639aa901997a200ab": {
+    "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid!: models::Txid\",\n            closed_cets.txid as \"txid!: models::Txid\",\n            closed_cets.vout as \"vout: models::Vout\",\n            closed_cets.payout as \"payout: models::Payout\",\n            closed_cets.price as \"price: models::Price\"\n        FROM\n            closed_cets\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
+    "describe": {
+      "columns": [
+        {
+          "name": "commit_txid!: models::Txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "txid!: models::Txid",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vout: models::Vout",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "payout: models::Payout",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "price: models::Price",
+          "ordinal": 4,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false
       ]
     }
   },
@@ -852,48 +906,6 @@
       "nullable": []
     }
   },
-  "ce102b72700c4c0e1742ff185706a52d8a4dca4e5eb0cde65affd8d5d01264eb": {
-    "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: models::Txid\",\n            closed_cets.txid as \"txid: models::Txid\",\n            closed_cets.vout as \"vout: models::Vout\",\n            closed_cets.payout as \"payout: models::Payout\",\n            closed_cets.price as \"price: models::Price\"\n        FROM\n            closed_cets\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_cets.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_cets.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "commit_txid: models::Txid",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: models::Txid",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "vout: models::Vout",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "payout: models::Payout",
-          "ordinal": 3,
-          "type_info": "Int64"
-        },
-        {
-          "name": "price: models::Price",
-          "ordinal": 4,
-          "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
   "d87c695f2f1f67e9acbc2ed4dac9a083738e82c52e419f5f025f8c4e327b4858": {
     "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            ",
     "describe": {
@@ -937,42 +949,6 @@
           "name": "price: models::Price",
           "ordinal": 3,
           "type_info": "Text"
-        }
-      ],
-      "parameters": {
-        "Right": 1
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false
-      ]
-    }
-  },
-  "e81424a68a41a8d7f3ab624716aea93782b9a285547687e6f24cb393503fbaf3": {
-    "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid: models::Txid\",\n            closed_refund_txs.txid as \"txid: models::Txid\",\n            closed_refund_txs.vout as \"vout: models::Vout\",\n            closed_refund_txs.payout as \"payout: models::Payout\"\n        FROM\n            closed_refund_txs\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id\n        WHERE\n            closed_cfds.uuid = $1\n        ",
-    "describe": {
-      "columns": [
-        {
-          "name": "commit_txid: models::Txid",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "txid: models::Txid",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "vout: models::Vout",
-          "ordinal": 2,
-          "type_info": "Int64"
-        },
-        {
-          "name": "payout: models::Payout",
-          "ordinal": 3,
-          "type_info": "Int64"
         }
       ],
       "parameters": {
@@ -1046,20 +1022,44 @@
       ]
     }
   },
-  "eaa1ac5e11d036f67d5a6fd1b7c150dba3f59021faee1e89abb0f2cda4ca6af9": {
-    "query": "\n        SELECT\n            event_log_failed.created_at\n        FROM\n            event_log_failed\n        JOIN\n            failed_cfds on failed_cfds.id = event_log_failed.cfd_id\n        WHERE\n            failed_cfds.uuid = $1\n        ORDER BY event_log_failed.created_at ASC\n        LIMIT 1\n        ",
+  "f72ab7ae71904c030803d1c014a94370192e3d1182827951592dd6bb3d5a6072": {
+    "query": "\n\n        select\n            c.id as cfd_row_id,\n            events.id as event_row_id,\n            events.name,\n            events.data,\n            events.created_at as \"created_at: models::Timestamp\"\n        from\n            events\n        join\n            cfds c on c.id = events.cfd_id\n        where\n            uuid = $1\n        order by\n            events.id\n        limit $2,-1\n            ",
     "describe": {
       "columns": [
         {
-          "name": "created_at",
+          "name": "cfd_row_id",
           "ordinal": 0,
           "type_info": "Int64"
+        },
+        {
+          "name": "event_row_id",
+          "ordinal": 1,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at: models::Timestamp",
+          "ordinal": 4,
+          "type_info": "Text"
         }
       ],
       "parameters": {
-        "Right": 1
+        "Right": 2
       },
       "nullable": [
+        true,
+        false,
+        false,
+        false,
         false
       ]
     }
