@@ -13,7 +13,7 @@ daemon = { path = "../daemon" }
 hex = "0.4"
 http-api-problem = { version = "0.53.0", features = ["rocket"] }
 itertools = "0.10"
-libp2p-core = { version = "0.33", default-features = false }
+libp2p-core = { version = "0.34", default-features = false }
 model = { path = "../model" }
 prometheus = { version = "0.13", default-features = false }
 rocket = { version = "0.5.0-rc.1", features = ["json", "uuid"] }
