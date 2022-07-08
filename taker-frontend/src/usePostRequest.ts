@@ -1,5 +1,5 @@
 import { useToast } from "@chakra-ui/react";
-import { useAsync } from "react-async";
+import { useAsync } from "@react-hookz/web";
 
 /**
  * A React hook for sending a POST request to a certain endpoint.
@@ -9,11 +9,11 @@ import { useAsync } from "react-async";
 export default function usePostRequest<Req = any, Res = any>(
     url: string,
     onSuccess: (response: Res) => void = () => {},
-): [(req: Req) => void, boolean] {
+): [([req]: [Req]) => void, boolean] {
     const toast = useToast();
 
-    let { run, isLoading } = useAsync({
-        deferFn: async ([payload]: any[]) => {
+    let [{ status }, { execute }] = useAsync(
+        async ([payload]: any[]) => {
             let res = await fetch(url, {
                 method: "POST",
                 body: JSON.stringify(payload),
@@ -33,7 +33,6 @@ export default function usePostRequest<Req = any, Res = any>(
                     duration: 10000,
                     isClosable: true,
                 });
-
                 return;
             }
 
@@ -52,9 +51,8 @@ export default function usePostRequest<Req = any, Res = any>(
             // if none of the above content types match, pass bytes to the caller
             onSuccess(await res.blob() as unknown as Res); // `unknown` cast is not ideal because we known that `.blob()` gives us as blob.
         },
-    });
-
-    return [run as (req: Req) => void, isLoading];
+    );
+    return [execute, status === "loading"];
 }
 
 interface Problem {

@@ -27,7 +27,7 @@ interface Props {
     position: "long" | "short";
     isOpen: boolean;
     onClose: any;
-    onSubmit: (req: CfdOrderRequestPayload) => void;
+    onSubmit: ([req]: [CfdOrderRequestPayload]) => void;
     isSubmitting: boolean;
     quantity: number;
     price: number;
@@ -126,18 +126,19 @@ export default function ConfirmOrderModal({
                                     <BitcoinAmount btc={feeForFirstSettlementInterval} />
                                 </Td>
                             </Tr>
-                            <FundingRateTooltip
-                                fundingRateHourly={fundingRateHourly}
-                                fundingRateAnnualized={fundingRateAnnualized}
-                                disabled={!fundingRateHourly}
-                            >
-                                <Tr>
-                                    <Td>
+
+                            <Tr>
+                                <Td>
+                                    <FundingRateTooltip
+                                        fundingRateHourly={fundingRateHourly}
+                                        fundingRateAnnualized={fundingRateAnnualized}
+                                        disabled={!fundingRateHourly}
+                                    >
                                         <Text as={"b"}>Perpetual Cost</Text>
-                                    </Td>
-                                    <Td>Hourly @ {fundingRateHourly}%</Td>
-                                </Tr>
-                            </FundingRateTooltip>
+                                    </FundingRateTooltip>
+                                </Td>
+                                <Td>Hourly @ {fundingRateHourly}%</Td>
+                            </Tr>
                         </Tbody>
                     </Table>
                 </ModalBody>
@@ -149,12 +150,12 @@ export default function ConfirmOrderModal({
                             colorScheme="teal"
                             isLoading={isSubmitting}
                             onClick={() => {
-                                onSubmit({
+                                onSubmit([{
                                     order_id: orderId,
                                     quantity,
                                     position,
                                     leverage,
-                                });
+                                }]);
 
                                 onClose();
                             }}

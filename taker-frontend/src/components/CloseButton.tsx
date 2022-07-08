@@ -17,7 +17,7 @@ import Timestamp from "./Timestamp";
 
 interface Props {
     cfd: Cfd;
-    request: (req: any) => void;
+    request: ([req]: [any]) => void;
     status: boolean;
     isForceCloseButton: boolean;
     buttonTitle: String;
@@ -84,7 +84,7 @@ export default function CloseButton({ cfd, request, status, buttonTitle, isForce
                                     colorScheme="red"
                                     onClick={() => {
                                         console.log(`Closing CFD ${cfd.order_id}`);
-                                        request({});
+                                        request([{}]);
                                         onClose();
                                     }}
                                     isLoading={status}

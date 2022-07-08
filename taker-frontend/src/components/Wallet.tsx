@@ -25,10 +25,10 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
+import { useAsync } from "@react-hookz/web";
 import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
-import { useAsync } from "react-async";
 import { WalletInfo, WithdrawRequest } from "../types";
 import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
@@ -64,8 +64,8 @@ export default function Wallet(
         });
     });
 
-    let { run: syncWallet, isLoading: isSyncingWallet } = useAsync({
-        deferFn: async () => {
+    let [{ status: walletSyncing }, { execute: syncWallet }] = useAsync(
+        async () => {
             try {
                 let res = await fetch(`/api/sync`, {
                     method: "PUT",
@@ -93,7 +93,8 @@ export default function Wallet(
                 });
             }
         },
-    });
+    );
+    let isSyncingWallet = walletSyncing === "loading";
 
     return (
         <Center>
@@ -150,12 +151,11 @@ export default function Wallet(
                     <form
                         onSubmit={(event) => {
                             event.preventDefault();
-
-                            runWithdraw({
+                            runWithdraw([{
                                 amount: withdrawAmount,
                                 fee,
                                 address: withdrawAddress,
-                            });
+                            }]);
                         }}
                     >
                         <Heading as="h3" size="sm">Withdraw</Heading>

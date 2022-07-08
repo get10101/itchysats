@@ -249,17 +249,18 @@ export default function Trade({
                                     <Td>
                                         <Text>Perpetual Cost</Text>
                                     </Td>
-                                    <FundingRateTooltip
-                                        fundingRateHourly={fundingRateHourly}
-                                        fundingRateAnnualized={fundingRateAnnualized}
-                                        disabled={!fundingRateHourly}
-                                    >
-                                        <Td isNumeric>
-                                            <Skeleton isLoaded={fundingRateHourly != null}>
-                                                Hourly @ {fundingRateHourly}%
-                                            </Skeleton>
-                                        </Td>
-                                    </FundingRateTooltip>
+
+                                    <Td isNumeric>
+                                        <Skeleton isLoaded={fundingRateHourly != null}>
+                                            <FundingRateTooltip
+                                                fundingRateHourly={fundingRateHourly}
+                                                fundingRateAnnualized={fundingRateAnnualized}
+                                                disabled={!fundingRateHourly}
+                                            >
+                                                <Text>Hourly @ {fundingRateHourly}%</Text>
+                                            </FundingRateTooltip>
+                                        </Skeleton>
+                                    </Td>
                                 </Tr>
                             </Tbody>
                         </Table>
