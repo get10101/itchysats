@@ -7,9 +7,9 @@ description = "Utilities for working with tokio, including instrumented futures 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
 pin-project-lite = "0.2.9"
-tokio = { version = "1", default-features = false, features = ["rt-multi-thread"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "tracing"] }
 tracing = { version = "0.1.35" }
 xtra = { version = "0.6", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["time", "macros"] }
+tokio = { version = "1", features = ["time", "macros", "tracing"] }

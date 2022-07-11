@@ -42,6 +42,10 @@ pub struct Opts {
     #[clap(long)]
     pub instrumentation: bool,
 
+    /// If enabled, tokio runtime can be locally debugged with tokio_console
+    #[clap(long)]
+    pub tokio_console: bool,
+
     /// OTEL collector endpoint address
     ///
     /// If not specified it defaults to the local collector endpoint.

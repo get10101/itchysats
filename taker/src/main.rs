@@ -90,6 +90,10 @@ struct Opts {
     #[clap(long)]
     instrumentation: bool,
 
+    /// If enabled, tokio runtime can be locally debugged with tokio_console
+    #[clap(long)]
+    pub tokio_console: bool,
+
     /// OTEL collector endpoint address
     ///
     /// If not specified it defaults to the local collector endpoint.
@@ -299,6 +303,7 @@ async fn main() -> Result<()> {
         opts.log_level,
         opts.json,
         opts.instrumentation,
+        opts.tokio_console,
         "taker",
         &opts.collector_endpoint,
     )

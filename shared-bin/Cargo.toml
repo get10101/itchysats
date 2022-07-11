@@ -10,6 +10,7 @@ description = "Code that is shared between the daemons but application specific 
 [dependencies]
 anyhow = "1"
 atty = "0.2"
+console-subscriber = "0.1.6"
 daemon = { path = "../daemon" }
 http-api-problem = { version = "0.53.0", features = ["rocket"] }
 model = { path = "../model" }
