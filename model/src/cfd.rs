@@ -889,7 +889,7 @@ impl Cfd {
 
     pub fn start_rollover_maker(
         &self,
-        from_tx_id_proposed: Txid,
+        from_txid_proposed: Txid,
     ) -> Result<(CfdEvent, BaseDlcParams)> {
         if self.during_rollover {
             bail!("The CFD is already being rolled over")
@@ -904,7 +904,7 @@ impl Cfd {
 
         let order_id = self.id;
         let base_dlc_params = tracing::info_span!("", %order_id)
-            .in_scope(|| dlc.base_dlc_params(from_tx_id_proposed, self.fee_account.settle()))?;
+            .in_scope(|| dlc.base_dlc_params(from_txid_proposed, self.fee_account.settle()))?;
 
         let event = CfdEvent::new(self.id, EventKind::RolloverStarted);
 
@@ -2298,7 +2298,7 @@ impl Dlc {
             None => {
                 return Ok(Err(IrrelevantAttestation {
                     id: attestation.id,
-                    tx_id: self.lock.0.txid(),
+                    txid: self.lock.0.txid(),
                 }))
             }
         };
@@ -2348,10 +2348,10 @@ impl Dlc {
 }
 
 #[derive(Debug, thiserror::Error, Clone, Copy)]
-#[error("Attestation {id} is irrelevant for DLC {tx_id}")]
+#[error("Attestation {id} is irrelevant for DLC {txid}")]
 pub struct IrrelevantAttestation {
     id: BitMexPriceEventId,
-    tx_id: Txid,
+    txid: Txid,
 }
 
 /// Information which we need to remember in order to construct a
