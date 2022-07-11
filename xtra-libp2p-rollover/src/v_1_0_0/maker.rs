@@ -1,4 +1,4 @@
-use crate::protocol::*;
+use crate::v_1_0_0::protocol::*;
 use anyhow::Context;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
@@ -200,7 +200,7 @@ where
                             };
 
                             let (event, params, dlc, position, oracle_event_id) = cfd
-                                .accept_rollover_proposal(
+                                .accept_rollover_proposal_single_event(
                                     tx_fee_rate,
                                     funding_rate,
                                     Some((base_dlc_params.settlement_event_id(), base_dlc_params.complete_fee())),
