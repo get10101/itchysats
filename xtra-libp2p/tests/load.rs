@@ -9,9 +9,18 @@ use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::MemoryTransport;
 use libp2p_core::Multiaddr;
+use opentelemetry::sdk::trace::Config;
+use opentelemetry::sdk::Resource;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use std::sync::Once;
 use std::time::Duration;
-use tracing::subscriber::DefaultGuard;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer;
+use tracing_subscriber::Registry;
 use xtra::message_channel::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
@@ -376,13 +385,40 @@ async fn some_message_exchange_listener(stream: xtra_libp2p::Substream) -> Resul
     Ok(())
 }
 
-pub fn init_tracing() -> DefaultGuard {
-    tracing_subscriber::fmt()
-        .with_env_filter("WARN")
-        .with_env_filter("load=debug")
-        .with_env_filter("xtra=debug")
-        .with_env_filter("xtra_libp2p=debug")
-        .with_env_filter("xtras=debug")
-        .with_test_writer()
-        .set_default()
+static INIT_OTLP_EXPORTER: Once = Once::new();
+
+pub fn init_tracing() {
+    INIT_OTLP_EXPORTER.call_once(|| {
+        let cfg = Config::default().with_resource(Resource::new([KeyValue::new(
+            "service.name",
+            "daemon-tests",
+        )]));
+
+        let tracer = opentelemetry_otlp::new_pipeline()
+            .tracing()
+            .with_trace_config(cfg)
+            .with_exporter(
+                opentelemetry_otlp::new_exporter()
+                    .grpcio()
+                    .with_endpoint("localhost:4317"),
+            )
+            .install_simple()
+            .unwrap();
+
+        let filter = EnvFilter::from_default_env()
+            // apply warning level globally
+            .add_directive(LevelFilter::WARN.into())
+            // log traces from test itself
+            .add_directive("load=debug".parse().unwrap())
+            .add_directive("xtra=debug".parse().unwrap())
+            .add_directive("xtra_libp2p=debug".parse().unwrap())
+            .add_directive("xtras=debug".parse().unwrap());
+
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_test_writer()
+            .with_filter(filter);
+        let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        Registry::default().with(telemetry).with(fmt_layer).init();
+    })
 }

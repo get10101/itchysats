@@ -30,6 +30,9 @@ yamux = "0.10"
 asynchronous-codec = "0.6"
 clap = { version = "3.2", features = ["derive"] }
 libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] }
+opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.10.0", features = ["grpc-sys", "trace"] }
 rand = "0.8"
 tokio = { version = "1", features = ["full"] }
+tracing-opentelemetry = "0.17.4"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
