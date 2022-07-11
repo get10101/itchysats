@@ -35,6 +35,7 @@ async fn main() -> Result<()> {
         opts.log_level,
         opts.json,
         opts.instrumentation,
+        opts.tokio_console,
         "maker",
         &opts.collector_endpoint,
     )

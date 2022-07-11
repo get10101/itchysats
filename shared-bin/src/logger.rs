@@ -25,6 +25,7 @@ pub fn init(
     level: LevelFilter,
     json_format: bool,
     instrumentation: bool,
+    use_tokio_console: bool,
     service_name: &'static str,
     collector_endpoint: &str,
 ) -> Result<()> {
@@ -48,6 +49,14 @@ pub fn init(
         _ => base_directives(EnvFilter::from_env(RUST_LOG_ENV))?,
     };
     let filter = filter.add_directive(format!("{level}").parse()?);
+
+    let filter = if use_tokio_console {
+        filter
+            .add_directive("tokio=trace".parse()?)
+            .add_directive("runtime=trace".parse()?)
+    } else {
+        filter
+    };
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
@@ -93,8 +102,15 @@ pub fn init(
         None
     };
 
+    let console_layer = if use_tokio_console {
+        Some(console_subscriber::spawn())
+    } else {
+        None
+    };
+
     Registry::default()
         .with(telemetry)
+        .with(console_layer)
         .with(fmt_layer)
         .try_init()
         .context("Failed to init logger")?;
