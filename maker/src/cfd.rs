@@ -239,6 +239,7 @@ impl<O, T, W> Actor<O, T, W> {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn update_connected_takers(&mut self) -> Result<()> {
         self.projection
             .send_async_safe(projection::Update(

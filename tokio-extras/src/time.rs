@@ -16,6 +16,12 @@ pub async fn sleep(duration: Duration) {
     tokio::time::sleep(duration).await
 }
 
+/// Sleep without instrumenting the span
+pub async fn sleep_silent(duration: Duration) {
+    #[allow(clippy::disallowed_methods)]
+    tokio::time::sleep(duration).await
+}
+
 /// Limit the future's time of execution to a certain duration, cancelling it and returning
 /// an error if time runs out. This is instrumented, unlike `tokio::time::timeout`. The
 /// `child_span` function constructs the span for the child future from the span of the parent

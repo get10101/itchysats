@@ -1,5 +1,7 @@
 use futures::FutureExt;
+use std::fmt::Display;
 use std::future::Future;
+use tracing::Instrument;
 use xtra::refcount::RefCounter;
 use xtra::Address;
 
@@ -24,12 +26,13 @@ pub fn spawn_fallible<A, Rc, Task, Ok, Err, Fn, FnFut>(
     Fn: FnOnce(Err) -> FnFut + Send + 'static,
     FnFut: Future + Send,
     Ok: Send,
-    Err: Send,
+    Err: Send + Display,
 {
     #[allow(clippy::disallowed_methods)]
     tokio::spawn(xtra::scoped(addr, async {
-        if let Err(e) = fut.await {
-            handle_err(e).await;
+        if let Err(err) = fut.await {
+            let span = tracing::error_span!("fallible task handle_error", %err);
+            handle_err(err).instrument(span).await;
         }
     }));
 }

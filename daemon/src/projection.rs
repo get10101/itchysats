@@ -54,6 +54,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
+use tracing::info_span;
+use tracing::Instrument;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -1196,16 +1198,26 @@ impl xtra::Actor for Actor {
 
             async move {
                 loop {
-                    match price_feed.send(xtra_bitmex_price_feed::LatestQuote).await {
-                        Ok(quote) => {
-                            let _ = this.send(Update(quote)).await;
-                        }
-                        Err(_) => {
-                            tracing::trace!("Price feed actor currently unreachable");
+                    {
+                        let span = info_span!("Update projection with latest quote");
+                        let latest = price_feed
+                            .send(xtra_bitmex_price_feed::LatestQuote)
+                            .instrument(span.clone())
+                            .await;
+
+                        match latest {
+                            Ok(quote) => {
+                                let _ = this.send(Update(quote)).instrument(span).await;
+                            }
+                            Err(_) => {
+                                span.in_scope(|| {
+                                    tracing::trace!("Price feed actor currently unreachable")
+                                });
+                            }
                         }
                     }
 
-                    tokio_extras::time::sleep(Duration::from_secs(10)).await;
+                    tokio_extras::time::sleep_silent(Duration::from_secs(10)).await;
                 }
             }
         })

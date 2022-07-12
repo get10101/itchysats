@@ -5,6 +5,7 @@ use model::MakerOffers;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::spawn_fallible;
+use tracing::Instrument;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
@@ -31,9 +32,8 @@ impl Actor {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
 
+        let span = tracing::debug_span!("Send offers", %peer, ?offers);
         let task = async move {
-            tracing::debug!(%peer, ?offers, "Sending offers");
-
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
                 .await??;
@@ -47,7 +47,7 @@ impl Actor {
             move |e| async move { tracing::debug!(%peer, "Failed to send offers: {e:#}") };
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible(&this, task, err_handler);
+        spawn_fallible(&this, task.instrument(span), err_handler);
     }
 }
 
@@ -94,6 +94,7 @@ impl NewOffers {
 impl xtra::Actor for Actor {
     type Stop = ();
 
+    #[tracing::instrument(name = "xtra_libp2p_offer::maker::Maker started", skip_all)]
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         match self.endpoint.send(GetConnectionStats).await {
             Ok(connection_stats) => self

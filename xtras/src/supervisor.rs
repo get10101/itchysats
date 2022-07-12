@@ -7,6 +7,7 @@ use std::ops::ControlFlow;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::time::Duration;
+use tracing::Instrument;
 use xtra::Address;
 use xtra::Context;
 
@@ -44,7 +45,9 @@ where
     let wait_time = wait_time;
     Box::new(move |_: &E| {
         Box::pin(async move {
-            tokio_extras::time::sleep(wait_time).await;
+            tokio_extras::time::sleep(wait_time)
+                .instrument(tracing::trace_span!("Wait before restarting actor"))
+                .await;
             true
         })
     })

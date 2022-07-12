@@ -37,7 +37,7 @@ pub fn init(
 
     let filter = match std::env::var_os(RUST_LOG_ENV).map(|s| s.into_string()) {
         Some(Ok(env)) => {
-            let mut filter = base_directives(EnvFilter::new(""))?;
+            let mut filter = log_base_directives(EnvFilter::new(""))?;
             for directive in env.split(',') {
                 match directive.parse() {
                     Ok(d) => filter = filter.add_directive(d),
@@ -46,7 +46,7 @@ pub fn init(
             }
             filter
         }
-        _ => base_directives(EnvFilter::from_env(RUST_LOG_ENV))?,
+        _ => log_base_directives(EnvFilter::from_env(RUST_LOG_ENV))?,
     };
     let filter = filter.add_directive(format!("{level}").parse()?);
 
@@ -97,7 +97,11 @@ pub fn init(
             .install_batch(opentelemetry::runtime::Tokio)
             .context("Failed to initialise OTLP exporter")?;
 
-        Some(tracing_opentelemetry::layer().with_tracer(tracer))
+        Some(
+            tracing_opentelemetry::layer()
+                .with_tracer(tracer)
+                .with_filter(trace_base_directives(EnvFilter::new(""))?),
+        )
     } else {
         None
     };
@@ -120,7 +124,7 @@ pub fn init(
     Ok(())
 }
 
-fn base_directives(env: EnvFilter) -> Result<EnvFilter> {
+fn log_base_directives(env: EnvFilter) -> Result<EnvFilter> {
     let filter = env
         .add_directive("bdk=warn".parse()?) // bdk is quite spamy on debug
         .add_directive("sqlx=warn".parse()?) // sqlx logs all queries on INFO
@@ -147,5 +151,10 @@ fn base_directives(env: EnvFilter) -> Result<EnvFilter> {
         .add_directive("xtra=warn".parse()?)
         .add_directive("sled=warn".parse()?) // downgrade sled log level: it is spamming too much on DEBUG
         .add_directive("xtra_libp2p=info".parse()?);
+    Ok(filter)
+}
+
+fn trace_base_directives(env: EnvFilter) -> Result<EnvFilter> {
+    let filter = env.add_directive(LevelFilter::DEBUG.into());
     Ok(filter)
 }

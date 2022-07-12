@@ -1,6 +1,7 @@
 use crate::protocol;
 use async_trait::async_trait;
 use model::MakerOffers;
+use tracing::Instrument;
 use xtra::prelude::MessageChannel;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
@@ -25,10 +26,11 @@ impl Actor {
 
         let task = async move {
             let offers = protocol::recv(stream).await?;
-
-            tracing::debug!(%peer, ?offers, "Received offers");
-
-            maker_offers.send(LatestMakerOffers(offers)).await?;
+            let span = tracing::debug_span!("Received new offers from maker", %peer, ?offers);
+            maker_offers
+                .send(LatestMakerOffers(offers))
+                .instrument(span)
+                .await?;
 
             anyhow::Ok(())
         };

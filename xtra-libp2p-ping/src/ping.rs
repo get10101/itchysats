@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::spawn_fallible;
+use tracing::Instrument;
 use xtra::prelude::async_trait;
 use xtra::Address;
 use xtra::Context;
@@ -56,6 +57,7 @@ impl Actor {
 impl xtra::Actor for Actor {
     type Stop = ();
 
+    #[tracing::instrument("Ping actor started", skip_all)]
     async fn started(&mut self, ctx: &mut Context<Self>) {
         let this = ctx.address().expect("we just started");
 
@@ -111,8 +113,6 @@ impl Actor {
                 let this = this.clone();
 
                 async move {
-                    tracing::trace!(%peer, "Sending ping");
-
                     let stream = endpoint
                         .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
                         .await??;
@@ -129,7 +129,11 @@ impl Actor {
                 tracing::warn!(%peer, "Outbound ping protocol failed: {e:#}")
             };
 
-            spawn_fallible(&this, ping_fut, err_handler);
+            spawn_fallible(
+                &this,
+                ping_fut.instrument(tracing::debug_span!("Ping peer", %peer)),
+                err_handler,
+            );
         }
     }
 

@@ -344,9 +344,10 @@ impl Endpoint {
                         let stream =
                             Substream::new(stream, protocol, libp2p_core::Endpoint::Listener);
 
-                        let _ = channel
-                            .send_async_safe(NewInboundSubstream { peer, stream })
-                            .await;
+                        let substream = NewInboundSubstream { peer, stream };
+                        let span =
+                            tracing::debug_span!("Register new inbound substream", ?substream);
+                        let _ = channel.send_async_safe(substream).instrument(span).await;
                     }
                 }
             },
@@ -412,7 +413,7 @@ impl Endpoint {
                 let this = this.clone();
                 let connection_timeout = self.connection_timeout;
 
-                async move {
+                let fut = async move {
                     let (peer, control, incoming_substreams, worker) = tokio_extras::time::timeout(
                         connection_timeout,
                         transport.dial(msg.0)?,
@@ -431,7 +432,9 @@ impl Endpoint {
                         .await;
 
                     anyhow::Ok(())
-                }
+                };
+
+                fut.instrument(tracing::debug_span!("Dial new connection"))
             },
             move |error| async move {
                 let _ = this.send(FailedToConnect { peer, error }).await;

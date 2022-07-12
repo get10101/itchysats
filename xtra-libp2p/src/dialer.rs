@@ -60,6 +60,7 @@ impl Actor {
 impl xtra::Actor for Actor {
     type Stop = Error;
 
+    #[tracing::instrument("Start dialer actor", skip(ctx))]
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         tracing::debug!("Starting dialer actor");
         match self

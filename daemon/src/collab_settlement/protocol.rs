@@ -30,6 +30,7 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub const SETTLEMENT_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 
+#[tracing::instrument]
 pub async fn dialer(
     endpoint: Address<Endpoint>,
     order_id: OrderId,
@@ -116,16 +117,17 @@ pub async fn dialer(
     Ok(settlement)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum DialerFailed {
+    #[error("Rejected")]
     Rejected,
+    #[error("Failed after sending signature")]
     AfterSendingSignature {
         unsigned_tx: Transaction,
         error: anyhow::Error,
     },
-    BeforeSendingSignature {
-        source: anyhow::Error,
-    },
+    #[error("Failed before sending signature")]
+    BeforeSendingSignature { source: anyhow::Error },
 }
 
 impl From<anyhow::Error> for DialerFailed {
