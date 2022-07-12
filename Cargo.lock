@@ -5371,7 +5371,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/comit-network/xtra?branch=span-late-create#764260a53bab43a22c2c6b81ffd7e8e53aeb2d44"
+source = "git+https://github.com/comit-network/xtra?branch=span-late-create-improved#58030512b5d133a30bec976b1056de14ab3517d9"
 dependencies = [
  "async-trait",
  "catty",
