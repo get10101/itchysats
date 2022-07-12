@@ -3,6 +3,7 @@ use anyhow::bail;
 use async_trait::async_trait;
 use libp2p_core::multiaddr::Protocol;
 use libp2p_core::Multiaddr;
+use opentelemetry::global::shutdown_tracer_provider;
 use opentelemetry_otlp::WithExportConfig;
 use std::time::Duration;
 use time::macros::format_description;
@@ -24,11 +25,12 @@ use xtras::SendAsyncSafe;
 
 mod util;
 
-const N_BOBS: usize = 1;
+const N_BOBS: usize = 100;
+const ATTEMPTS_PER_BOB: usize = 2;
 
 const ALICE_PORT: u64 = 1_000;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 100)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 10)]
 async fn many_bobs_dialing_one_alice() {
     init_tracing();
 
@@ -52,7 +54,7 @@ async fn many_bobs_dialing_one_alice() {
 
     let mut tasks = Tasks::default();
     tasks.spawn(async move {
-        for i in 0..50000 {
+        for i in 0..N_BOBS {
             tracing::debug!(%i, "Spawning lazy bob");
 
             let bob = make_node([]);
@@ -82,12 +84,12 @@ async fn many_bobs_dialing_one_alice() {
             .unwrap()
             .unwrap();
 
-        for _attempt in 0..100 {
-            let bob = bob.clone();
+        for _attempt in 0..ATTEMPTS_PER_BOB {
+            let bob_cloned = bob.clone();
             let dialer = async move {
                 let now = std::time::Instant::now();
                 let stream = loop {
-                    match bob
+                    match bob_cloned
                         .endpoint
                         .send(OpenSubstream::single_protocol(
                             alice.peer_id,
@@ -111,8 +113,9 @@ async fn many_bobs_dialing_one_alice() {
                 anyhow::Ok(())
             };
 
-            tasks.add_fallible(dialer, move |e| async move {
-                tracing::error!(dialer=%bob.peer_id, "Dialer failed: {}", e)
+            let bob_id = bob.peer_id;
+            tokio_extras::spawn_fallible(&bob.endpoint, dialer, move |e| async move {
+                tracing::error!(dialer=%bob_id, "Dialer failed: {}", e)
             });
         }
     }
@@ -120,7 +123,7 @@ async fn many_bobs_dialing_one_alice() {
     let ensure_done = async move {
         loop {
             let done = &alice_listener
-                .send(CheckListenerDone(N_BOBS * 100))
+                .send(CheckListenerDone(N_BOBS * ATTEMPTS_PER_BOB))
                 .await
                 .unwrap();
 
@@ -134,6 +137,8 @@ async fn many_bobs_dialing_one_alice() {
     tokio::time::timeout(Duration::from_secs(120), ensure_done)
         .await
         .unwrap();
+
+    shutdown_tracer_provider()
 }
 
 struct ListenerActor {
@@ -250,7 +255,7 @@ fn init_tracing() {
 
     let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    let console_layer = console_subscriber::spawn();
+    // let console_layer = console_subscriber::spawn();
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
@@ -274,7 +279,7 @@ fn init_tracing() {
 
     Registry::default()
         .with(telemetry)
-        .with(console_layer)
+        // .with(console_layer)
         .with(fmt_layer)
         .try_init()
         .unwrap();
