@@ -1,3 +1,4 @@
+import axios, { AxiosResponse } from "axios";
 import * as semver from "semver";
 import { SemVer } from "semver";
 import { DaemonVersion, GithubVersion } from "./types";
@@ -19,13 +20,9 @@ export async function fetchGithubVersion(setGithubVersion: (version: SemVer | nu
 }
 
 export async function fetchDaemonVersion(setDaemonVersion: (version: SemVer | null) => void) {
-    let response = await fetch("/api/version", {
-        credentials: "include",
-        headers: { accept: "application/json" },
-        cache: "default",
-    });
+    const response: AxiosResponse<DaemonVersion> = await axios.get("/api/version");
 
-    let daemonVersion = await response.json() as DaemonVersion;
+    let daemonVersion = response.data;
     if (daemonVersion?.daemon_version) {
         let version = semver.parse(daemonVersion?.daemon_version);
         setDaemonVersion(version);
