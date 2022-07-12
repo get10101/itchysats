@@ -3,8 +3,15 @@ use anyhow::bail;
 use async_trait::async_trait;
 use libp2p_core::multiaddr::Protocol;
 use libp2p_core::Multiaddr;
+use opentelemetry_otlp::WithExportConfig;
 use std::time::Duration;
+use time::macros::format_description;
 use tokio_extras::Tasks;
+use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Layer;
+use tracing_subscriber::Registry;
 use xtra::spawn::Spawner;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
@@ -214,15 +221,65 @@ mod protocol {
 }
 
 fn init_tracing() {
+    opentelemetry::global::set_text_map_propagator(
+        opentelemetry::sdk::propagation::TraceContextPropagator::new(),
+    );
+
+    opentelemetry::global::set_error_handler(|error| {
+            ::tracing::error!(target: "opentelemetry", "OpenTelemetry error occurred: {:#}", anyhow::anyhow!(error));
+        })
+        .expect("to be able to set error handler");
+
+    let cfg = opentelemetry::sdk::trace::Config::default().with_resource(
+        opentelemetry::sdk::Resource::new([opentelemetry::KeyValue::new(
+            "service.name",
+            "load_test",
+        )]),
+    );
+
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_trace_config(cfg)
+        .with_exporter(
+            opentelemetry_otlp::new_exporter()
+                .tonic()
+                .with_endpoint("http://localhost:4317"),
+        )
+        .install_batch(opentelemetry::runtime::Tokio)
+        .unwrap();
+
+    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    let console_layer = console_subscriber::spawn();
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_ansi(true);
+
+    let fmt_layer = fmt_layer
+        .compact()
+        .with_timer(UtcTime::new(format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second]"
+        )))
+        .boxed();
+
     let filter = tracing_subscriber::EnvFilter::from_default_env()
         .add_directive(tracing::metadata::LevelFilter::INFO.into())
         .add_directive("load=debug".parse().unwrap())
-        .add_directive("xtra_libp2p=debug".parse().unwrap());
+        .add_directive("xtra_libp2p=debug".parse().unwrap())
+        .add_directive("tokio=trace".parse().unwrap())
+        .add_directive("runtime=trace".parse().unwrap());
 
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_test_writer()
-        .init();
+    let fmt_layer = fmt_layer.with_filter(filter);
+
+    Registry::default()
+        .with(telemetry)
+        .with(console_layer)
+        .with(fmt_layer)
+        .try_init()
+        .unwrap();
+
+    tracing::info!("Initialized logger");
 }
 
 #[async_trait]
