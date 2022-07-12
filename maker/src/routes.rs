@@ -250,7 +250,7 @@ pub async fn get_cfds<'r>(
 }
 
 #[rocket::get("/takers")]
-#[instrument(name = "GET /takers", skip(rx), ret, err)]
+#[instrument(name = "GET /takers", skip(rx), err)]
 pub async fn get_takers<'r>(
     rx: &State<Feeds>,
     _auth: Authenticated,
@@ -263,7 +263,7 @@ pub async fn get_takers<'r>(
 }
 
 #[rocket::get("/metrics")]
-#[instrument(name = "GET /metrics", ret, err)]
+#[instrument(name = "GET /metrics", err)]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())

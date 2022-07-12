@@ -287,7 +287,7 @@ pub async fn post_withdraw_request(
 }
 
 #[rocket::get("/metrics")]
-#[instrument(name = "GET /metrics", ret, err)]
+#[instrument(name = "GET /metrics", err)]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
