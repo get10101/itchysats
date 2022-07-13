@@ -453,76 +453,81 @@ impl Actor {
             .send_async_safe(cfd::TakerConnected { id: identity })
             .await;
 
-        let mut tasks = Tasks::default();
-        tasks.add_fallible(
-            {
-                let this = this.clone();
+        tracing::debug_span!("Test span container").in_scope(|| {
+            let mut tasks = Tasks::default();
 
-                async move {
-                    loop {
-                        let msg = read
-                            .try_next()
-                            .await
-                            .context("Failed to read from socket")?
-                            .context("End of stream")?;
+            tracing::debug_span!("Add fallible").in_scope(|| {
+                tasks.add_fallible(
+                    {
+                        let this = this.clone();
 
-                        this.send(cfd::FromTaker {
-                            peer_id,
-                            taker_id: identity,
-                            msg,
-                        })
-                        .await
-                        .context(
-                            "we are not connected to ourselves, this should really not happen",
-                        )?;
-                    }
-                }
-            },
-            {
-                let this = this.clone();
+                        async move {
+                            loop {
+                                let msg = read
+                                    .try_next()
+                                    .await
+                                    .context("Failed to read from socket")?
+                                    .context("End of stream")?;
 
-                move |error| async move {
-                    let _ = this
-                        .send(ReadFail {
-                            taker_id: identity,
-                            error,
-                        })
-                        .await;
-                }
-            },
-        );
+                                this.send(cfd::FromTaker {
+                                    peer_id,
+                                    taker_id: identity,
+                                    msg,
+                                })
+                                    .await
+                                    .context(
+                                        "we are not connected to ourselves, this should really not happen",
+                                    )?;
+                            }
+                        }
+                    },
+                    {
+                        let this = this.clone();
 
-        let daemon_semver = parse_vergen_version(&daemon_version);
-        let no_need_for_heartbeats =
-            semver::VersionReq::parse(">= 0.4.20").expect("to parse VersionReq");
+                        move |error| async move {
+                            let _ = this
+                                .send(ReadFail {
+                                    taker_id: identity,
+                                    error,
+                                })
+                                .await;
+                        }
+                    },
+                );
+            });
 
-        if no_need_for_heartbeats.matches(&daemon_semver) {
-            tracing::info!(
-                "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
+            let daemon_semver = parse_vergen_version(&daemon_version);
+            let no_need_for_heartbeats =
+                semver::VersionReq::parse(">= 0.4.20").expect("to parse VersionReq");
+
+            if no_need_for_heartbeats.matches(&daemon_semver) {
+                tracing::info!(
+                    "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
+                );
+            } else {
+                tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
+            }
+
+            self.connections.insert(
+                identity,
+                Connection {
+                    taker: identity,
+                    write,
+                    wire_version: wire_version.clone(),
+                    environment,
+                    daemon_version: daemon_version.clone(),
+                    _tasks: tasks,
+                },
             );
-        } else {
-            tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
-        }
 
-        self.connections.insert(
-            identity,
-            Connection {
-                taker: identity,
-                write,
-                wire_version: wire_version.clone(),
-                environment,
-                daemon_version: daemon_version.clone(),
-                _tasks: tasks,
-            },
-        );
-
-        NUM_CONNECTIONS_GAUGE
-            .with(&HashMap::from([
-                (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
-                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
-                (ENVIRONMENT_LABEL, environment.to_string().as_str()),
-            ]))
-            .inc();
+            NUM_CONNECTIONS_GAUGE
+                .with(&HashMap::from([
+                    (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
+                    (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+                    (ENVIRONMENT_LABEL, environment.to_string().as_str()),
+                ]))
+                .inc();
+        });
 
         tracing::debug!(taker_id = %identity, taker_address = %address, %wire_version, %daemon_version, %environment, ?peer_id, "Connection is ready");
     }
