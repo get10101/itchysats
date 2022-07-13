@@ -13,7 +13,7 @@ pub static NOISE_MAX_MSG_LEN: u32 = 65535;
 pub static NOISE_TAG_LEN: u32 = 16;
 static NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
-#[instrument(skip(local_priv_key), ret, err)]
+#[instrument(skip(local_priv_key, connection), ret, err)]
 pub async fn initiator_handshake(
     connection: &mut TcpStream,
     local_priv_key: &x25519_dalek::StaticSecret,
@@ -40,7 +40,7 @@ pub async fn initiator_handshake(
     Ok(noise)
 }
 
-#[instrument(skip(local_priv_key), ret, err)]
+#[instrument(skip_all, ret, err)]
 pub async fn responder_handshake(
     connection: &mut TcpStream,
     local_priv_key: &x25519_dalek::StaticSecret,

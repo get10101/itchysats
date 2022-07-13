@@ -55,7 +55,7 @@ pub struct IdentityInfo {
 }
 
 #[rocket::get("/feed")]
-#[instrument(name = "GET /feed", skip(rx))]
+#[instrument(name = "GET /feed", skip(rx, rx_wallet, rx_maker_status))]
 pub async fn feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,

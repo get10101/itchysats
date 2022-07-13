@@ -22,7 +22,6 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 /// Polls Endpoint at startup to check whether connection got established correctly, and
 /// then listens for ConnectionDropped message to stop itself.
 /// Should be used in conjunction with supervisor maintaining resilient connection.
-#[derive(Debug)]
 pub struct Actor {
     endpoint: Address<Endpoint>,
     connect_address: Multiaddr,
@@ -40,7 +39,7 @@ impl Actor {
         }
     }
 
-    #[instrument(err)]
+    #[instrument(skip(self))]
     async fn connect(&self) -> Result<(), Error> {
         self.endpoint
             .send(Connect(self.connect_address.clone()))
@@ -60,7 +59,7 @@ impl Actor {
 impl xtra::Actor for Actor {
     type Stop = Error;
 
-    #[tracing::instrument("Start dialer actor", skip(ctx))]
+    #[tracing::instrument("Start dialer actor", skip_all)]
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         tracing::debug!("Starting dialer actor");
         match self
@@ -90,7 +89,7 @@ impl Actor {
             .expect("to always have peer id if successfully started")
     }
 
-    #[instrument(ret, err)]
+    #[instrument(skip(self), ret, err)]
     async fn is_connection_established(&self) -> Result<bool> {
         Ok(self
             .endpoint
@@ -100,7 +99,7 @@ impl Actor {
             .contains(&self.peer_id()))
     }
 
-    #[instrument(err)]
+    #[instrument(skip(self), err)]
     async fn dial(&self) -> Result<()> {
         if self.is_connection_established().await? {
             tracing::info!("Connection is already established, no need to connect");
