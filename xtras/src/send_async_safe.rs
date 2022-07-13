@@ -22,7 +22,7 @@ where
     A: xtra::Handler<M, Return = ()>,
     M: Send + 'static,
 {
-    #[instrument(skip(msg), err)]
+    #[instrument(skip_all, err)]
     async fn send_async_safe(&self, msg: M) -> Result<(), xtra::Error> {
         let _ = self.send(msg).split_receiver().await;
 

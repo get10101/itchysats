@@ -34,7 +34,6 @@ use xtra_productivity::xtra_productivity;
 const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One actor to rule all the rollovers
-#[derive(Debug)]
 pub struct Actor {
     endpoint: Address<Endpoint>,
     oracle_pk: XOnlyPublicKey,
@@ -81,7 +80,7 @@ impl Actor {
 }
 
 impl Actor {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn open_substream(&self, peer_id: PeerId) -> anyhow::Result<Substream> {
         Ok(self
             .endpoint

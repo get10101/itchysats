@@ -359,7 +359,7 @@ impl xtra::Actor for Actor {
 
 // TODO: Move the reconnection logic inside the connection::Actor instead of
 // depending on a watch channel
-#[tracing::instrument]
+#[tracing::instrument(skip(maker_online_status_feed_receiver, connection_actor_addr))]
 pub async fn connect(
     mut maker_online_status_feed_receiver: watch::Receiver<ConnectionStatus>,
     connection_actor_addr: xtra::Address<Actor>,
