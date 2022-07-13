@@ -26,6 +26,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import { useAsync } from "@react-hookz/web";
+import axios from "axios";
 import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
@@ -67,14 +68,11 @@ export default function Wallet(
     let [{ status: walletSyncing }, { execute: syncWallet }] = useAsync(
         async () => {
             try {
-                let res = await fetch(`/api/sync`, {
-                    method: "PUT",
-                    credentials: "include",
-                });
+                let res = await axios.put("/api/sync", {}, { withCredentials: true });
 
                 if (!res.status.toString().startsWith("2")) {
                     console.log("Status: " + res.status + ", " + res.statusText);
-                    const resp = await res.json();
+                    const resp = res.data;
                     toast({
                         title: "Error: Syncing Wallet",
                         description: resp.description,

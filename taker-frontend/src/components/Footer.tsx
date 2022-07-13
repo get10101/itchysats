@@ -32,9 +32,10 @@ function TextDivider() {
 interface FooterProps {
     identityInfo: IdentityInfo | null;
     daemonVersion: string | undefined;
+    githubVersion: string | undefined;
 }
 
-export default function Footer({ identityInfo, daemonVersion }: FooterProps) {
+export default function Footer({ identityInfo, daemonVersion, githubVersion }: FooterProps) {
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     return (
@@ -87,6 +88,24 @@ export default function Footer({ identityInfo, daemonVersion }: FooterProps) {
                                 />
                                 <Text fontWeight={"bold"}>Daemon version:</Text>
                                 <Text>{daemonVersion ? daemonVersion : "unknown"}</Text>
+                                <Divider
+                                    orientation={"horizontal"}
+                                    borderColor={useColorModeValue("black", "white")}
+                                    height={"20px"}
+                                />
+                                <Text fontWeight={"bold"}>Latest available version:</Text>
+                                <Text>
+                                    {githubVersion
+                                        ? (
+                                            <Link
+                                                href={"https://github.com/itchysats/itchysats/releases/latest"}
+                                                isExternal
+                                            >
+                                                {githubVersion} <ExternalLinkIcon mx="2px" />
+                                            </Link>
+                                        )
+                                        : "unknown"}
+                                </Text>
                             </ModalBody>
                             <ModalFooter>
                                 <Button colorScheme="blue" mr={3} onClick={onClose}>

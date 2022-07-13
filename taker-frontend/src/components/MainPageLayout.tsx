@@ -69,7 +69,11 @@ export function MainPageLayout(
                 </Box>
             </Center>
 
-            <Footer identityInfo={identityOrUndefined} daemonVersion={daemonVersion?.version} />
+            <Footer
+                identityInfo={identityOrUndefined}
+                daemonVersion={daemonVersion?.version}
+                githubVersion={githubVersion?.version}
+            />
         </>
     );
 }
