@@ -547,7 +547,7 @@ impl Cfd {
                 self.aggregated.state = CfdState::PendingCommit;
             }
             RevokeConfirmed => {
-                tracing::error!(order_id = %self.order_id, "Revoked logic not implemented");
+                // TODO: Implement revoked logic
                 self.aggregated.state = CfdState::OpenCommitted;
             }
             RolloverStarted { .. } => {
