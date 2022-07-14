@@ -281,9 +281,8 @@ impl Endpoint {
         let (protocol, stream) = tokio_extras::time::timeout(
             connection_timeout,
             multistream_select::dialer_select_proto(stream, protocols, Version::V1),
-            |parent| tracing::debug_span!(parent: parent, "dialer_select_proto", version = ?Version::V1)
+            || tracing::debug_span!("dialer_select_proto", version = ?Version::V1),
         )
-        .instrument(tracing::debug_span!("timeout dialing select proto", timeout_secs = connection_timeout.as_secs()))
         .await
         .map_err(|_timeout| Error::NegotiationTimeoutReached)?
         .map_err(Error::NegotiationFailed)?;
@@ -414,7 +413,7 @@ impl Endpoint {
                     let (peer, control, incoming_substreams, worker) = tokio_extras::time::timeout(
                         connection_timeout,
                         transport.dial(msg.0)?,
-                        |parent| tracing::debug_span!(parent: parent, "transport dial"),
+                        || tracing::debug_span!("transport dial"),
                     )
                     .await
                     .context("Dialing timed out")??;

@@ -156,7 +156,7 @@ impl Actor {
 
                     let DialerSignature { dialer_signature } = framed
                         .next()
-                        .timeout(SETTLEMENT_MSG_TIMEOUT, |parent| tracing::debug_span!(parent: parent, "receive dialer signature"))
+                        .timeout(SETTLEMENT_MSG_TIMEOUT, || tracing::debug_span!("receive dialer signature"))
                         .await
                         .with_context(|| {
                             format!(

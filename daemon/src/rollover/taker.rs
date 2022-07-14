@@ -145,8 +145,8 @@ impl Actor {
 
                     match framed
                         .next()
-                        .timeout(DECISION_TIMEOUT, |parent| {
-                            tracing::debug_span!(parent: parent, "receive decision")
+                        .timeout(DECISION_TIMEOUT, || {
+                            tracing::debug_span!("receive decision")
                         })
                         .await
                         .with_context(|| {
@@ -203,8 +203,8 @@ impl Actor {
                                 .await
                                 .context("Failed to send Msg0")?;
 
-                            fn next_rollover_span(parent: &tracing::Span) -> tracing::Span {
-                                tracing::debug_span!(parent: parent, "next rollover message")
+                            fn next_rollover_span() -> tracing::Span {
+                                tracing::debug_span!("next rollover message")
                             }
 
                             let msg0 = framed

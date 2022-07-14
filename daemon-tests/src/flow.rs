@@ -54,8 +54,8 @@ where
         }
     };
 
-    let val = tokio_extras::time::timeout(NEXT_WAIT_TIME, wait_until_predicate, |parent| {
-        tracing::debug_span!(parent: parent, "wait until predicate")
+    let val = tokio_extras::time::timeout(NEXT_WAIT_TIME, wait_until_predicate, || {
+        tracing::debug_span!("wait until predicate")
     })
     .await
     .with_context(|| {

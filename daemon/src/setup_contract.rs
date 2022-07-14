@@ -78,8 +78,8 @@ pub async fn new(
         publish_pk,
     };
 
-    fn stream_next_span(parent: &tracing::Span) -> tracing::Span {
-        tracing::debug_span!(parent: parent, "SetupMsg stream next")
+    fn stream_next_span() -> tracing::Span {
+        tracing::debug_span!("SetupMsg stream next")
     }
 
     sink.send(SetupMsg::Msg0(Msg0::from((own_params.clone(), own_punish))))

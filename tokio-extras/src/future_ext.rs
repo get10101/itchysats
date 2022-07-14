@@ -20,7 +20,7 @@ pub trait FutureExt: Future + Sized {
     /// an error if time runs out. This is instrumented, unlike `tokio::time::timeout`. The
     /// `child_span` function constructs the span for the child future from the span of the parent
     /// (timeout) future.
-    fn timeout(self, duration: Duration, child_span: impl FnOnce(&Span) -> Span) -> Timeout<Self>;
+    fn timeout(self, duration: Duration, child_span: fn() -> Span) -> Timeout<Self>;
 }
 
 impl<F> FutureExt for F
@@ -44,7 +44,7 @@ where
         handle
     }
 
-    fn timeout(self, duration: Duration, child_span: impl FnOnce(&Span) -> Span) -> Timeout<F> {
+    fn timeout(self, duration: Duration, child_span: fn() -> Span) -> Timeout<F> {
         crate::time::timeout(duration, self, child_span)
     }
 }

@@ -452,8 +452,8 @@ impl<O, T, W> Actor<O, T, W> {
         match self
             .setup_actors
             .send(&order_id, contract_setup::Accepted)
-            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT, |parent| {
-                tracing::debug_span!(parent: parent, "send contract_setup::Accepted")
+            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT, || {
+                tracing::debug_span!("send contract_setup::Accepted")
             })
             .await
         {
@@ -486,8 +486,8 @@ impl<O, T, W> Actor<O, T, W> {
         match self
             .setup_actors
             .send(&order_id, contract_setup::Rejected)
-            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT, |parent| {
-                tracing::debug_span!(parent: parent, "send contract_setup::Rejected")
+            .timeout(HANDLE_ACCEPT_CONTRACT_SETUP_MESSAGE_TIMEOUT, || {
+                tracing::debug_span!("send contract_setup::Rejected")
             })
             .await
         {

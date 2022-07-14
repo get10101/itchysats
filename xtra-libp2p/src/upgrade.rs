@@ -136,13 +136,7 @@ where
                     let result = tokio_extras::time::timeout(
                         connection_timeout,
                         multistream_select::listener_select_proto(stream, &supported_protocols),
-                        |parent| {
-                            tracing::debug_span!(
-                                parent: parent,
-                                "listener_select_proto",
-                                ?supported_protocols
-                            )
-                        },
+                        || tracing::debug_span!("listener_select_proto"),
                     )
                     .await;
 
@@ -153,7 +147,10 @@ where
                     }
                 };
 
-                fut.instrument(tracing::debug_span!("Select protocol for incoming stream"))
+                fut.instrument(tracing::debug_span!(
+                    "Select protocol for incoming stream",
+                    ?supported_inbound_protocols
+                ))
             })
             .boxed();
 
