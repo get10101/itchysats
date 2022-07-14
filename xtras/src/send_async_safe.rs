@@ -47,11 +47,11 @@ where
             return Err(xtra::Error::Disconnected);
         }
 
-        let send_fut = self.send(msg);
+        let rx = self.send(msg).split_receiver().await;
 
         #[allow(clippy::disallowed_methods)]
         tokio::spawn(async {
-            let e = match send_fut.await {
+            let e = match rx.await {
                 Ok(Err(e)) => format!("{e:#}"),
                 Err(e) => format!("{e:#}"),
                 Ok(Ok(())) => return,
