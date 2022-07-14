@@ -82,15 +82,19 @@ impl Actor {
 impl Actor {
     #[tracing::instrument(skip(self))]
     async fn open_substream(&self, peer_id: PeerId) -> anyhow::Result<Substream> {
-        Ok(self
+        let substream = self
             .endpoint
             .send(OpenSubstream::single_protocol(
                 peer_id.inner(),
                 rollover::PROTOCOL,
             ))
             .await
-            .context("Endpoint is disconnected")
-            .context("Failed to open substream")??)
+            .context("Endpoint is disconnected")?
+            .context("No connection to peer")?
+            .await
+            .context("Failed to open substream")?;
+
+        Ok(substream)
     }
 }
 

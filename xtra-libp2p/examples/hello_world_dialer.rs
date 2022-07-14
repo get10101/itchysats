@@ -66,6 +66,8 @@ async fn main() -> Result<()> {
         ))
         .await
         .unwrap()
+        .unwrap()
+        .await
         .unwrap();
 
     let message = hello_world_dialer(stream, opts.name).await.unwrap();

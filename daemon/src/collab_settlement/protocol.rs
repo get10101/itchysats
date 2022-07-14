@@ -41,6 +41,8 @@ pub async fn dialer(
         .send(OpenSubstream::single_protocol(counterparty, PROTOCOL))
         .await
         .context("Endpoint is disconnected")?
+        .context("No connection to peer")?
+        .await
         .context("Failed to open substream")?;
     let mut framed = asynchronous_codec::Framed::new(
         substream,

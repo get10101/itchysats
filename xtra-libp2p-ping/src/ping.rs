@@ -115,7 +115,8 @@ impl Actor {
                 async move {
                     let stream = endpoint
                         .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
-                        .await??;
+                        .await??
+                        .await?;
                     let latency = protocol::send(stream).await?;
 
                     this.send_async_safe(RecordLatency { peer, latency })
