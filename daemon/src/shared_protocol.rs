@@ -13,7 +13,10 @@ use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::PartyParams;
 use std::ops::RangeInclusive;
 use std::time::Duration;
+use tracing::instrument;
+use tracing::Instrument;
 
+#[instrument(skip_all)]
 pub(crate) async fn verify_cets(
     (oracle_pk, nonce_pks): (XOnlyPublicKey, Vec<XOnlyPublicKey>),
     counterparty: PartyParams,
@@ -47,11 +50,13 @@ pub(crate) async fn verify_cets(
 
         anyhow::Ok(())
     })
+    .in_current_span()
     .await??;
 
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub(crate) fn verify_adaptor_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -68,6 +73,7 @@ pub(crate) fn verify_adaptor_signature(
         .context("failed to verify encsig spend tx")
 }
 
+#[instrument(skip_all)]
 pub(crate) fn verify_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -81,6 +87,7 @@ pub(crate) fn verify_signature(
     Ok(())
 }
 
+#[instrument(skip_all)]
 pub(crate) fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,
