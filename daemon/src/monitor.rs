@@ -296,7 +296,7 @@ impl Cfd {
             | CollaborativeSettlementFailed
             | CollaborativeSettlementProposalAccepted => self,
             RevokeConfirmed => {
-                tracing::error!("Revoked logic not implemented");
+                // TODO: Implement revoked logic
                 self
             }
         }
