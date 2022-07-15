@@ -401,9 +401,14 @@ async fn main() -> Result<()> {
     let maker_libp2p_address = libp2p_socket_from_legacy_networking(first_maker_address);
     let maker_multiaddr = create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id)?;
 
+    let hex_pk = hex::encode(identities.identity_pk.to_bytes());
+    let peer_id = identities.libp2p.public().to_peer_id().to_string();
+
+    tracing::info!("Connection details: taker_id='{hex_pk}', peer_id='{peer_id}'");
+
     let identity_info = IdentityInfo {
-        taker_id: hex::encode(identities.identity_pk.to_bytes()),
-        taker_peer_id: identities.libp2p.public().to_peer_id().to_string(),
+        taker_id: hex_pk,
+        taker_peer_id: peer_id,
     };
 
     let environment = match env::var("ITCHYSATS_ENV") {
