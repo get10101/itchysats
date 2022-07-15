@@ -12,7 +12,7 @@ use std::time::Duration;
 use tracing::instrument;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
-use xtras::SendAsyncSafe;
+use xtras::SendAsyncNext;
 
 /// If we're not connected by this time, stop the actor.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -75,7 +75,7 @@ impl xtra::Actor for Actor {
         }
 
         let this = ctx.address().expect("self to be alive");
-        this.send_async_safe(Dial).await.expect("self to be alive");
+        this.send_async_next(Dial).await;
     }
 
     async fn stopped(self) -> Self::Stop {

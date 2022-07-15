@@ -12,7 +12,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use xtra::Address;
 use xtra_productivity::xtra_productivity;
-use xtras::SendAsyncSafe;
+use xtras::SendAsyncNext;
 use xtras::SendInterval;
 
 pub struct Actor {
@@ -96,15 +96,13 @@ impl Actor {
 
             match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
                 Ok((from_commit_txid, from_settlement_event_id)) => {
-                    // If we disconnect, we don't care.
-                    let _ = this
-                        .send_async_safe(Rollover {
-                            order_id: id,
-                            maker_peer_id,
-                            from_commit_txid,
-                            from_settlement_event_id,
-                        })
-                        .await;
+                    this.send_async_next(Rollover {
+                        order_id: id,
+                        maker_peer_id,
+                        from_commit_txid,
+                        from_settlement_event_id,
+                    })
+                    .await;
                 }
                 Err(reason) => {
                     tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
