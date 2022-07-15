@@ -163,8 +163,8 @@ impl Actor {
             short_funding_rate,
         } = msg;
 
-        fn next_rollover_span(parent: &tracing::Span) -> tracing::Span {
-            tracing::debug_span!(parent: parent, "next rollover message")
+        fn next_rollover_span() -> tracing::Span {
+            tracing::debug_span!("next rollover message")
         }
 
         let (mut framed, _, from_params) =

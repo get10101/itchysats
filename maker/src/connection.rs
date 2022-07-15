@@ -189,9 +189,7 @@ impl Connection {
 
         self.write
             .send(msg)
-            .timeout(TCP_TIMEOUT, |parent| {
-                tracing::debug_span!(parent: parent, "send to taker")
-            })
+            .timeout(TCP_TIMEOUT, || tracing::debug_span!("send to taker"))
             .await
             .with_context(|| format!("Failed to send msg {msg_str} to taker {taker_id}"))??;
         Ok(())
@@ -641,8 +639,8 @@ async fn upgrade(
 
     let first_message = read
         .try_next()
-        .timeout(Duration::from_secs(10), |parent| {
-            tracing::debug_span!(parent: parent, "receive message from taker")
+        .timeout(Duration::from_secs(10), || {
+            tracing::debug_span!("receive message from taker")
         })
         .await
         .context("No message from taker within 10 seconds")?

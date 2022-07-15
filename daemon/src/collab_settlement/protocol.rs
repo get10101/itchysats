@@ -62,8 +62,8 @@ pub async fn dialer(
 
     if let Decision::Reject = framed
         .next()
-        .timeout(DECISION_TIMEOUT, |parent| {
-            tracing::debug_span!(parent: parent, "receive decision")
+        .timeout(DECISION_TIMEOUT, || {
+            tracing::debug_span!("receive decision")
         })
         .await
         .with_context(|| {

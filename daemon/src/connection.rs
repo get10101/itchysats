@@ -178,8 +178,8 @@ impl Actor {
 
         let (mut write, mut read) = {
             let mut connection = TcpStream::connect(&maker_addr)
-                .timeout(self.connect_timeout, |parent| {
-                    tracing::debug_span!(parent: parent, "TcpStream connect")
+                .timeout(self.connect_timeout, || {
+                    tracing::debug_span!("TcpStream connect")
                 })
                 .await
                 .with_context(|| {
@@ -208,12 +208,12 @@ impl Actor {
                 environment: self.environment.into(),
             })
             .instrument(tracing::debug_span!("send hello"))
-            .timeout(TCP_TIMEOUT, |parent| parent.clone())
+            .timeout(TCP_TIMEOUT, already_instrumented)
             .await??;
 
         match read
             .try_next()
-            .timeout(TCP_TIMEOUT, |parent| tracing::debug_span!(parent: parent, "receive hello"))
+            .timeout(TCP_TIMEOUT, already_instrumented)
             .await
             .with_context(|| {
                 format!(

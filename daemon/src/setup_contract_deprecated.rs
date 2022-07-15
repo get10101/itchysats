@@ -690,8 +690,8 @@ pub async fn roll_over(
     })
 }
 
-fn stream_select_next_span(parent: &tracing::Span) -> tracing::Span {
-    tracing::debug_span!(parent: parent, "SetupMsg stream select_next_some")
+fn stream_select_next_span() -> tracing::Span {
+    tracing::debug_span!("SetupMsg stream select_next_some")
 }
 
 /// A convenience struct for storing PartyParams and PunishParams of both
