@@ -591,12 +591,9 @@ impl Endpoint {
         tracing::info!(%peer, "Connection established");
 
         for subscriber in &self.subscribers.connection_established {
-            if let Err(e) = subscriber
-                .send_async_safe(ConnectionEstablished { peer })
-                .await
-            {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
+            subscriber
+                .send_async_next(ConnectionEstablished { peer })
+                .await;
         }
     }
 
@@ -604,9 +601,7 @@ impl Endpoint {
         tracing::info!(%peer, "Connection dropped");
 
         for subscriber in &self.subscribers.connection_dropped {
-            if let Err(e) = subscriber.send_async_safe(ConnectionDropped { peer }).await {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
+            subscriber.send_async_next(ConnectionDropped { peer }).await
         }
     }
 
@@ -614,14 +609,11 @@ impl Endpoint {
         tracing::info!(address=%added, "Listen address added");
 
         for subscriber in &self.subscribers.listen_address_added {
-            if let Err(e) = subscriber
-                .send_async_safe(ListenAddressAdded {
+            subscriber
+                .send_async_next(ListenAddressAdded {
                     address: added.clone(),
                 })
-                .await
-            {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
+                .await;
         }
     }
 
@@ -629,14 +621,11 @@ impl Endpoint {
         tracing::info!(address=%removed, "Listen address removed");
 
         for subscriber in &self.subscribers.listen_address_removed {
-            if let Err(e) = subscriber
-                .send_async_safe(ListenAddressRemoved {
+            subscriber
+                .send_async_next(ListenAddressRemoved {
                     address: removed.clone(),
                 })
                 .await
-            {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
         }
     }
 }
