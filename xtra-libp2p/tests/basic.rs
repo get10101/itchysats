@@ -47,6 +47,8 @@ async fn hello_world() {
         ))
         .await
         .unwrap()
+        .unwrap()
+        .await
         .unwrap();
 
     let string = hello_world_dialer(bob_to_alice, "Bob").await.unwrap();
@@ -210,6 +212,8 @@ async fn cannot_open_substream_for_unhandled_protocol() {
         ))
         .await
         .unwrap()
+        .unwrap()
+        .await
         .unwrap_err();
 
     assert!(matches!(
@@ -260,6 +264,8 @@ async fn chooses_first_protocol_in_list_of_multiple() {
         ))
         .await
         .unwrap()
+        .unwrap()
+        .await
         .unwrap();
 
     assert_eq!(actual_protocol, "/hello-world/1.0.0");
@@ -299,6 +305,8 @@ async fn falls_back_to_next_protocol_if_unsupported() {
         ))
         .await
         .unwrap()
+        .unwrap()
+        .await
         .unwrap();
 
     assert_eq!(actual_protocol, "/hello-world/1.0.0");

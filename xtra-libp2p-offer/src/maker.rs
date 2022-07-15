@@ -36,7 +36,8 @@ impl Actor {
         let task = async move {
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
-                .await??;
+                .await??
+                .await?;
 
             protocol::send(stream, offers).await?;
 

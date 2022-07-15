@@ -24,6 +24,7 @@ use multistream_select::Version;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::time::Duration;
 use thiserror::Error;
 use tokio_extras::Tasks;
@@ -265,28 +266,24 @@ impl Endpoint {
         self.notify_connection_dropped(*peer).await;
     }
 
-    #[instrument(skip(self), ret, err)]
+    #[instrument(skip(control), ret, err)]
     async fn open_substream(
-        &mut self,
+        mut control: yamux::Control,
         peer: PeerId,
         protocols: Vec<&'static str>,
+        connection_timeout: Duration,
     ) -> Result<(&'static str, Substream), Error> {
-        let (control, _) = self
-            .controls
-            .get_mut(&peer)
-            .ok_or(Error::NoConnection(peer))?;
-
         let stream = control
             .open_stream()
             .instrument(tracing::debug_span!("open yamux stream"))
             .await?;
 
         let (protocol, stream) = tokio_extras::time::timeout(
-            self.connection_timeout,
+            connection_timeout,
             multistream_select::dialer_select_proto(stream, protocols, Version::V1),
             |parent| tracing::debug_span!(parent: parent, "dialer_select_proto", version = ?Version::V1)
         )
-        .instrument(tracing::debug_span!("timeout dialing select proto", timeout_secs = self.connection_timeout.as_secs()))
+        .instrument(tracing::debug_span!("timeout dialing select proto", timeout_secs = connection_timeout.as_secs()))
         .await
         .map_err(|_timeout| Error::NegotiationTimeoutReached)?
         .map_err(Error::NegotiationFailed)?;
@@ -517,7 +514,13 @@ impl Endpoint {
         );
     }
 
-    async fn handle(&mut self, msg: OpenSubstream<Single>) -> Result<Substream, Error> {
+    #[must_use]
+    async fn handle(
+        &mut self,
+        msg: OpenSubstream<Single>,
+        _: &mut Context<Self>,
+    ) -> Result<Pin<Box<dyn futures::Future<Output = Result<Substream, Error>> + Send>>, Error>
+    {
         let peer = msg.peer;
         let protocols = msg.protocols;
 
@@ -526,26 +529,53 @@ impl Endpoint {
             "Type-system enforces that we only try to negotiate one protocol"
         );
 
-        let (protocol, stream) = self.open_substream(peer, protocols.clone()).await?;
+        let (control, _) = self.controls.get(&peer).ok_or(Error::NoConnection(peer))?;
 
-        debug_assert!(
-            protocol == protocols[0],
-            "If negotiation is successful, must have selected the only protocol we sent."
-        );
+        let fut = {
+            let connection_timeout = self.connection_timeout;
+            let control = control.clone();
+            async move {
+                let (protocol, stream) =
+                    Self::open_substream(control, peer, protocols.clone(), connection_timeout)
+                        .await?;
 
-        Ok(stream)
+                debug_assert!(
+                    protocol == protocols[0],
+                    "If negotiation is successful, must have selected the only protocol we sent."
+                );
+
+                Ok(stream)
+            }
+        };
+
+        Ok(Box::pin(fut))
     }
 
+    #[must_use]
     async fn handle(
         &mut self,
         msg: OpenSubstream<Multiple>,
-    ) -> Result<(&'static str, Substream), Error> {
+    ) -> Result<
+        Pin<Box<dyn futures::Future<Output = Result<(&'static str, Substream), Error>> + Send>>,
+        Error,
+    > {
         let peer = msg.peer;
         let protocols = msg.protocols;
 
-        let (protocol, stream) = self.open_substream(peer, protocols).await?;
+        let (control, _) = self.controls.get(&peer).ok_or(Error::NoConnection(peer))?;
 
-        Ok((protocol, stream))
+        let fut = {
+            let connection_timeout = self.connection_timeout;
+            let control = control.clone();
+            async move {
+                let (protocol, stream) =
+                    Self::open_substream(control, peer, protocols, connection_timeout).await?;
+
+                Ok((protocol, stream))
+            }
+        };
+
+        Ok(Box::pin(fut))
     }
 
     async fn handle(&mut self, msg: NewListenAddress) {
