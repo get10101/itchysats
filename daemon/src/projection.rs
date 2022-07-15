@@ -58,7 +58,7 @@ use tracing::info_span;
 use tracing::Instrument;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
-use xtras::SendAsyncSafe;
+use xtras::SendAsyncNext;
 
 /// Store the latest state of `T` for display purposes
 /// (replaces previously stored values)
@@ -1115,7 +1115,7 @@ impl State {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _: Initialize) -> Result<()> {
+    async fn handle(&mut self, _: Initialize) {
         let mut stream = self.db.load_all_cfds::<Cfd>(self.state.network);
 
         let mut cfds = HashMap::new();
@@ -1141,8 +1141,6 @@ impl Actor {
                 .expect("we initialized the state above; qed"),
             self.state.quote,
         );
-
-        Ok(())
     }
 
     async fn handle(&mut self, msg: CfdChanged) {
@@ -1189,9 +1187,7 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we just started");
-        this.send_async_safe(Initialize)
-            .await
-            .expect("we just started");
+        this.send_async_next(Initialize).await;
 
         tokio_extras::spawn(&this.clone(), {
             let price_feed = self.price_feed.clone();

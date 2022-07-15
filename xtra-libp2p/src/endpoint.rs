@@ -34,6 +34,7 @@ use xtra::message_channel::MessageChannel;
 use xtra::Address;
 use xtra::Context;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncNext;
 use xtras::SendAsyncSafe;
 
 /// An actor for managing multiplexed connections over a given transport thus representing an
@@ -349,7 +350,8 @@ impl Endpoint {
                 }
             },
             move |error| async move {
-                let _ = this.send(ExistingConnectionFailed { peer, error }).await;
+                this.send_async_next(ExistingConnectionFailed { peer, error })
+                    .await;
             },
         );
 
@@ -419,14 +421,13 @@ impl Endpoint {
                     .await
                     .context("Dialing timed out")??;
 
-                    let _ = this
-                        .send_async_safe(NewConnection {
-                            peer,
-                            control,
-                            incoming_substreams,
-                            worker,
-                        })
-                        .await;
+                    this.send_async_next(NewConnection {
+                        peer,
+                        control,
+                        incoming_substreams,
+                        worker,
+                    })
+                    .await;
 
                     anyhow::Ok(())
                 };
@@ -434,7 +435,7 @@ impl Endpoint {
                 fut.instrument(tracing::debug_span!("Dial new connection"))
             },
             move |error| async move {
-                let _ = this.send(FailedToConnect { peer, error }).await;
+                this.send_async_next(FailedToConnect { peer, error }).await;
             },
         );
 
@@ -479,14 +480,13 @@ impl Endpoint {
                                     async move {
                                         let (peer, control, incoming_substreams, worker) =
                                             upgrade.await?;
-                                        this.send_async_safe(NewConnection {
+                                        this.send_async_next(NewConnection {
                                             peer,
                                             control,
                                             incoming_substreams,
                                             worker,
                                         })
-                                        .await
-                                        .context("can't send new connection message")?;
+                                        .await;
                                         Ok(())
                                     },
                                     move |e: anyhow::Error| async move {
@@ -591,12 +591,9 @@ impl Endpoint {
         tracing::info!(%peer, "Connection established");
 
         for subscriber in &self.subscribers.connection_established {
-            if let Err(e) = subscriber
-                .send_async_safe(ConnectionEstablished { peer })
-                .await
-            {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
+            subscriber
+                .send_async_next(ConnectionEstablished { peer })
+                .await;
         }
     }
 
@@ -604,9 +601,7 @@ impl Endpoint {
         tracing::info!(%peer, "Connection dropped");
 
         for subscriber in &self.subscribers.connection_dropped {
-            if let Err(e) = subscriber.send_async_safe(ConnectionDropped { peer }).await {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
+            subscriber.send_async_next(ConnectionDropped { peer }).await
         }
     }
 
@@ -614,14 +609,11 @@ impl Endpoint {
         tracing::info!(address=%added, "Listen address added");
 
         for subscriber in &self.subscribers.listen_address_added {
-            if let Err(e) = subscriber
-                .send_async_safe(ListenAddressAdded {
+            subscriber
+                .send_async_next(ListenAddressAdded {
                     address: added.clone(),
                 })
-                .await
-            {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
+                .await;
         }
     }
 
@@ -629,14 +621,11 @@ impl Endpoint {
         tracing::info!(address=%removed, "Listen address removed");
 
         for subscriber in &self.subscribers.listen_address_removed {
-            if let Err(e) = subscriber
-                .send_async_safe(ListenAddressRemoved {
+            subscriber
+                .send_async_next(ListenAddressRemoved {
                     address: removed.clone(),
                 })
                 .await
-            {
-                tracing::warn!("Unable to reach subscriber: {e:#}");
-            }
         }
     }
 }

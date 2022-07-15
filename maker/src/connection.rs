@@ -33,6 +33,7 @@ use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
 use xtras::AddressMap;
+use xtras::SendAsyncNext;
 use xtras::SendAsyncSafe;
 use xtras::SendInterval;
 
@@ -288,7 +289,7 @@ impl Actor {
         {
             Ok(listener) => listener,
             Err(error) => {
-                let _ = this.send_async_safe(ListenerFailed { error }).await;
+                this.send_async_next(ListenerFailed { error }).await;
                 return;
             }
         };

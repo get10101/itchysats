@@ -20,7 +20,7 @@ use rust_decimal::Decimal;
 use sqlite_db;
 use std::collections::HashMap;
 use xtra_productivity::xtra_productivity;
-use xtras::SendAsyncSafe;
+use xtras::SendAsyncNext;
 
 pub struct Actor {
     db: sqlite_db::Connection,
@@ -47,9 +47,7 @@ impl xtra::Actor for Actor {
 
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("we are alive");
-        this.send_async_safe(Initialize)
-            .await
-            .expect("we just started");
+        this.send_async_next(Initialize).await;
     }
 
     async fn stopped(self) -> Self::Stop {}
