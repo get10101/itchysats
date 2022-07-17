@@ -36,6 +36,8 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::time::Duration;
 use tokio_extras::FutureExt;
+use tracing::instrument;
+use tracing::Instrument;
 use xtra::prelude::MessageChannel;
 
 /// How long contract setup protocol waits for the next message before giving up
@@ -48,6 +50,12 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 /// Given an initial set of parameters, sets up the CFD contract with
 /// the counterparty.
 #[allow(clippy::too_many_arguments)]
+#[instrument(
+    name = "Setup contract"
+    skip_all,
+    err
+)]
+// TODO(restioson) semantic spans lining up with the logs here
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl Stream<Item = SetupMsg> + Unpin,
@@ -59,6 +67,9 @@ pub async fn new(
     position: Position,
     n_payouts: usize,
 ) -> Result<Dlc> {
+    tracing::debug!(?setup_params, ?role, ?position, ?n_payouts);
+    tracing::trace!(?oracle_pk, ?announcement);
+
     let (sk, pk) = keypair::new(&mut rand::thread_rng());
     let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
     let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
@@ -69,6 +80,9 @@ pub async fn new(
             identity_pk: pk,
             fee_rate: setup_params.tx_fee_rate,
         })
+        .instrument(tracing::debug_span!(
+            "Send BuildPartyParams to wallet actor"
+        ))
         .await
         .context("Failed to send message to wallet actor")?
         .context("Failed to build party params")?;
@@ -83,6 +97,7 @@ pub async fn new(
     }
 
     sink.send(SetupMsg::Msg0(Msg0::from((own_params.clone(), own_punish))))
+        .instrument(tracing::debug_span!("Send Msg0"))
         .await
         .context("Failed to send Msg0")?;
     let msg0 = stream
@@ -147,12 +162,14 @@ pub async fn new(
             )
         }
     })
+    .instrument(tracing::debug_span!("Create CFD transactions"))
     .await?
     .context("Failed to create CFD transactions")?;
 
     tracing::info!("Created CFD transactions");
 
     sink.send(SetupMsg::Msg1(Msg1::from(own_cfd_txs.clone())))
+        .instrument(tracing::debug_span!("Send Msg1"))
         .await
         .context("Failed to send Msg1")?;
 
@@ -198,23 +215,27 @@ pub async fn new(
     )
     .context("Commit adaptor signature does not verify")?;
 
-    for own_grouped_cets in own_cets.clone() {
-        let counterparty_cets = msg1
-            .cets
-            .get(&own_grouped_cets.event.id)
-            .cloned()
-            .context("Expect event to exist in msg")?;
+    {
+        let verify_own = tracing::debug_span!("Verify own cets");
+        for own_grouped_cets in own_cets.clone() {
+            let counterparty_cets = msg1
+                .cets
+                .get(&own_grouped_cets.event.id)
+                .cloned()
+                .context("Expect event to exist in msg")?;
 
-        verify_cets(
-            (oracle_pk, own_grouped_cets.event.nonce_pks.clone()),
-            params.counterparty.clone(),
-            own_grouped_cets.cets,
-            counterparty_cets,
-            commit_desc.clone(),
-            commit_amount,
-        )
-        .await
-        .context("CET signatures don't verify")?;
+            verify_cets(
+                (oracle_pk, own_grouped_cets.event.nonce_pks.clone()),
+                params.counterparty.clone(),
+                own_grouped_cets.cets,
+                counterparty_cets,
+                commit_desc.clone(),
+                commit_amount,
+            )
+            .instrument(verify_own.clone())
+            .await
+            .context("CET signatures don't verify")?;
+        }
     }
 
     let lock_tx = own_cfd_txs.lock;
@@ -233,12 +254,14 @@ pub async fn new(
 
     let mut signed_lock_tx = sign_channel
         .send(wallet::Sign { psbt: lock_tx })
+        .instrument(tracing::debug_span!("Send Sign to wallet actor"))
         .await
         .context("Failed to send message to wallet actor")?
         .context("Failed to sign transaction")?;
     sink.send(SetupMsg::Msg2(Msg2 {
         signed_lock: signed_lock_tx.clone(),
     }))
+    .instrument(tracing::debug_span!("Send Msg2"))
     .await
     .context("Failed to send Msg2")?;
     let msg2 = stream
@@ -248,9 +271,12 @@ pub async fn new(
         .with_context(|| format_expect_msg_within("Msg2", CONTRACT_SETUP_MSG_TIMEOUT))?
         .context("Empty stream instead of Msg2")?
         .try_into_msg2()?;
-    signed_lock_tx
-        .combine(msg2.signed_lock)
-        .context("Failed to merge lock PSBTs")?;
+
+    tracing::debug_span!("Merge lock PSBTs").in_scope(|| {
+        signed_lock_tx
+            .combine(msg2.signed_lock)
+            .context("Failed to merge lock PSBTs")
+    })?;
 
     tracing::info!("Exchanged signed lock transaction");
 
@@ -315,11 +341,13 @@ pub async fn new(
             })
             .collect::<Result<HashMap<_, _>>>()
     }})
+    .instrument(tracing::debug_span!("Add counterparty adaptor signatures to our CETs"))
     .await??;
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
     // monitoring
     sink.send(SetupMsg::Msg3(Msg3))
+        .instrument(tracing::debug_span!("Send Msg3"))
         .await
         .context("Failed to send Msg3")?;
     let _ = stream

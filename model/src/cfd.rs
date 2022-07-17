@@ -2378,6 +2378,7 @@ impl CollaborativeSettlement {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(err)]
 pub fn calculate_payouts(
     position: Position,
     role: Role,
