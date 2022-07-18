@@ -285,6 +285,16 @@ impl Network {
             Network::Regtest { withdraw, .. } => withdraw,
         }
     }
+
+    /// Stringified network kind
+    pub fn kind(&self) -> &str {
+        match self {
+            Network::Mainnet { .. } => "mainnet",
+            Network::Testnet { .. } => "testnet",
+            Network::Signet { .. } => "signet",
+            Network::Regtest { .. } => "regtest",
+        }
+    }
 }
 
 impl std::fmt::Debug for Network {
@@ -303,6 +313,7 @@ async fn main() -> Result<()> {
     let opts = Opts::parse();
 
     let network = opts.network();
+    let service_name = "taker_".to_string() + network.kind();
     let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
     logger::init(
@@ -310,7 +321,7 @@ async fn main() -> Result<()> {
         opts.json,
         opts.instrumentation,
         opts.tokio_console,
-        "taker",
+        &service_name,
         &opts.collector_endpoint,
     )
     .context("initialize logger")?;
