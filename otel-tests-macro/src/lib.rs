@@ -11,7 +11,10 @@ pub fn otel_test(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     let name = &sig.ident;
     let attrs = fn_item.attrs;
 
-    let test = if attrs.is_empty() {
+    let test = if !attrs
+        .iter()
+        .any(|attr| attr.path.segments.last().unwrap().ident == "test")
+    {
         quote!(#[otel_tests::__reexport::tokio::test])
     } else {
         quote!()
