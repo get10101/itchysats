@@ -5,6 +5,7 @@ use futures::FutureExt as _;
 use std::any::Any;
 use std::any::TypeId;
 use std::time::Duration;
+use tracing::Instrument;
 use tracing::Span;
 
 pub trait FutureExt: Future + Sized {
@@ -37,7 +38,10 @@ where
             "RemoteHandle<()> is a handle to already spawned task",
         );
 
-        let (future, handle) = self.remote_handle();
+        let span = tracing::trace_span!(parent: Span::none(), "Spawned task");
+        span.follows_from(Span::current());
+
+        let (future, handle) = self.instrument(span).remote_handle();
         // we want to disallow calls to tokio::spawn outside FutureExt
         #[allow(clippy::disallowed_methods)]
         tokio::spawn(future);
