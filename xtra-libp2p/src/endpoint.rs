@@ -477,8 +477,9 @@ impl Endpoint {
                                 let this = this.clone();
                                 tasks.add_fallible(
                                     async move {
-                                        let (peer, control, incoming_substreams, worker) =
-                                            upgrade.await?;
+                                        let (peer, control, incoming_substreams, worker) = upgrade
+                                            .await
+                                            .context("Failed to connect with peer: {peer}")?;
                                         this.send_async_next(NewConnection {
                                             peer,
                                             control,
@@ -489,7 +490,7 @@ impl Endpoint {
                                         Ok(())
                                     },
                                     move |e: anyhow::Error| async move {
-                                        tracing::warn!("Could not upgrade connection {e:#}");
+                                        tracing::warn!("Could not upgrade connection: {e:#}");
                                     },
                                 );
                             }
