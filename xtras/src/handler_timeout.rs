@@ -36,12 +36,15 @@ where
         }
 
         loop {
-            let msg = self.ctx.next_message().await;
+            let mut fut = self.ctx.tick(self.ctx.next_message().await, &mut actor);
+            let span = fut.get_or_create_span().clone();
 
-            match timeout(self.timeout, self.ctx.tick(msg, &mut actor)).await {
+            match timeout(self.timeout, fut).await {
                 Ok(ControlFlow::Continue(())) => (),
                 Ok(ControlFlow::Break(())) => break actor.stopped().await,
                 Err(_elapsed) => {
+                    let _g = span.enter();
+                    span.record("interrupted", &"timed_out");
                     tracing::warn!(
                         timeout_seconds = self.timeout.as_secs(),
                         "Handler execution timed out"
