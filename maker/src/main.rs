@@ -15,10 +15,10 @@ use daemon::N_PAYOUTS;
 use maker::routes;
 use maker::ActorSystem;
 use maker::Opts;
-use maker::Withdraw;
 use model::olivia;
 use model::SETTLEMENT_INTERVAL;
 use shared_bin::catchers::default_catchers;
+use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
 use shared_bin::logger;
 use std::net::SocketAddr;
@@ -158,7 +158,7 @@ async fn main() -> Result<()> {
     )?;
 
     let (supervisor, price_feed) = Supervisor::with_policy(
-        move || xtra_bitmex_price_feed::Actor::new(opts.network.price_feed_network()),
+        move || xtra_bitmex_price_feed::Actor::new(opts.network.bitmex_network()),
         always_restart::<xtra_bitmex_price_feed::Error>(),
     );
 

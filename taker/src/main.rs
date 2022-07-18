@@ -4,10 +4,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
-use clap::Subcommand;
 use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::Address;
-use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::FeeRate;
 use daemon::connection::connect;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
@@ -30,6 +27,8 @@ use model::SETTLEMENT_INTERVAL;
 use rocket::fairing::AdHoc;
 use rocket::fairing::Fairing;
 use shared_bin::catchers::default_catchers;
+use shared_bin::cli::Network;
+use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
@@ -45,12 +44,10 @@ mod routes;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
-const MAINNET_ELECTRUM: &str = "ssl://blockstream.info:700";
 const MAINNET_MAKER: &str = "mainnet.itchysats.network:10000";
 const MAINNET_MAKER_ID: &str = "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607";
 const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY";
 
-const TESTNET_ELECTRUM: &str = "ssl://blockstream.info:993";
 const TESTNET_MAKER: &str = "testnet.itchysats.network:9999";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
 const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
@@ -125,10 +122,7 @@ struct Opts {
 
 impl Opts {
     fn network(&self) -> Network {
-        self.network.clone().unwrap_or_else(|| Network::Mainnet {
-            electrum: MAINNET_ELECTRUM.to_string(),
-            withdraw: None,
-        })
+        self.network.clone().unwrap_or_default()
     }
 
     fn maker(&self) -> Result<(String, x25519_dalek::PublicKey, PeerId)> {
@@ -181,131 +175,6 @@ fn parse_umbrel_seed(s: &str) -> Result<[u8; 32]> {
     let mut bytes = [0u8; 32];
     hex::decode_to_slice(s, &mut bytes)?;
     Ok(bytes)
-}
-
-#[derive(Parser, Clone)]
-enum Network {
-    /// Run on mainnet (default)
-    Mainnet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = MAINNET_ELECTRUM)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on testnet
-    Testnet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = TESTNET_ELECTRUM)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on signet
-    Signet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on regtest
-    Regtest {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-}
-
-#[derive(Subcommand, Clone)]
-enum Withdraw {
-    Withdraw {
-        /// Optionally specify the amount of Bitcoin to be withdrawn. If not specified the wallet
-        /// will be drained. Amount is to be specified with denomination, e.g. "0.1 BTC"
-        #[clap(long)]
-        amount: Option<Amount>,
-        /// Optionally specify the fee-rate for the transaction. The fee-rate is specified as sats
-        /// per vbyte, e.g. 5.0
-        #[clap(long)]
-        fee: Option<f32>,
-        /// The address to receive the Bitcoin.
-        #[clap(long)]
-        address: Address,
-    },
-}
-
-impl Network {
-    fn electrum(&self) -> &str {
-        match self {
-            Network::Mainnet { electrum, .. } => electrum,
-            Network::Testnet { electrum, .. } => electrum,
-            Network::Signet { electrum, .. } => electrum,
-            Network::Regtest { electrum, .. } => electrum,
-        }
-    }
-
-    fn bitcoin_network(&self) -> bitcoin::Network {
-        match self {
-            Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
-            Network::Testnet { .. } => bitcoin::Network::Testnet,
-            Network::Signet { .. } => bitcoin::Network::Signet,
-            Network::Regtest { .. } => bitcoin::Network::Regtest,
-        }
-    }
-
-    fn price_feed_network(&self) -> xtra_bitmex_price_feed::Network {
-        match self {
-            Network::Mainnet { .. } => xtra_bitmex_price_feed::Network::Mainnet,
-            Network::Testnet { .. } | Network::Signet { .. } | Network::Regtest { .. } => {
-                xtra_bitmex_price_feed::Network::Testnet
-            }
-        }
-    }
-
-    fn data_dir(&self, base: PathBuf) -> PathBuf {
-        match self {
-            Network::Mainnet { .. } => base.join("mainnet"),
-            Network::Testnet { .. } => base.join("testnet"),
-            Network::Signet { .. } => base.join("signet"),
-            Network::Regtest { .. } => base.join("regtest"),
-        }
-    }
-
-    fn withdraw(&self) -> &Option<Withdraw> {
-        match self {
-            Network::Mainnet { withdraw, .. } => withdraw,
-            Network::Testnet { withdraw, .. } => withdraw,
-            Network::Signet { withdraw, .. } => withdraw,
-            Network::Regtest { withdraw, .. } => withdraw,
-        }
-    }
-
-    /// Stringified network kind
-    pub fn kind(&self) -> &str {
-        match self {
-            Network::Mainnet { .. } => "mainnet",
-            Network::Testnet { .. } => "testnet",
-            Network::Signet { .. } => "signet",
-            Network::Regtest { .. } => "regtest",
-        }
-    }
-}
-
-impl std::fmt::Debug for Network {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Network::Mainnet { .. } => "mainnet".fmt(f),
-            Network::Testnet { .. } => "testnet".fmt(f),
-            Network::Signet { .. } => "signet".fmt(f),
-            Network::Regtest { .. } => "regtest".fmt(f),
-        }
-    }
 }
 
 #[rocket::main]
@@ -438,7 +307,7 @@ async fn main() -> Result<()> {
         Err(_) => Environment::Binary,
     };
 
-    let price_feed_network = network.price_feed_network();
+    let bitmex_network = network.bitmex_network();
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -451,7 +320,7 @@ async fn main() -> Result<()> {
                 monitor::Actor::new(db.clone(), electrum, executor)
             }
         },
-        move || xtra_bitmex_price_feed::Actor::new(price_feed_network),
+        move || xtra_bitmex_price_feed::Actor::new(bitmex_network),
         N_PAYOUTS,
         Duration::from_secs(10),
         projection_actor.clone(),
