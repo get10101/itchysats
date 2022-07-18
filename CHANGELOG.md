@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add new argument to the maker: `ignore-migration-errors`. If enabled, the maker will start if an error occurred when opening the database, if not, it will fail fast. This can come handy to prevent accidentally creating a new empty database in case database migration was unsuccessful.
 - New metrics: the maker tracks how many offers have been sent (`offer_messages_sent_total`) and the taker tracks how many offers have been received (`offer_messages_received_total`).
+- Allow taker to provide extended private key as argument when starting. This key will be used to derive the internal wallet according to (Bip84)[https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki].
 
 ## [0.4.21] - 2022-06-27
 
