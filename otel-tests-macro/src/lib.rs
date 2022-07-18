@@ -2,6 +2,11 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::ItemFn;
 
+/// Like `#[tokio::test]`, but instrument the test with a span matching the test name, and export
+/// the span over OTLP to Jaeger for local debugging. To enable the span exporting, the
+/// `ITCHYSATS_TEST_INSTRUMENTATION` env var should be set to `1`. It is disabled by default for CI,
+/// as these tests may fail if OTLP exporting is enabled but Jaeger is not active, since this will
+/// slow everything down and lead to timeouts in the tests triggering.
 #[proc_macro_attribute]
 pub fn otel_test(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     let fn_item = syn::parse::<ItemFn>(item).unwrap();
