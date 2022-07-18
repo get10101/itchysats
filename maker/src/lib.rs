@@ -171,4 +171,14 @@ impl Network {
             Network::Regtest { withdraw, .. } => withdraw,
         }
     }
+
+    /// Stringified network kind
+    pub fn kind(&self) -> &str {
+        match self {
+            Network::Mainnet { .. } => "mainnet",
+            Network::Testnet { .. } => "testnet",
+            Network::Signet { .. } => "signet",
+            Network::Regtest { .. } => "regtest",
+        }
+    }
 }

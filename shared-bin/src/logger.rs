@@ -26,7 +26,7 @@ pub fn init(
     json_format: bool,
     instrumentation: bool,
     use_tokio_console: bool,
-    service_name: &'static str,
+    service_name: &str,
     collector_endpoint: &str,
 ) -> Result<()> {
     if level == LevelFilter::OFF {
@@ -83,8 +83,10 @@ pub fn init(
         })
         .expect("to be able to set error handler");
 
-        let cfg = trace::Config::default()
-            .with_resource(Resource::new([KeyValue::new("service.name", service_name)]));
+        let cfg = trace::Config::default().with_resource(Resource::new([KeyValue::new(
+            "service.name",
+            service_name.to_string(),
+        )]));
 
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
