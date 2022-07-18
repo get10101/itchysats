@@ -5548,14 +5548,13 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/comit-network/xtra?branch=span-late-create-improved#58030512b5d133a30bec976b1056de14ab3517d9"
+source = "git+https://github.com/Restioson/xtra?rev=a0c1ad6b6141e28417dadeaaf9595b405153f84e#a0c1ad6b6141e28417dadeaaf9595b405153f84e"
 dependencies = [
  "async-trait",
  "catty",
  "event-listener",
  "futures-core",
  "futures-sink",
- "futures-timer",
  "futures-util",
  "pin-project-lite",
  "spin 0.9.3",

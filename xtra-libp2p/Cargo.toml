@@ -21,7 +21,7 @@ tokio = { version = "1", features = ["time", "tracing"] }
 tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tracing = "0.1"
 void = "1"
-xtra = { version = "0.6", features = ["with-tokio-1"] }
+xtra = { version = "0.6", features = ["tokio"] }
 xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 xtras = { path = "../xtras" }
 yamux = "0.10"
