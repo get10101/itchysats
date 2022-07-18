@@ -45,6 +45,7 @@ use sqlite_db;
 use std::collections::HashSet;
 use time::Duration;
 use tokio_extras::FutureExt;
+use tracing::instrument;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -292,6 +293,7 @@ where
         + xtra::Handler<connection::RegisterRollover, Return = ()>,
     W: 'static,
 {
+    #[instrument(skip(self, taker_id, this), err)]
     async fn handle_propose_rollover(
         &mut self,
         RolloverProposal { order_id, .. }: RolloverProposal,
@@ -332,6 +334,7 @@ where
     W: xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
         + xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>,
 {
+    #[instrument(skip(self, taker_id, this), err)]
     async fn handle_take_order(
         &mut self,
         taker_id: Identity,
@@ -719,6 +722,7 @@ where
     T: xtra::Handler<connection::settlement::Response, Return = Result<()>>,
     W: 'static + Send,
 {
+    #[instrument(skip(self, taker_id, this), err)]
     async fn handle_propose_settlement(
         &mut self,
         taker_id: Identity,
