@@ -1,3 +1,4 @@
+use crate::bitcoin::util::bip32::ExtendedPrivKey;
 use crate::routes::IdentityInfo;
 use anyhow::bail;
 use anyhow::Context;
@@ -115,6 +116,11 @@ struct Opts {
 
     #[clap(short, long, parse(try_from_str = parse_umbrel_seed))]
     umbrel_seed: Option<[u8; 32]>,
+
+    /// If provided will be used for internal wallet instead of a random key or umbrel_seed. The
+    /// keys will be derived according to Bip84.
+    #[clap(short, long)]
+    pub wallet_xprv: Option<ExtendedPrivKey>,
 }
 
 impl Opts {
@@ -344,6 +350,11 @@ async fn main() -> Result<()> {
             let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
             (ext_priv_key, identities, web_password)
         }
+    };
+
+    let ext_priv_key = match opts.wallet_xprv {
+        Some(wallet_xprv) => wallet_xprv,
+        None => ext_priv_key,
     };
 
     let mut tasks = Tasks::default();
