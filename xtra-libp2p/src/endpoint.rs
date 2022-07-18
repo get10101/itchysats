@@ -487,7 +487,7 @@ impl Endpoint {
                                                     Some(peer_id) => format!(
                                                         "Failed to connect with peer: {peer_id}"
                                                     ),
-                                                    None => "Failed to connect with peer".into(),
+                                                    None => format!("Failed to connect with multi-address: {remote_addr}"),
                                                 }
                                             })?;
                                         this.send_async_next(NewConnection {
