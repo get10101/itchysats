@@ -473,13 +473,23 @@ impl Endpoint {
                     loop {
                         let event = stream.next().await.context("Listener closed")?;
                         match event {
-                            Ok(ListenerEvent::Upgrade { upgrade, .. }) => {
+                            Ok(ListenerEvent::Upgrade {
+                                upgrade,
+                                remote_addr,
+                                ..
+                            }) => {
                                 let this = this.clone();
                                 tasks.add_fallible(
                                     async move {
-                                        let (peer, control, incoming_substreams, worker) = upgrade
-                                            .await
-                                            .context("Failed to connect with peer: {peer}")?;
+                                        let (peer, control, incoming_substreams, worker) =
+                                            upgrade.await.with_context(|| {
+                                                match PeerId::try_from_multiaddr(&remote_addr) {
+                                                    Some(peer_id) => format!(
+                                                        "Failed to connect with peer: {peer_id}"
+                                                    ),
+                                                    None => "Failed to connect with peer".into(),
+                                                }
+                                            })?;
                                         this.send_async_next(NewConnection {
                                             peer,
                                             control,
