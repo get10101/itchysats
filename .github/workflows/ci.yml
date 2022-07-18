@@ -133,4 +133,5 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install gcc-aarch64-linux-gnu
+          sudo apt-get install g++-aarch64-linux-gnu
       - run: cargo build --target=aarch64-unknown-linux-gnu --bins

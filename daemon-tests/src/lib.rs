@@ -43,10 +43,7 @@ use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_extras::Tasks;
-use tracing::subscriber::DefaultGuard;
-use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing::instrument;
 use xtra::Actor;
 use xtra_bitmex_price_feed::Quote;
 use xtra_libp2p::libp2p::Multiaddr;
@@ -61,6 +58,7 @@ fn oracle_pk() -> XOnlyPublicKey {
         .unwrap()
 }
 
+#[instrument]
 pub async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start(&MakerConfig::default()).await;
     let taker = Taker::start(
@@ -73,7 +71,7 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
@@ -112,7 +110,7 @@ impl Default for MakerConfig {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
@@ -176,6 +174,7 @@ impl Maker {
         &mut self.feeds.connected_takers
     }
 
+    #[instrument(name = "Start maker", skip_all)]
     pub async fn start(config: &MakerConfig) -> Self {
         let port = match config.dedicated_port {
             Some(port) => port,
@@ -350,6 +349,7 @@ impl Taker {
         &mut self.system.maker_online_status_feed_receiver
     }
 
+    #[instrument(name = "Start taker", skip_all)]
     pub async fn start(
         config: &TakerConfig,
         maker_address: SocketAddr,
@@ -544,27 +544,6 @@ pub fn dummy_offer_params(position_maker: Position) -> maker::cfd::OfferParams {
 
 fn dummy_price() -> Decimal {
     dec!(50_000)
-}
-
-pub fn init_tracing() -> DefaultGuard {
-    let filter = EnvFilter::from_default_env()
-        // apply warning level globally
-        .add_directive(LevelFilter::WARN.into())
-        // log traces from test itself
-        .add_directive("happy_path=debug".parse().unwrap())
-        .add_directive("wire=trace".parse().unwrap())
-        .add_directive("taker=debug".parse().unwrap())
-        .add_directive("maker=debug".parse().unwrap())
-        .add_directive("daemon=debug".parse().unwrap())
-        .add_directive("xtra_libp2p=debug".parse().unwrap())
-        .add_directive("xtra_libp2p_offer=debug".parse().unwrap())
-        .add_directive("xtra_libp2p_ping=debug".parse().unwrap())
-        .add_directive("rocket=warn".parse().unwrap());
-
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_test_writer()
-        .set_default()
 }
 
 pub async fn mock_oracle_announcements(
