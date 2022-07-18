@@ -415,6 +415,7 @@ impl Actor {
         }
     }
 
+    #[tracing::instrument("Sync monitor", skip_all, err)]
     async fn sync(&mut self) -> Result<()> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on

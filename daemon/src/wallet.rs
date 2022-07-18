@@ -142,23 +142,29 @@ impl<DB> Actor<ElectrumBlockchain, DB>
 where
     DB: BatchDatabase,
 {
+    #[tracing::instrument(name = "Sync wallet", skip_all, err)]
     fn sync_internal(&mut self) -> Result<WalletInfo> {
         let now = Instant::now();
         tracing::trace!(target : "wallet", "Wallet sync started");
 
-        self.wallet
-            .sync(&self.blockchain_client, SyncOptions::default())
-            .context("Failed to sync wallet")?;
-
-        let balance = self.wallet.get_balance()?;
-
-        let utxo_values = Data::new(
+        tracing::debug_span!("Sync wallet database with blockchain").in_scope(|| {
             self.wallet
-                .list_unspent()?
-                .into_iter()
-                .map(|utxo| utxo.txout.value as f64)
-                .collect::<Vec<_>>(),
-        );
+                .sync(&self.blockchain_client, SyncOptions::default())
+                .context("Failed to sync wallet")
+        })?;
+
+        let balance =
+            tracing::debug_span!("Get wallet balance").in_scope(|| self.wallet.get_balance())?;
+
+        let utxo_values = tracing::debug_span!("Collect UTXO values").in_scope(|| {
+            Ok::<_, bdk::Error>(Data::new(
+                self.wallet
+                    .list_unspent()?
+                    .into_iter()
+                    .map(|utxo| utxo.txout.value as f64)
+                    .collect::<Vec<_>>(),
+            ))
+        })?;
 
         BALANCE_GAUGE.set(balance as f64);
         NUM_UTXO_GAUGE.set(utxo_values.len() as f64);
