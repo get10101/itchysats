@@ -4052,6 +4052,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
+ "bitmex-stream",
+ "clap",
  "console-subscriber",
  "daemon",
  "http-api-problem",

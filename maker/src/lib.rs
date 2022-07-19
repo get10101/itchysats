@@ -1,9 +1,7 @@
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use clap::Parser;
-use clap::Subcommand;
 use daemon::bdk;
-use daemon::bdk::bitcoin;
-use daemon::bdk::bitcoin::Amount;
+use shared_bin::cli::Network;
 use shared_bin::logger::LevelFilter;
 use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
 use std::net::SocketAddr;
@@ -67,118 +65,4 @@ pub struct Opts {
 
     #[clap(subcommand)]
     pub network: Network,
-}
-
-#[derive(Parser)]
-pub enum Network {
-    /// Run on mainnet.
-    Mainnet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://blockstream.info:700")]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on testnet.
-    Testnet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long, default_value = "ssl://blockstream.info:993")]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on signet
-    Signet {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-    /// Run on regtest
-    Regtest {
-        /// URL to the electrum backend to use for the wallet.
-        #[clap(long)]
-        electrum: String,
-
-        #[clap(subcommand)]
-        withdraw: Option<Withdraw>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum Withdraw {
-    Withdraw {
-        /// Optionally specify the amount of Bitcoin to be withdrawn. If not specified the wallet
-        /// will be drained. Amount is to be specified with denomination, e.g. "0.1 BTC"
-        #[clap(long)]
-        amount: Option<Amount>,
-        /// Optionally specify the fee-rate for the transaction. The fee-rate is specified as sats
-        /// per vbyte, e.g. 5.0
-        #[clap(long)]
-        fee: Option<f32>,
-        /// The address to receive the Bitcoin.
-        #[clap(long)]
-        address: bdk::bitcoin::Address,
-    },
-}
-
-impl Network {
-    pub fn electrum(&self) -> &str {
-        match self {
-            Network::Mainnet { electrum, .. } => electrum,
-            Network::Testnet { electrum, .. } => electrum,
-            Network::Signet { electrum, .. } => electrum,
-            Network::Regtest { electrum, .. } => electrum,
-        }
-    }
-
-    pub fn bitcoin_network(&self) -> bitcoin::Network {
-        match self {
-            Network::Mainnet { .. } => bitcoin::Network::Bitcoin,
-            Network::Testnet { .. } => bitcoin::Network::Testnet,
-            Network::Signet { .. } => bitcoin::Network::Signet,
-            Network::Regtest { .. } => bitcoin::Network::Regtest,
-        }
-    }
-
-    pub fn price_feed_network(&self) -> xtra_bitmex_price_feed::Network {
-        match self {
-            Network::Mainnet { .. } => xtra_bitmex_price_feed::Network::Mainnet,
-            Network::Testnet { .. } | Network::Signet { .. } | Network::Regtest { .. } => {
-                xtra_bitmex_price_feed::Network::Testnet
-            }
-        }
-    }
-
-    pub fn data_dir(&self, base: PathBuf) -> PathBuf {
-        match self {
-            Network::Mainnet { .. } => base.join("mainnet"),
-            Network::Testnet { .. } => base.join("testnet"),
-            Network::Signet { .. } => base.join("signet"),
-            Network::Regtest { .. } => base.join("regtest"),
-        }
-    }
-
-    pub fn withdraw(&self) -> &Option<Withdraw> {
-        match self {
-            Network::Mainnet { withdraw, .. } => withdraw,
-            Network::Testnet { withdraw, .. } => withdraw,
-            Network::Signet { withdraw, .. } => withdraw,
-            Network::Regtest { withdraw, .. } => withdraw,
-        }
-    }
-
-    /// Stringified network kind
-    pub fn kind(&self) -> &str {
-        match self {
-            Network::Mainnet { .. } => "mainnet",
-            Network::Testnet { .. } => "testnet",
-            Network::Signet { .. } => "signet",
-            Network::Regtest { .. } => "regtest",
-        }
-    }
 }
