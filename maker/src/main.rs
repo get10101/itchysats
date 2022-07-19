@@ -23,7 +23,6 @@ use shared_bin::fairings;
 use shared_bin::logger;
 use std::net::SocketAddr;
 use tokio_extras::Tasks;
-use xtra::Actor;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::Supervisor;
 
@@ -80,14 +79,12 @@ async fn main() -> Result<()> {
     let mut wallet_dir = data_dir.clone();
 
     wallet_dir.push(MAKER_WALLET_ID);
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
+    let (wallet, wallet_feed_receiver) = wallet::Actor::spawn(
         opts.network.electrum(),
         ext_priv_key,
         wallet_dir,
         MAKER_WALLET_ID.to_string(),
     )?;
-
-    let wallet = wallet.create(None).spawn(&mut tasks);
 
     if let Some(Withdraw::Withdraw {
         amount,
