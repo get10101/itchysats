@@ -29,7 +29,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
+use tokio::runtime::Handle;
 use tokio::sync::watch;
+use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -98,12 +100,12 @@ pub struct Actor<B, DB> {
 pub struct TransactionAlreadyInBlockchain;
 
 impl Actor<ElectrumBlockchain, sled::Tree> {
-    pub fn new(
+    pub fn spawn(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
         db_path: PathBuf,
         wallet_name: String,
-    ) -> Result<(Self, watch::Receiver<Option<WalletInfo>>)> {
+    ) -> Result<(xtra::Address<Self>, watch::Receiver<Option<WalletInfo>>)> {
         let client = bdk::electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
 
@@ -134,7 +136,11 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
             blockchain_client: ElectrumBlockchain::from(client),
         };
 
-        Ok((actor, receiver))
+        let (addr, fut) = actor.create(None).run();
+        let handle = Handle::current();
+        std::thread::spawn(move || handle.block_on(fut));
+
+        Ok((addr, receiver))
     }
 }
 
@@ -448,7 +454,6 @@ mod tests {
     use rand::thread_rng;
     use std::collections::HashSet;
     use tokio_extras::Tasks;
-    use xtra::Actor as _;
 
     impl Actor<(), bdk::database::MemoryDatabase> {
         pub fn new_offline(

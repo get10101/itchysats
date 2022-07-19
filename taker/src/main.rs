@@ -38,7 +38,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio_extras::Tasks;
-use xtra::Actor;
 
 mod routes;
 
@@ -241,14 +240,12 @@ async fn main() -> Result<()> {
 
     let mut wallet_dir = data_dir.clone();
     wallet_dir.push(TAKER_WALLET_ID);
-    let (wallet, wallet_feed_receiver) = wallet::Actor::new(
+    let (wallet, wallet_feed_receiver) = wallet::Actor::spawn(
         network.electrum(),
         ext_priv_key,
         wallet_dir,
         TAKER_WALLET_ID.to_string(),
     )?;
-
-    let wallet = wallet.create(None).spawn(&mut tasks);
 
     if let Some(Withdraw::Withdraw {
         amount,
