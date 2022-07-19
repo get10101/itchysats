@@ -124,22 +124,8 @@ impl Actor {
                     })
                     .await?;
             }
-            CetTimelockExpiredPostOracleAttestation { cet } => {
-                let _ = self
-                    .monitor_cet_finality
-                    .send_async_safe(MonitorCetFinality {
-                        order_id: event.id,
-                        cet: cet.clone(),
-                    })
-                    .await?;
-                self.try_broadcast_transaction
-                    .send_async_safe(TryBroadcastTransaction {
-                        tx: cet,
-                        kind: TransactionKind::Cet,
-                    })
-                    .await?;
-            }
-            OracleAttestedPostCetTimelock { cet, .. } => {
+            CetTimelockExpiredPostOracleAttestation { cet }
+            | OracleAttestedPostCetTimelock { cet, .. } => {
                 let _ = self
                     .monitor_cet_finality
                     .send_async_safe(MonitorCetFinality {
