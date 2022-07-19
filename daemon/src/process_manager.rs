@@ -141,17 +141,10 @@ impl Actor {
                     .await?;
             }
             OracleAttestedPriorCetTimelock {
-                commit_tx: Some(commit_tx),
+                commit_tx: Some(tx),
                 ..
-            } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(TryBroadcastTransaction {
-                        tx: commit_tx,
-                        kind: TransactionKind::Commit,
-                    })
-                    .await?;
             }
-            ManualCommit { tx } => {
+            | ManualCommit { tx } => {
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
                         tx,
