@@ -84,6 +84,11 @@ struct Opts {
     #[clap(short, long)]
     json: bool,
 
+    /// If enabled, logs in json format will contain a list of all ancestor spans of log events.
+    /// This **only** has an effect when `json` is also enabled.
+    #[clap(long)]
+    pub json_span_list: bool,
+
     /// If enabled, traces will be exported to the OTEL collector
     #[clap(long)]
     instrumentation: bool,
@@ -188,6 +193,7 @@ async fn main() -> Result<()> {
     logger::init(
         opts.log_level,
         opts.json,
+        opts.json_span_list,
         opts.instrumentation,
         opts.tokio_console,
         &service_name,

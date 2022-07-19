@@ -36,6 +36,11 @@ pub struct Opts {
     #[clap(short, long)]
     pub json: bool,
 
+    /// If enabled, logs in json format will contain a list of all ancestor spans of log events.
+    /// This **only** has an effect when `json` is also enabled.
+    #[clap(long)]
+    pub json_span_list: bool,
+
     /// If enabled, traces will be exported to the OTEL collector
     #[clap(long)]
     pub instrumentation: bool,
