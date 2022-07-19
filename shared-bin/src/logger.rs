@@ -24,6 +24,7 @@ const RUST_LOG_ENV: &str = "RUST_LOG";
 pub fn init(
     level: LevelFilter,
     json_format: bool,
+    json_span_list: bool,
     instrumentation: bool,
     use_tokio_console: bool,
     service_name: &str,
@@ -63,7 +64,11 @@ pub fn init(
         .with_ansi(is_terminal);
 
     let fmt_layer = if json_format {
-        fmt_layer.json().with_timer(UtcTime::rfc_3339()).boxed()
+        fmt_layer
+            .json()
+            .with_span_list(json_span_list)
+            .with_timer(UtcTime::rfc_3339())
+            .boxed()
     } else {
         fmt_layer
             .compact()

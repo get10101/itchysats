@@ -35,6 +35,7 @@ async fn main() -> Result<()> {
     logger::init(
         opts.log_level,
         opts.json,
+        opts.json_span_list,
         opts.instrumentation,
         opts.tokio_console,
         &service_name,
