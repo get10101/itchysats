@@ -95,7 +95,7 @@ export function CfdTable(
             },
             {
                 Header: "Details",
-                accessor: ({ details, expiry_timestamp }) => {
+                accessor: ({ details, expiry_timestamp, order_id }) => {
                     const txs = details.tx_url_list.map((tx) => {
                         return (
                             <Link href={tx.url} key={tx.url} isExternal>
@@ -108,6 +108,10 @@ export function CfdTable(
                     return (
                         <Box>
                             <VStack>
+                                <HStack>
+                                    <Text>ID:</Text>
+                                    <Text>{order_id}</Text>
+                                </HStack>
                                 {txs}
                                 {expiry_timestamp && (
                                     <HStack>
