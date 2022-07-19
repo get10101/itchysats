@@ -39,13 +39,18 @@ use xtras::SendInterval;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn parse_vergen_version(vergen_string: &str) -> semver::Version {
-    let vergen = semver::Version::parse(vergen_string).expect("daemon version to parse");
+fn parse_daemon_version(vergen_string: &str) -> Result<semver::Version> {
+    let vergen = semver::Version::parse(vergen_string)
+        .with_context(|| format!("Could not parse daemon_version: {vergen_string}"))?;
 
     // vergen appends git tag at the end, which is wrongfully parsed by
     // semver as a pre-release (it's in fact the opposite, the tag only
     // comes *after* release). Here we strip it out.
-    semver::Version::new(vergen.major, vergen.minor, vergen.patch)
+    Ok(semver::Version::new(
+        vergen.major,
+        vergen.minor,
+        vergen.patch,
+    ))
 }
 
 #[derive(Clone)]
@@ -495,11 +500,19 @@ impl Actor {
                 );
             });
 
-            let daemon_semver = parse_vergen_version(&daemon_version);
-            let no_need_for_heartbeats =
-                semver::VersionReq::parse(">= 0.4.20").expect("to parse VersionReq");
+            let can_remove_heartbeats = match parse_daemon_version(&daemon_version) {
+                Ok(daemon_semver) => {
+                    let can_remove_heartbeats =
+                        semver::VersionReq::parse(">= 0.4.20").expect("to parse VersionReq");
+                    can_remove_heartbeats.matches(&daemon_semver)
+                }
+                Err(e) => {
+                    tracing::error!("{e:#}");
+                    false
+                }
+            };
 
-            if no_need_for_heartbeats.matches(&daemon_semver) {
+            if can_remove_heartbeats {
                 tracing::info!(
                     "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
                 );
