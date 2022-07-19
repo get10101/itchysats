@@ -775,7 +775,7 @@ impl AllParams {
     }
 }
 
-#[instrument]
+#[instrument(skip_all)]
 async fn verify_cets(
     (oracle_pk, nonce_pks): (XOnlyPublicKey, Vec<XOnlyPublicKey>),
     counterparty: PartyParams,
@@ -814,7 +814,7 @@ async fn verify_cets(
     Ok(())
 }
 
-#[instrument]
+#[instrument(skip_all)]
 fn verify_adaptor_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -831,7 +831,7 @@ fn verify_adaptor_signature(
         .context("failed to verify encsig spend tx")
 }
 
-#[instrument]
+#[instrument(skip_all)]
 fn verify_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -845,7 +845,7 @@ fn verify_signature(
     Ok(())
 }
 
-#[instrument]
+#[instrument(skip_all, err)]
 fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,
