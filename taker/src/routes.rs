@@ -55,7 +55,7 @@ pub struct IdentityInfo {
 }
 
 #[rocket::get("/feed")]
-#[instrument(name = "GET /feed", skip(rx, rx_wallet, rx_maker_status))]
+#[instrument(name = "GET /feed", skip_all)]
 pub async fn feed(
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
@@ -150,7 +150,7 @@ pub struct CfdOrderRequest {
 }
 
 #[rocket::post("/cfd/order", data = "<cfd_order_request>")]
-#[instrument(name = "POST /cfd/order", skip(taker), err)]
+#[instrument(name = "POST /cfd/order", skip(taker, _auth), err)]
 pub async fn post_order_request(
     cfd_order_request: Json<CfdOrderRequest>,
     taker: &State<Taker>,
@@ -173,7 +173,7 @@ pub async fn post_order_request(
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
-#[instrument(name = "POST /cfd/<id>/<action>", skip(taker), err)]
+#[instrument(name = "POST /cfd/<id>/<action>", skip(taker, _auth), err)]
 pub async fn post_cfd_action(
     id: Uuid,
     action: String,
@@ -238,14 +238,14 @@ pub struct MarginResponse {
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]
-#[instrument(name = "GET /assets/<file>")]
+#[instrument(name = "GET /assets/<file>", skip_all)]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
-#[instrument(name = "GET /<_paths>")]
+#[instrument(name = "GET /<_paths>", skip_all)]
 pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
@@ -260,7 +260,7 @@ pub struct WithdrawRequest {
 }
 
 #[rocket::post("/withdraw", data = "<withdraw_request>")]
-#[instrument(name = "POST /withdraw", skip(taker), ret, err)]
+#[instrument(name = "POST /withdraw", skip(taker, _auth), ret, err)]
 pub async fn post_withdraw_request(
     withdraw_request: Json<WithdrawRequest>,
     taker: &State<Taker>,
@@ -287,7 +287,7 @@ pub async fn post_withdraw_request(
 }
 
 #[rocket::get("/metrics")]
-#[instrument(name = "GET /metrics", err)]
+#[instrument(name = "GET /metrics", skip_all, err)]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
@@ -301,7 +301,7 @@ pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProb
 }
 
 #[rocket::put("/sync")]
-#[instrument(name = "PUT /sync", skip(taker), err)]
+#[instrument(name = "PUT /sync", skip_all, err)]
 pub async fn put_sync_wallet(
     taker: &State<Taker>,
     _auth: Authenticated,
