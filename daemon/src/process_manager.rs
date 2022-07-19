@@ -13,6 +13,7 @@ use model::CfdEvent;
 use model::EventKind;
 use model::Role;
 use sqlite_db;
+use tracing::Instrument;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
@@ -77,11 +78,14 @@ impl Actor {
         match event.event {
             ContractSetupCompleted { dlc: Some(dlc), .. } => {
                 let lock_tx = dlc.lock.0.clone();
+
+                let span = tracing::debug_span!("Broadcast lock TX", order_id = %event.id);
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
                         tx: lock_tx,
                         kind: TransactionKind::Lock,
                     })
+                    .instrument(span)
                     .await?;
 
                 self.start_monitoring
@@ -104,11 +108,16 @@ impl Actor {
 
                 match self.role {
                     Role::Maker => {
+                        let span = tracing::debug_span!(
+                            "Broadcast collaborative settlement TX",
+                            order_id = %event.id
+                        );
                         self.try_broadcast_transaction
                             .send_async_safe(TryBroadcastTransaction {
                                 tx: spend_tx,
                                 kind: TransactionKind::CollaborativeClose,
                             })
+                            .instrument(span)
                             .await?;
                     }
                     Role::Taker => {
@@ -124,7 +133,8 @@ impl Actor {
                     })
                     .await?;
             }
-            CetTimelockExpiredPostOracleAttestation { cet } => {
+            CetTimelockExpiredPostOracleAttestation { cet }
+            | OracleAttestedPostCetTimelock { cet, .. } => {
                 let _ = self
                     .monitor_cet_finality
                     .send_async_safe(MonitorCetFinality {
@@ -132,45 +142,27 @@ impl Actor {
                         cet: cet.clone(),
                     })
                     .await?;
+                let span = tracing::debug_span!("Broadcast CET", order_id = %event.id);
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
                         tx: cet,
                         kind: TransactionKind::Cet,
                     })
-                    .await?;
-            }
-            OracleAttestedPostCetTimelock { cet, .. } => {
-                let _ = self
-                    .monitor_cet_finality
-                    .send_async_safe(MonitorCetFinality {
-                        order_id: event.id,
-                        cet: cet.clone(),
-                    })
-                    .await?;
-                self.try_broadcast_transaction
-                    .send_async_safe(TryBroadcastTransaction {
-                        tx: cet,
-                        kind: TransactionKind::Cet,
-                    })
+                    .instrument(span)
                     .await?;
             }
             OracleAttestedPriorCetTimelock {
-                commit_tx: Some(commit_tx),
+                commit_tx: Some(tx),
                 ..
-            } => {
-                self.try_broadcast_transaction
-                    .send_async_safe(TryBroadcastTransaction {
-                        tx: commit_tx,
-                        kind: TransactionKind::Commit,
-                    })
-                    .await?;
             }
-            ManualCommit { tx } => {
+            | ManualCommit { tx } => {
+                let span = tracing::debug_span!("Broadcast commit TX", order_id = %event.id);
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Commit,
                     })
+                    .instrument(span)
                     .await?;
             }
             OracleAttestedPriorCetTimelock {
@@ -201,11 +193,13 @@ impl Actor {
                     .await?;
             }
             RefundTimelockExpired { refund_tx: tx } => {
+                let span = tracing::debug_span!("Broadcast refund TX", order_id = %event.id);
                 self.try_broadcast_transaction
                     .send_async_safe(TryBroadcastTransaction {
                         tx,
                         kind: TransactionKind::Refund,
                     })
+                    .instrument(span)
                     .await?;
             }
             ContractSetupCompleted { dlc: None, .. }

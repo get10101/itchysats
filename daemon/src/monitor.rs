@@ -25,6 +25,7 @@ use serde_json::Value;
 use sqlite_db;
 use std::collections::HashMap;
 use std::time::Duration;
+use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -582,11 +583,13 @@ impl xtra::Actor for Actor {
                             }
                         };
                         if let Some(tx) = commit_tx {
+                            let span = tracing::debug_span!("Broadcast commit TX", order_id = %id);
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
                                     tx,
                                     kind: TransactionKind::Commit,
                                 })
+                                .instrument(span)
                                 .await?
                             {
                                 tracing::warn!("{e:#}")
@@ -594,11 +597,13 @@ impl xtra::Actor for Actor {
                         }
 
                         if let Some(tx) = cet {
+                            let span = tracing::debug_span!("Broadcast CET", order_id = %id);
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
                                     tx,
                                     kind: TransactionKind::Cet,
                                 })
+                                .instrument(span)
                                 .await?
                             {
                                 tracing::warn!("{e:#}")
@@ -606,11 +611,13 @@ impl xtra::Actor for Actor {
                         }
 
                         if let Some(tx) = lock_tx {
+                            let span = tracing::debug_span!("Broadcast lock TX", order_id = %id);
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
                                     tx,
                                     kind: TransactionKind::Lock,
                                 })
+                                .instrument(span)
                                 .await?
                             {
                                 tracing::warn!("{e:#}")
