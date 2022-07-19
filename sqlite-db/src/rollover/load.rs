@@ -133,6 +133,7 @@ async fn load_revoked_commit_transactions(
                 revoked_commit_transactions
             WHERE
                 cfd_id = $1
+            ORDER BY id
             "#,
         cfd_row_id,
     )
