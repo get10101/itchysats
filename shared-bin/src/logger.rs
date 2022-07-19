@@ -73,8 +73,6 @@ pub fn init(
             .boxed()
     };
 
-    let fmt_layer = fmt_layer.with_filter(filter);
-
     let telemetry = if instrumentation {
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
 
@@ -99,11 +97,7 @@ pub fn init(
             .install_batch(opentelemetry::runtime::Tokio)
             .context("Failed to initialise OTLP exporter")?;
 
-        Some(
-            tracing_opentelemetry::layer()
-                .with_tracer(tracer)
-                .with_filter(trace_base_directives(EnvFilter::new(""))?),
-        )
+        Some(tracing_opentelemetry::layer().with_tracer(tracer))
     } else {
         None
     };
@@ -115,9 +109,8 @@ pub fn init(
     };
 
     Registry::default()
-        .with(telemetry)
+        .with(Layer::and_then(telemetry, fmt_layer).with_filter(filter))
         .with(console_layer)
-        .with(fmt_layer)
         .try_init()
         .context("Failed to init logger")?;
 
@@ -142,21 +135,16 @@ fn log_base_directives(env: EnvFilter) -> Result<EnvFilter> {
         .add_directive("yamux=warn".parse()?)
         .add_directive("multistream_select=warn".parse()?)
         .add_directive("libp2p_noise=warn".parse()?)
-        .add_directive("xtra_libp2p_offer=debug".parse()?)
-        .add_directive("xtras=info".parse()?)
         .add_directive("h2=info".parse()?) // h2 spans originate from rocket and can spam a lot
         .add_directive("tonic=info".parse()?)
         .add_directive("tower=info".parse()?)
         .add_directive("_=off".parse()?) // rocket logs headers on INFO and uses `_` as the log target for it?
         .add_directive("rocket=off".parse()?) // disable rocket logs: we have our own
         .add_directive("opentelemetry=off".parse()?) // enable via RUST_LOG if needed
-        .add_directive("xtra=warn".parse()?)
         .add_directive("sled=warn".parse()?) // downgrade sled log level: it is spamming too much on DEBUG
-        .add_directive("xtra_libp2p=info".parse()?);
-    Ok(filter)
-}
-
-fn trace_base_directives(env: EnvFilter) -> Result<EnvFilter> {
-    let filter = env.add_directive(LevelFilter::DEBUG.into());
+        .add_directive("xtra_libp2p_offer=debug".parse()?)
+        .add_directive("xtras=debug".parse()?)
+        .add_directive("xtra=debug".parse()?)
+        .add_directive("xtra_libp2p=debug".parse()?);
     Ok(filter)
 }
