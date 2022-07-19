@@ -130,7 +130,7 @@ impl Actor {
 
             spawn_fallible(
                 &this,
-                ping_fut.instrument(tracing::debug_span!("Ping peer", %peer)),
+                ping_fut.instrument(tracing::debug_span!("Ping peer")),
                 err_handler,
             );
         }

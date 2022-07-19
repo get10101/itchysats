@@ -128,7 +128,7 @@ fn empty_leverage() -> Vec<Leverage> {
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]
-#[instrument(name = "PUT /offer", skip(maker), err)]
+#[instrument(name = "PUT /offer", skip(maker, _auth), err)]
 pub async fn put_offer_params(
     offer_params: Json<CfdNewOfferParamsRequest>,
     maker: &State<Maker>,
@@ -157,7 +157,7 @@ pub async fn put_offer_params(
 }
 
 #[rocket::post("/cfd/<id>/<action>")]
-#[instrument(name = "POST /cfd/<id>/<action>", skip(maker), err)]
+#[instrument(name = "POST /cfd/<id>/<action>", skip(maker, _auth), err)]
 pub async fn post_cfd_action(
     id: Uuid,
     action: String,
@@ -203,21 +203,21 @@ pub fn get_health_check() {}
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]
-#[instrument(name = "GET /assets/<file>")]
+#[instrument(name = "GET /assets/<file>", skip_all)]
 pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
-#[instrument(name = "GET /<_paths>")]
+#[instrument(name = "GET /<_paths>", skip_all)]
 pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }
 
 #[rocket::put("/sync")]
-#[instrument(name = "PUT /sync", skip(maker), err)]
+#[instrument(name = "PUT /sync", skip_all, err)]
 pub async fn put_sync_wallet(
     maker: &State<Maker>,
     _auth: Authenticated,
@@ -232,7 +232,7 @@ pub async fn put_sync_wallet(
 }
 
 #[rocket::get("/cfds")]
-#[instrument(name = "GET /cfds", skip(rx), err)]
+#[instrument(name = "GET /cfds", skip_all, err)]
 pub async fn get_cfds<'r>(
     rx: &State<Feeds>,
     _auth: Authenticated,
@@ -250,7 +250,7 @@ pub async fn get_cfds<'r>(
 }
 
 #[rocket::get("/takers")]
-#[instrument(name = "GET /takers", skip(rx), err)]
+#[instrument(name = "GET /takers", skip_all, err)]
 pub async fn get_takers<'r>(
     rx: &State<Feeds>,
     _auth: Authenticated,
@@ -263,7 +263,7 @@ pub async fn get_takers<'r>(
 }
 
 #[rocket::get("/metrics")]
-#[instrument(name = "GET /metrics", err)]
+#[instrument(name = "GET /metrics", skip_all, err)]
 pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
