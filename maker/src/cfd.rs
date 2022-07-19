@@ -393,15 +393,23 @@ where
             self.current_offers = Some(offers.replicate());
         }
 
-        self.takers
+        if let Err(e) = self
+            .takers
             .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
-            .await?;
+            .await
+        {
+            tracing::warn!("{e:#}");
+        }
 
-        self.libp2p_offer
+        if let Err(e) = self
+            .libp2p_offer
             .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
                 self.current_offers.clone(),
             ))
-            .await?;
+            .await
+        {
+            tracing::warn!("{e:#}");
+        }
 
         self.projection
             .send(projection::Update(self.current_offers.clone()))
@@ -778,15 +786,23 @@ where
             .await?;
 
         // 3. Inform connected takers
-        self.takers
+        if let Err(e) = self
+            .takers
             .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
-            .await?;
+            .await
+        {
+            tracing::warn!("{e:#}");
+        }
 
-        self.libp2p_offer
+        if let Err(e) = self
+            .libp2p_offer
             .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
                 self.current_offers.clone(),
             ))
-            .await?;
+            .await
+        {
+            tracing::warn!("{e:#}");
+        }
 
         Ok(())
     }
