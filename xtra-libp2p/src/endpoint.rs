@@ -267,7 +267,7 @@ impl Endpoint {
         self.notify_connection_dropped(*peer).await;
     }
 
-    #[instrument(skip(control, connection_timeout), ret, err)]
+    #[instrument(skip(control, connection_timeout), err)]
     async fn open_substream(
         mut control: yamux::Control,
         peer: PeerId,
