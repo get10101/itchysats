@@ -32,7 +32,7 @@ impl Actor {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
 
-        let span = tracing::debug_span!("Send offers", %peer, ?offers);
+        let span = tracing::debug_span!("Send offers", %peer);
         let task = async move {
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
