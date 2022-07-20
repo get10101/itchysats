@@ -102,6 +102,12 @@ struct Opts {
     #[clap(long, default_value = LOCAL_COLLECTOR_ENDPOINT )]
     collector_endpoint: String,
 
+    /// Service name for OTEL.
+    ///
+    /// If not specified it defaults to the binary name.
+    #[clap(long, default_value = "taker")]
+    service_name: String,
+
     /// Configure the log level, e.g.: one of Error, Warn, Info, Debug, Trace
     #[clap(short, long, default_value = "Debug")]
     log_level: LevelFilter,
@@ -184,9 +190,6 @@ fn parse_umbrel_seed(s: &str) -> Result<[u8; 32]> {
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
-
-    let network = opts.network();
-    let service_name = "taker_".to_string() + network.kind();
     let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
     logger::init(
@@ -195,7 +198,7 @@ async fn main() -> Result<()> {
         opts.json_span_list,
         opts.instrumentation,
         opts.tokio_console,
-        &service_name,
+        &opts.service_name,
         &opts.collector_endpoint,
     )
     .context("initialize logger")?;
@@ -205,6 +208,8 @@ async fn main() -> Result<()> {
     tracing::info!(
         "CFDs created with this release will settle after {settlement_interval_hours} hours"
     );
+
+    let network = opts.network();
 
     let data_dir = opts
         .data_dir

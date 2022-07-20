@@ -29,15 +29,13 @@ use xtras::supervisor::Supervisor;
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
-    let service_name = "maker_".to_string() + opts.network.kind();
-
     logger::init(
         opts.log_level,
         opts.json,
         opts.json_span_list,
         opts.instrumentation,
         opts.tokio_console,
-        &service_name,
+        &opts.service_name,
         &opts.collector_endpoint,
     )
     .context("initialize logger")?;
