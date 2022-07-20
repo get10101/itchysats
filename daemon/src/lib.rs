@@ -398,7 +398,7 @@ where
             .await?
     }
 
-    #[instrument(skip(self), ret, err)]
+    #[instrument(skip(self), err)]
     pub async fn withdraw(
         &self,
         amount: Option<Amount>,

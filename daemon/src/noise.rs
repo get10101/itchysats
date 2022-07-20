@@ -40,7 +40,7 @@ pub async fn initiator_handshake(
     Ok(noise)
 }
 
-#[instrument(skip_all, ret, err)]
+#[instrument(skip_all, err)]
 pub async fn responder_handshake(
     connection: &mut TcpStream,
     local_priv_key: &x25519_dalek::StaticSecret,

@@ -41,7 +41,7 @@ impl Actor {
         ctx.stop_self();
     }
 
-    #[instrument(skip(self), ret, err)]
+    #[instrument(skip(self), err)]
     async fn is_listening(&self) -> Result<bool> {
         Ok(self
             .endpoint
