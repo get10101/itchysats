@@ -296,7 +296,7 @@ impl Connection {
             .with_context(|| format!("Could not load events for CFD {id}"))?;
         let num_events = events.len();
 
-        tracing::debug!(order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
+        tracing::trace!(target = "aggregate", order_id = %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
 
         let cfd = events.into_iter().fold(cfd, C::apply);
 
