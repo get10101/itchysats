@@ -122,7 +122,11 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we are alive");
         tokio_extras::spawn(
             &this.clone(),
-            this.send_interval(Duration::from_secs(5 * 60), || AutoRollover),
+            this.send_interval(
+                Duration::from_secs(5 * 60),
+                || AutoRollover,
+                xtras::IncludeSpan::Always,
+            ),
         );
     }
 

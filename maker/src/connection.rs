@@ -20,6 +20,7 @@ use model::Identity;
 use model::Leverage;
 use model::MakerOffers;
 use model::OrderId;
+use shared_bin::logger;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -29,6 +30,7 @@ use tokio_extras::time::already_instrumented;
 use tokio_extras::FutureExt;
 use tokio_extras::Tasks;
 use tokio_util::codec::Framed;
+use tracing::Instrument;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -352,6 +354,9 @@ impl Actor {
         for (id, conn) in &mut self.connections {
             if let Err(e) = conn
                 .send(wire::MakerToTaker::CurrentOffers(offers.clone()))
+                .instrument(tracing::debug_span!(
+                    logger::span_names::OLD_BROADCAST_OFFERS
+                ))
                 .await
             {
                 tracing::warn!("{:#}", e);
@@ -517,7 +522,7 @@ impl Actor {
                     "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
                 );
             } else {
-                tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity)));
+                tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity), xtras::IncludeSpan::OnError));
             }
 
             self.connections.insert(

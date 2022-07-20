@@ -81,8 +81,9 @@ where
                     "Future with timeout",
                     timeout_secs = duration.as_secs(),
                     timed_out = field::Empty,
-                );
-                let child = parent.in_scope(child_span);
+                )
+                .or_current();
+                let child = parent.in_scope(child_span).or_current();
 
                 let poll = child.in_scope(|| this.fut.poll(cx));
 

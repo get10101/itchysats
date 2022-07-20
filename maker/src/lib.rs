@@ -49,6 +49,11 @@ pub struct Opts {
     #[clap(long)]
     pub tokio_console: bool,
 
+    /// If enabled, libp2p ping and offer broadcast spans will be included in the traces exported
+    /// by the application.
+    #[clap(long)]
+    pub verbose_spans: bool,
+
     /// OTEL collector endpoint address
     ///
     /// If not specified it defaults to the local collector endpoint.

@@ -26,7 +26,11 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we are alive");
         tokio_extras::spawn(
             &this.clone(),
-            this.send_interval(ARCHIVE_CFDS_INTERVAL, || ArchiveCfds),
+            this.send_interval(
+                ARCHIVE_CFDS_INTERVAL,
+                || ArchiveCfds,
+                xtras::IncludeSpan::Always,
+            ),
         );
     }
 
