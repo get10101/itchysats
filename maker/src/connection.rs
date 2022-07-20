@@ -503,7 +503,7 @@ impl Actor {
             let can_remove_heartbeats = match parse_daemon_version(&daemon_version) {
                 Ok(daemon_semver) => {
                     let can_remove_heartbeats =
-                        semver::VersionReq::parse(">= 0.4.20").expect("to parse VersionReq");
+                        semver::VersionReq::parse("> 0.5").expect("to parse VersionReq");
                     can_remove_heartbeats.matches(&daemon_semver)
                 }
                 Err(e) => {
