@@ -24,15 +24,16 @@ interface TradePageLayoutProps {
     cfds: Cfd[];
     connectedToMaker: ConnectionStatus;
     showPromoBanner: boolean;
+    showExtraInfo: boolean;
 }
 
-export function TradePageLayout({ cfds, connectedToMaker, showPromoBanner }: TradePageLayoutProps) {
+export function TradePageLayout({ cfds, connectedToMaker, showPromoBanner, showExtraInfo }: TradePageLayoutProps) {
     return (
         <VStack w={"100%"}>
             {showPromoBanner && <PromoBanner />}
             <NavigationButtons />
             <Outlet />
-            <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} />
+            <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} showExtraInfo={showExtraInfo} />
         </VStack>
     );
 }
@@ -40,9 +41,10 @@ export function TradePageLayout({ cfds, connectedToMaker, showPromoBanner }: Tra
 interface HistoryLayoutProps {
     cfds: Cfd[];
     connectedToMaker: ConnectionStatus;
+    showExtraInfo: boolean;
 }
 
-function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
+function HistoryLayout({ cfds, connectedToMaker, showExtraInfo }: HistoryLayoutProps) {
     const closedPositions = cfds.filter((cfd) => isClosed(cfd));
 
     return (
@@ -50,6 +52,7 @@ function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
             <History
                 connectedToMaker={connectedToMaker}
                 cfds={cfds.filter((cfd) => !isClosed(cfd))}
+                showExtraInfo={showExtraInfo}
             />
 
             {closedPositions.length > 0
@@ -69,6 +72,7 @@ function HistoryLayout({ cfds, connectedToMaker }: HistoryLayoutProps) {
                                 <History
                                     cfds={closedPositions}
                                     connectedToMaker={connectedToMaker}
+                                    showExtraInfo={showExtraInfo}
                                 />
                             </AccordionPanel>
                         </AccordionItem>

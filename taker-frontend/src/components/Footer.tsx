@@ -4,6 +4,8 @@ import {
     Button,
     Center,
     Divider,
+    FormControl,
+    FormLabel,
     HStack,
     IconButton,
     Link,
@@ -14,6 +16,7 @@ import {
     ModalFooter,
     ModalHeader,
     ModalOverlay,
+    Switch,
     Text,
     useColorModeValue,
     useDisclosure,
@@ -33,9 +36,23 @@ interface FooterProps {
     identityInfo: IdentityInfo | null;
     daemonVersion: string | undefined;
     githubVersion: string | undefined;
+    onExtraInfoToggle: (val: boolean) => void;
+    showExtraInfo: boolean;
 }
 
-export default function Footer({ identityInfo, daemonVersion, githubVersion }: FooterProps) {
+function HorizontalDivider() {
+    return (
+        <Divider
+            orientation={"horizontal"}
+            borderColor={useColorModeValue("black", "white")}
+            height={"20px"}
+        />
+    );
+}
+
+export default function Footer(
+    { identityInfo, daemonVersion, githubVersion, onExtraInfoToggle, showExtraInfo }: FooterProps,
+) {
     const { isOpen, onOpen, onClose } = useDisclosure();
 
     return (
@@ -74,25 +91,13 @@ export default function Footer({ identityInfo, daemonVersion, githubVersion }: F
                             <ModalBody>
                                 <Text fontWeight={"bold"}>Your Taker ID:</Text>
                                 <Text>{identityInfo ? identityInfo.taker_id : "unknown"}</Text>
-                                <Divider
-                                    orientation={"horizontal"}
-                                    borderColor={useColorModeValue("black", "white")}
-                                    height={"20px"}
-                                />
+                                <HorizontalDivider />
                                 <Text fontWeight={"bold"}>Your Peer ID:</Text>
                                 <Text>{identityInfo ? identityInfo.taker_peer_id : "unknown"}</Text>
-                                <Divider
-                                    orientation={"horizontal"}
-                                    borderColor={useColorModeValue("black", "white")}
-                                    height={"20px"}
-                                />
+                                <HorizontalDivider />
                                 <Text fontWeight={"bold"}>Daemon version:</Text>
                                 <Text>{daemonVersion ? daemonVersion : "unknown"}</Text>
-                                <Divider
-                                    orientation={"horizontal"}
-                                    borderColor={useColorModeValue("black", "white")}
-                                    height={"20px"}
-                                />
+                                <HorizontalDivider />
                                 <Text fontWeight={"bold"}>Latest available version:</Text>
                                 <Text>
                                     {githubVersion
@@ -106,6 +111,17 @@ export default function Footer({ identityInfo, daemonVersion, githubVersion }: F
                                         )
                                         : "unknown"}
                                 </Text>
+                                <HorizontalDivider />
+                                <FormControl display="flex" alignItems="center">
+                                    <FormLabel htmlFor="extra-info" mb="0">
+                                        <Text fontWeight={"bold"}>Enable extra info:</Text>
+                                    </FormLabel>
+                                    <Switch
+                                        id="extra-info"
+                                        isChecked={showExtraInfo}
+                                        onChange={(e) => onExtraInfoToggle(e.target.checked)}
+                                    />
+                                </FormControl>
                             </ModalBody>
                             <ModalFooter>
                                 <Button colorScheme="blue" mr={3} onClick={onClose}>

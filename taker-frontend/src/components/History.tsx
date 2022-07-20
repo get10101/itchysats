@@ -1,10 +1,16 @@
-import { ExternalLinkIcon } from "@chakra-ui/icons";
+import { ExternalLinkIcon, InfoIcon } from "@chakra-ui/icons";
 import {
     Badge,
     GridItem,
     Heading,
     HStack,
+    IconButton,
     Link,
+    Popover,
+    PopoverArrow,
+    PopoverBody,
+    PopoverContent,
+    PopoverTrigger,
     SimpleGrid,
     Skeleton,
     Spinner,
@@ -28,9 +34,10 @@ interface HistoryProps {
     cfds: Cfd[];
     title?: string;
     connectedToMaker: ConnectionStatus;
+    showExtraInfo: boolean;
 }
 
-const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
+const History = ({ cfds, title, connectedToMaker, showExtraInfo }: HistoryProps) => {
     return (
         <VStack spacing={3}>
             {title
@@ -46,6 +53,7 @@ const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
                                 cfd={cfd}
                                 connectedToMaker={connectedToMaker}
                                 displayCloseButton={!isClosed(cfd)}
+                                showExtraInfo={showExtraInfo}
                             />
                         </GridItem>
                     );
@@ -61,9 +69,10 @@ interface CfdDetailsProps {
     cfd: Cfd;
     connectedToMaker: ConnectionStatus;
     displayCloseButton: boolean;
+    showExtraInfo: boolean;
 }
 
-const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
+const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }: CfdDetailsProps) => {
     const position = cfd.position;
     const initialPrice = cfd.initial_price;
     const liquidationPrice = cfd.liquidation_price;
@@ -115,10 +124,10 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
     return (
         <HStack
             bg={useColorModeValue("white", "gray.700")}
+            boxShadow={"lg"}
             rounded={"md"}
             padding={5}
             alignItems={"stretch"}
-            boxShadow={"lg"}
         >
             <VStack>
                 <Table size="sm" variant={"unstyled"}>
@@ -216,7 +225,13 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                 </Table>
             </VStack>
             <VStack justifyContent={"space-between"}>
-                <Badge marginTop={5} variant={"outline"} ml={1} fontSize="sm" colorScheme={cfd.state.getColorScheme()}>
+                <Badge
+                    marginTop={5}
+                    variant={"outline"}
+                    ml={1}
+                    fontSize="sm"
+                    colorScheme={cfd.state.getColorScheme()}
+                >
                     {cfd.state.getLabel()}
                 </Badge>
                 <Table size="sm" variant={"unstyled"}>
@@ -281,6 +296,25 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                     )
                     : <></>}
             </VStack>
+
+            {showExtraInfo
+                && (
+                    <Popover>
+                        <PopoverTrigger>
+                            <IconButton
+                                bg={"white"}
+                                rounded={100}
+                                size="xs"
+                                aria-label="Info"
+                                icon={<InfoIcon color={"black"} />}
+                            />
+                        </PopoverTrigger>
+                        <PopoverContent width={"inherit"}>
+                            <PopoverArrow />
+                            <PopoverBody>{cfd.order_id}</PopoverBody>
+                        </PopoverContent>
+                    </Popover>
+                )}
         </HStack>
     );
 };

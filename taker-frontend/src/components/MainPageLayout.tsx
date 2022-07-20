@@ -18,6 +18,8 @@ type MainPageProps = {
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
     identityOrUndefined: IdentityInfo | null;
+    setExtraInfo: (val: boolean) => void;
+    showExtraInfo: boolean;
 };
 
 export function MainPageLayout(
@@ -31,6 +33,8 @@ export function MainPageLayout(
         nextFundingEvent,
         referencePrice,
         identityOrUndefined,
+        setExtraInfo,
+        showExtraInfo,
     }: MainPageProps,
 ) {
     return (
@@ -73,6 +77,8 @@ export function MainPageLayout(
                 identityInfo={identityOrUndefined}
                 daemonVersion={daemonVersion?.version}
                 githubVersion={githubVersion?.version}
+                onExtraInfoToggle={setExtraInfo}
+                showExtraInfo={showExtraInfo}
             />
         </>
     );
