@@ -1,3 +1,4 @@
+use crate::position_metrics::metrics::BTCUSD_LABEL;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -73,6 +74,8 @@ impl Actor {
         self.state.cfds = Some(cfds);
         metrics::update_position_metrics(
             self.state.cfds.clone().expect("We've initialized it above"),
+            // TODO: once we have multiple trading pairs, this needs to come from the positions
+            BTCUSD_LABEL,
         );
     }
 
@@ -87,6 +90,8 @@ impl Actor {
                 .cfds
                 .clone()
                 .expect("updating metrics failed. Internal list has not been initialized yet"),
+            // TODO: once we have multiple trading pairs, this needs to come from the positions
+            BTCUSD_LABEL,
         );
     }
 }
@@ -377,30 +382,35 @@ mod metrics {
     const STATUS_REJECTED_LABEL: &str = "rejected";
     const STATUS_REFUNDED_LABEL: &str = "refunded";
 
+    const SYMBOL_LABEL: &str = "symbol";
+    pub const BTCUSD_LABEL: &str = "BTCUSD";
+
     static POSITION_QUANTITY_GAUGE: conquer_once::Lazy<prometheus::GaugeVec> =
         conquer_once::Lazy::new(|| {
             prometheus::register_gauge_vec!(
                 "positions_quantities",
                 "Total quantity of positions on ItchySats.",
-                &[POSITION_LABEL, STATUS_LABEL]
+                &[POSITION_LABEL, STATUS_LABEL, SYMBOL_LABEL]
             )
             .unwrap()
         });
 
-    static POSITION_MARGIN_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+    static POSITION_MARGIN_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
         conquer_once::Lazy::new(|| {
-            prometheus::register_int_gauge!(
+            prometheus::register_int_gauge_vec!(
                 "position_margin_satoshis",
                 "Total position margin on ItchySats.",
+                &[SYMBOL_LABEL]
             )
             .unwrap()
         });
 
-    static POSITION_MARGIN_COUNTERPARTY_GAUGE: conquer_once::Lazy<prometheus::IntGauge> =
+    static POSITION_MARGIN_COUNTERPARTY_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
         conquer_once::Lazy::new(|| {
-            prometheus::register_int_gauge!(
+            prometheus::register_int_gauge_vec!(
                 "position_margin_counterparty_satoshis",
                 "Total position margin of our counterparties on ItchySats.",
+                &[SYMBOL_LABEL]
             )
             .unwrap()
         });
@@ -410,7 +420,7 @@ mod metrics {
             prometheus::register_int_gauge_vec!(
                 "counterparty_number_total",
                 "Total number of counterparties we had a position with on ItchySats.",
-                &[POSITION_LABEL, STATUS_LABEL]
+                &[POSITION_LABEL, STATUS_LABEL, SYMBOL_LABEL]
             )
             .unwrap()
         });
@@ -420,41 +430,47 @@ mod metrics {
             prometheus::register_int_gauge_vec!(
                 "positions_number_total",
                 "Total number of positions on ItchySats.",
-                &[POSITION_LABEL, STATUS_LABEL]
+                &[POSITION_LABEL, STATUS_LABEL, SYMBOL_LABEL]
             )
             .unwrap()
         });
 
-    pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>) {
+    pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>, symbol: &str) {
         let cfds = cfds.into_iter().map(|(_, cfd)| cfd).collect::<Vec<_>>();
 
         set_position_metrics(
             cfds.iter().filter(|cfd| cfd.state == AggregatedState::New),
             STATUS_NEW_LABEL,
+            symbol,
         );
         set_position_metrics(
             cfds.iter().filter(|cfd| cfd.state == AggregatedState::Open),
             STATUS_OPEN_LABEL,
+            symbol,
         );
         set_position_metrics(
             cfds.iter()
                 .filter(|cfd| cfd.state == AggregatedState::Closed),
             STATUS_CLOSED_LABEL,
+            symbol,
         );
         set_position_metrics(
             cfds.iter()
                 .filter(|cfd| cfd.state == AggregatedState::Failed),
             STATUS_FAILED_LABEL,
+            symbol,
         );
         set_position_metrics(
             cfds.iter()
                 .filter(|cfd| cfd.state == AggregatedState::Rejected),
             STATUS_REJECTED_LABEL,
+            symbol,
         );
         set_position_metrics(
             cfds.iter()
                 .filter(|cfd| cfd.state == AggregatedState::Refunded),
             STATUS_REFUNDED_LABEL,
+            symbol,
         );
 
         let (margin, margin_counterparty) = cfds
@@ -470,15 +486,19 @@ mod metrics {
                 },
             );
 
-        POSITION_MARGIN_GAUGE.set(margin.as_sat() as i64);
-        POSITION_MARGIN_COUNTERPARTY_GAUGE.set(margin_counterparty.as_sat() as i64);
+        POSITION_MARGIN_GAUGE
+            .with(&HashMap::from([(SYMBOL_LABEL, symbol)]))
+            .set(margin.as_sat() as i64);
+        POSITION_MARGIN_COUNTERPARTY_GAUGE
+            .with(&HashMap::from([(SYMBOL_LABEL, symbol)]))
+            .set(margin_counterparty.as_sat() as i64);
     }
 
-    fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str) {
+    fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str, symbol: &str) {
         let (long, short): (Vec<_>, Vec<_>) = cfds.partition(|cfd| cfd.position == Position::Long);
 
-        set_metrics_for(POSITION_LONG_LABEL, status, &long);
-        set_metrics_for(POSITION_SHORT_LABEL, status, &short);
+        set_metrics_for(POSITION_LONG_LABEL, status, &long, symbol);
+        set_metrics_for(POSITION_SHORT_LABEL, status, &short, symbol);
 
         let long_takers = long.iter().map(|cfd| cfd.counterparty_network_identity);
         let short_takers = short.iter().map(|cfd| cfd.counterparty_network_identity);
@@ -489,15 +509,17 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, POSITION_ANY_LABEL),
                 (STATUS_LABEL, status),
+                (SYMBOL_LABEL, symbol),
             ]))
             .set(counterparties as i64);
     }
 
-    fn set_metrics_for(position_label: &str, status: &str, position: &[&Cfd]) {
+    fn set_metrics_for(position_label: &str, status: &str, position: &[&Cfd], symbol: &str) {
         POSITION_QUANTITY_GAUGE
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
+                (SYMBOL_LABEL, symbol),
             ]))
             .set(
                 sum_amounts(position)
@@ -509,6 +531,7 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
+                (SYMBOL_LABEL, symbol),
             ]))
             .set(position.len() as i64);
 
@@ -522,6 +545,7 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
+                (SYMBOL_LABEL, symbol),
             ]))
             .set(counterparties as i64);
     }
