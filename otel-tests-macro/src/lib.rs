@@ -31,23 +31,29 @@ pub fn otel_test(_attribute: TokenStream, item: TokenStream) -> TokenStream {
         #sig {
             ::otel_tests::init_tracing(module_path!());
 
-            let caught = {
-                ::otel_tests::__reexport::futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(tracing::Instrument::instrument(
-                    async #block, tracing::info_span!(stringify!(#name))
-                ))).await
-            };
+            let fut = async #block;
 
-            // Give the otel thread time to receive the spans before flush
-            #[allow(clippy::disallowed_methods)]
-            ::otel_tests::__reexport::tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            if ::std::env::var("ITCHYSATS_TEST_INSTRUMENTATION").unwrap_or_default() == "1" {
+                let caught = {
+                    ::otel_tests::__reexport::futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(tracing::Instrument::instrument(
+                        fut, tracing::info_span!(stringify!(#name))
+                    ))).await
+                };
 
-            // If this is the last test that's running, the main thread might exit. Then, the
-            // opentelemetry exporter thread might not have exported all of its spans yet, leading
-            // to some dropped spans. This ensures in most cases that it happens.
-            ::otel_tests::__reexport::opentelemetry::global::force_flush_tracer_provider();
+                // Give the otel thread time to receive the spans before flush
+                #[allow(clippy::disallowed_methods)]
+                ::otel_tests::__reexport::tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-            if let Err(e) = caught {
-                panic!("{:#?}", e);
+                // If this is the last test that's running, the main thread might exit. Then, the
+                // opentelemetry exporter thread might not have exported all of its spans yet, leading
+                // to some dropped spans. This ensures in most cases that it happens.
+                ::otel_tests::__reexport::opentelemetry::global::force_flush_tracer_provider();
+
+                if let Err(e) = caught {
+                    panic!("{:#?}", e);
+                }
+            } else {
+                fut.await
             }
         }
     };
