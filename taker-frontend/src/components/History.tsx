@@ -34,9 +34,10 @@ interface HistoryProps {
     cfds: Cfd[];
     title?: string;
     connectedToMaker: ConnectionStatus;
+    showExtraInfo: boolean;
 }
 
-const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
+const History = ({ cfds, title, connectedToMaker, showExtraInfo }: HistoryProps) => {
     return (
         <VStack spacing={3}>
             {title
@@ -52,6 +53,7 @@ const History = ({ cfds, title, connectedToMaker }: HistoryProps) => {
                                 cfd={cfd}
                                 connectedToMaker={connectedToMaker}
                                 displayCloseButton={!isClosed(cfd)}
+                                showExtraInfo={showExtraInfo}
                             />
                         </GridItem>
                     );
@@ -67,9 +69,10 @@ interface CfdDetailsProps {
     cfd: Cfd;
     connectedToMaker: ConnectionStatus;
     displayCloseButton: boolean;
+    showExtraInfo: boolean;
 }
 
-const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsProps) => {
+const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }: CfdDetailsProps) => {
     const position = cfd.position;
     const initialPrice = cfd.initial_price;
     const liquidationPrice = cfd.liquidation_price;
@@ -294,21 +297,24 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                     : <></>}
             </VStack>
 
-            <Popover>
-                <PopoverTrigger>
-                    <IconButton
-                        bg={"white"}
-                        rounded={100}
-                        size="xs"
-                        aria-label="Info"
-                        icon={<InfoIcon color={"black"} />}
-                    />
-                </PopoverTrigger>
-                <PopoverContent width={"inherit"}>
-                    <PopoverArrow />
-                    <PopoverBody>{cfd.order_id}</PopoverBody>
-                </PopoverContent>
-            </Popover>
+            {showExtraInfo
+                && (
+                    <Popover>
+                        <PopoverTrigger>
+                            <IconButton
+                                bg={"white"}
+                                rounded={100}
+                                size="xs"
+                                aria-label="Info"
+                                icon={<InfoIcon color={"black"} />}
+                            />
+                        </PopoverTrigger>
+                        <PopoverContent width={"inherit"}>
+                            <PopoverArrow />
+                            <PopoverBody>{cfd.order_id}</PopoverBody>
+                        </PopoverContent>
+                    </Popover>
+                )}
         </HStack>
     );
 };

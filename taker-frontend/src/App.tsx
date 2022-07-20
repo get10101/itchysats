@@ -55,6 +55,7 @@ export const App = () => {
     const location = useLocation();
 
     let [referencePrice, setReferencePrice] = useState<number>();
+    let [showExtraInfo, setExtraInfo] = useState(false);
     const [githubVersion, setGithubVersion] = useState<SemVer | null>();
     const [daemonVersion, setDaemonVersion] = useState<SemVer | null>();
 
@@ -196,6 +197,8 @@ export const App = () => {
                         nextFundingEvent={nextFundingEvent}
                         referencePrice={referencePrice}
                         identityOrUndefined={identityOrUndefined}
+                        setExtraInfo={setExtraInfo}
+                        showExtraInfo={showExtraInfo}
                     />
                 }
             >
@@ -209,6 +212,7 @@ export const App = () => {
                             cfds={cfds}
                             connectedToMaker={connectedToMaker}
                             showPromoBanner={isWithinPromoPeriod}
+                            showExtraInfo={showExtraInfo}
                         />
                     }
                 >
