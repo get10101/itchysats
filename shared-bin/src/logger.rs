@@ -66,7 +66,6 @@ pub fn init(
         fmt_layer.json().with_timer(UtcTime::rfc_3339()).boxed()
     } else {
         fmt_layer
-            .compact()
             .with_timer(UtcTime::new(format_description!(
                 "[year]-[month]-[day] [hour]:[minute]:[second]"
             )))
