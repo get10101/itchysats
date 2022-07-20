@@ -55,6 +55,12 @@ pub struct Opts {
     #[clap(long, default_value = LOCAL_COLLECTOR_ENDPOINT )]
     pub collector_endpoint: String,
 
+    /// Service name for OTEL.
+    ///
+    /// If not specified it defaults to the binary name.
+    #[clap(long, default_value = "maker")]
+    pub service_name: String,
+
     /// If enabled the application will not fail if an error occurred during db migration.
     #[clap(short, long)]
     pub ignore_migration_errors: bool,
