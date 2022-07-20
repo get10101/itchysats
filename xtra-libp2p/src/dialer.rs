@@ -89,7 +89,7 @@ impl Actor {
             .expect("to always have peer id if successfully started")
     }
 
-    #[instrument(skip(self), ret, err)]
+    #[instrument(skip(self), err)]
     async fn is_connection_established(&self) -> Result<bool> {
         Ok(self
             .endpoint

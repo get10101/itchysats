@@ -282,7 +282,7 @@ pub struct HealthCheck {
 }
 
 #[rocket::get("/version")]
-#[instrument(name = "GET /version", ret)]
+#[instrument(name = "GET /version")]
 pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
         daemon_version: daemon::version::version().to_string(),

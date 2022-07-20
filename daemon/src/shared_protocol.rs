@@ -14,9 +14,9 @@ use maia_core::PartyParams;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 use tracing::instrument;
-use tracing::Instrument;
+use tracing::Span;
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", skip_all)]
 pub(crate) async fn verify_cets(
     (oracle_pk, nonce_pks): (XOnlyPublicKey, Vec<XOnlyPublicKey>),
     counterparty: PartyParams,
@@ -25,7 +25,9 @@ pub(crate) async fn verify_cets(
     commit_desc: Descriptor<bdk::bitcoin::PublicKey>,
     commit_amount: Amount,
 ) -> Result<()> {
+    let span = Span::current();
     tokio::task::spawn_blocking(move || {
+        let _g = span.entered();
         for (tx, _, digits) in own_cets.iter() {
             let counterparty_encsig = counterparty_cets
                 .iter()
@@ -50,13 +52,12 @@ pub(crate) async fn verify_cets(
 
         anyhow::Ok(())
     })
-    .in_current_span()
     .await??;
 
     Ok(())
 }
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", level = "trace", skip_all)]
 pub(crate) fn verify_adaptor_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -73,7 +74,7 @@ pub(crate) fn verify_adaptor_signature(
         .context("failed to verify encsig spend tx")
 }
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", skip_all)]
 pub(crate) fn verify_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -87,7 +88,7 @@ pub(crate) fn verify_signature(
     Ok(())
 }
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", level = "trace", skip_all, err)]
 pub(crate) fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,

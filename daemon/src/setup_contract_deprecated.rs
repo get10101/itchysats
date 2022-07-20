@@ -55,6 +55,7 @@ use std::time::Duration;
 use tokio_extras::FutureExt;
 use tracing::instrument;
 use tracing::Instrument;
+use tracing::Span;
 use xtra::prelude::MessageChannel;
 
 /// How long contract setup protocol waits for the next message before giving up
@@ -716,7 +717,7 @@ pub async fn roll_over(
     })
 }
 
-fn stream_select_next_span() -> tracing::Span {
+fn stream_select_next_span() -> Span {
     tracing::debug_span!("Receive setup message")
 }
 
@@ -775,7 +776,7 @@ impl AllParams {
     }
 }
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", skip_all)]
 async fn verify_cets(
     (oracle_pk, nonce_pks): (XOnlyPublicKey, Vec<XOnlyPublicKey>),
     counterparty: PartyParams,
@@ -784,7 +785,9 @@ async fn verify_cets(
     commit_desc: Descriptor<bdk::bitcoin::PublicKey>,
     commit_amount: Amount,
 ) -> Result<()> {
+    let span = Span::current();
     tokio::task::spawn_blocking(move || {
+        let _g = span.entered();
         for (tx, _, digits) in own_cets.iter() {
             let counterparty_encsig = cets
                 .iter()
@@ -814,7 +817,7 @@ async fn verify_cets(
     Ok(())
 }
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", level = "trace", skip_all)]
 fn verify_adaptor_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -831,7 +834,7 @@ fn verify_adaptor_signature(
         .context("failed to verify encsig spend tx")
 }
 
-#[instrument(skip_all)]
+#[instrument(target = "verify_crypto", skip_all)]
 fn verify_signature(
     tx: &Transaction,
     spent_descriptor: &Descriptor<bdk::bitcoin::PublicKey>,
@@ -845,7 +848,7 @@ fn verify_signature(
     Ok(())
 }
 
-#[instrument(skip_all, err)]
+#[instrument(target = "verify_crypto", level = "trace", skip_all, err)]
 fn verify_cet_encsig(
     tx: &Transaction,
     encsig: &EcdsaAdaptorSignature,
