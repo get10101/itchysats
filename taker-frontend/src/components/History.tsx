@@ -1,10 +1,16 @@
-import { ExternalLinkIcon } from "@chakra-ui/icons";
+import { ExternalLinkIcon, InfoIcon } from "@chakra-ui/icons";
 import {
     Badge,
     GridItem,
     Heading,
     HStack,
+    IconButton,
     Link,
+    Popover,
+    PopoverArrow,
+    PopoverBody,
+    PopoverContent,
+    PopoverTrigger,
     SimpleGrid,
     Skeleton,
     Spinner,
@@ -115,10 +121,10 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
     return (
         <HStack
             bg={useColorModeValue("white", "gray.700")}
+            boxShadow={"lg"}
             rounded={"md"}
             padding={5}
             alignItems={"stretch"}
-            boxShadow={"lg"}
         >
             <VStack>
                 <Table size="sm" variant={"unstyled"}>
@@ -216,7 +222,13 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                 </Table>
             </VStack>
             <VStack justifyContent={"space-between"}>
-                <Badge marginTop={5} variant={"outline"} ml={1} fontSize="sm" colorScheme={cfd.state.getColorScheme()}>
+                <Badge
+                    marginTop={5}
+                    variant={"outline"}
+                    ml={1}
+                    fontSize="sm"
+                    colorScheme={cfd.state.getColorScheme()}
+                >
                     {cfd.state.getLabel()}
                 </Badge>
                 <Table size="sm" variant={"unstyled"}>
@@ -281,6 +293,22 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton }: CfdDetailsPro
                     )
                     : <></>}
             </VStack>
+
+            <Popover>
+                <PopoverTrigger>
+                    <IconButton
+                        bg={"white"}
+                        rounded={100}
+                        size="xs"
+                        aria-label="Info"
+                        icon={<InfoIcon color={"black"} />}
+                    />
+                </PopoverTrigger>
+                <PopoverContent width={"inherit"}>
+                    <PopoverArrow />
+                    <PopoverBody>{cfd.order_id}</PopoverBody>
+                </PopoverContent>
+            </Popover>
         </HStack>
     );
 };
