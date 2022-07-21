@@ -71,7 +71,6 @@ pub fn init(
             .boxed()
     } else {
         fmt_layer
-            .compact()
             .with_timer(UtcTime::new(format_description!(
                 "[year]-[month]-[day] [hour]:[minute]:[second]"
             )))

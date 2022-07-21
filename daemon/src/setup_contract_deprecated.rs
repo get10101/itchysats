@@ -682,6 +682,7 @@ pub async fn roll_over(
         // because we cannot be sure this works side effect free.
         settlement_event_id: None,
         complete_fee: None,
+        revocation_sk_ours: None,
     });
 
     // TODO: Remove send- and receiving ACK messages once we are able to handle incomplete DLC
