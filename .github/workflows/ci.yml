@@ -135,3 +135,25 @@ jobs:
           sudo apt-get install gcc-aarch64-linux-gnu
           sudo apt-get install g++-aarch64-linux-gnu
       - run: cargo build --target=aarch64-unknown-linux-gnu --bins
+
+  sqlx-db-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2.0.0
+
+      - name: Install sqlx-cli
+        run: |
+          cargo install sqlx-cli
+
+      - name: Run sqlx prepare
+        run: |
+          cd sqlite-db
+          ./prepare_db.sh
+          git diff --exit-code sqlx-data.json
+      - name: sqlx prepare was not run
+        if: failure()
+        run: |
+          echo "sqlx prepare was not run or sqlx-data.json was not checked-in"

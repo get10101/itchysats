@@ -26,4 +26,5 @@ status = [
   "smoke_test (ubuntu-latest)",
   "smoke_test (macos-12)",
   "daemons_arm_build",
+  "sqlx-db-check",
 ]
