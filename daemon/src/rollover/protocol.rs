@@ -16,7 +16,6 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
-use bdk::miniscript::DescriptorTrait;
 use maia::commit_descriptor;
 use maia::renew_cfd_transactions;
 use maia_core::secp256k1_zkp;
@@ -34,7 +33,6 @@ use model::FundingFee;
 use model::FundingRate;
 use model::OrderId;
 use model::Position;
-use model::RevokedCommit;
 use model::Role;
 use model::RolloverParams;
 use model::Timestamp;
@@ -571,38 +569,4 @@ pub(crate) async fn build_and_verify_cets_and_refund(
         .collect::<Result<HashMap<_, _>>>()?;
 
     Ok((cets, refund_tx))
-}
-
-pub(crate) fn finalize_revoked_commits(
-    dlc: &Dlc,
-    commit_tx_adaptor_sig: EcdsaAdaptorSignature,
-    msg2: RolloverMsg2,
-    complete_fee_before_rollover: model::CompleteFee,
-) -> Result<Vec<RevokedCommit>> {
-    let revocation_sk_theirs = msg2.revocation_sk;
-
-    {
-        let derived_rev_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
-            SECP256K1,
-            &revocation_sk_theirs,
-        ));
-
-        if derived_rev_pk != dlc.revocation_pk_counterparty {
-            anyhow::bail!("Counterparty sent invalid revocation sk");
-        }
-    }
-
-    let mut revoked_commit = dlc.revoked_commit.clone();
-    let transaction = dlc.commit.0.clone();
-    revoked_commit.push(RevokedCommit {
-        encsig_ours: commit_tx_adaptor_sig,
-        revocation_sk_theirs,
-        publication_pk_theirs: dlc.publish_pk_counterparty,
-        txid: transaction.txid(),
-        script_pubkey: dlc.commit.2.script_pubkey(),
-        settlement_event_id: Some(dlc.settlement_event_id),
-        complete_fee: Some(complete_fee_before_rollover),
-    });
-
-    Ok(revoked_commit)
 }

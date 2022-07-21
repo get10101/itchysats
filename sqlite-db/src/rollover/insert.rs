@@ -144,7 +144,7 @@ async fn insert_rollover_completed_event_data(
                 refund_signature,
                 complete_fee,
                 complete_fee_flow
-            ) values ( 
+            ) values (
             (select id from cfds where cfds.uuid = $1),
             $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
             )
@@ -190,7 +190,8 @@ async fn insert_revoked_commit_transaction(
     revoked: RevokedCommit,
 ) -> Result<()> {
     let revoked_tx_script_pubkey = revoked.script_pubkey.to_hex();
-    let revocation_secret = models::SecretKey::from(revoked.revocation_sk_theirs);
+    let revocation_sk_theirs = models::SecretKey::from(revoked.revocation_sk_theirs);
+    let revocation_sk_ours = revoked.revocation_sk_ours.map(models::SecretKey::from);
     let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
     let encsig_ours = models::AdaptorSignature::from(revoked.encsig_ours);
     let txid = models::Txid::from(revoked.txid);
@@ -211,18 +212,20 @@ async fn insert_revoked_commit_transaction(
                     txid,
                     settlement_event_id,
                     complete_fee,
-                    complete_fee_flow
-                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7, $8, $9 )
+                    complete_fee_flow,
+                    revocation_sk_ours
+                ) values ( (select id from cfds where cfds.uuid = $1), $2, $3, $4, $5, $6, $7, $8, $9, $10 )
             "#,
         offer_id,
         encsig_ours,
         publication_pk_theirs,
-        revocation_secret,
+        revocation_sk_theirs,
         revoked_tx_script_pubkey,
         txid,
         settlement_event_id,
         complete_fee,
         complete_fee_flow,
+        revocation_sk_ours
     )
     .execute(&mut *inner_transaction)
     .await?;
