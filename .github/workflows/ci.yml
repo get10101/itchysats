@@ -95,7 +95,10 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
-      - run: cargo test --workspace
+      - name: Compile tests before running
+        run: cargo test --workspace --no-run
+      - name: Test execution
+        run: cargo test --workspace
 
   smoke_test:
     strategy:
