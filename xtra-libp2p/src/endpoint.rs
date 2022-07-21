@@ -431,7 +431,7 @@ impl Endpoint {
                     anyhow::Ok(())
                 };
 
-                fut.instrument(tracing::debug_span!("Dial new connection"))
+                fut.instrument(tracing::debug_span!("Dial new connection").or_current())
             },
             move |error| async move {
                 this.send_async_next(FailedToConnect { peer, error }).await;

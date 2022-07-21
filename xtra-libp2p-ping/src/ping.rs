@@ -20,6 +20,8 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncNext;
 use xtras::SendInterval;
 
+pub const PING_PEER_SPAN: &str = "Ping peer";
+
 /// An actor implementing the official ipfs/libp2p ping protocol.
 ///
 /// The ping protocol serves two purposes:
@@ -79,7 +81,7 @@ impl xtra::Actor for Actor {
 
         tokio_extras::spawn(
             &this.clone(),
-            this.send_interval(self.ping_interval, || Ping),
+            this.send_interval(self.ping_interval, || Ping, xtras::IncludeSpan::Always),
         );
     }
 
@@ -130,7 +132,7 @@ impl Actor {
 
             spawn_fallible(
                 &this,
-                ping_fut.instrument(tracing::debug_span!("Ping peer")),
+                ping_fut.instrument(tracing::debug_span!(PING_PEER_SPAN).or_current()),
                 err_handler,
             );
         }

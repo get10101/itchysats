@@ -549,7 +549,11 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we are alive");
         tokio_extras::spawn(
             &this,
-            this.clone().send_interval(Duration::from_secs(20), || Sync),
+            this.clone().send_interval(
+                Duration::from_secs(20),
+                || Sync,
+                xtras::IncludeSpan::Always,
+            ),
         );
 
         tokio_extras::spawn_fallible(

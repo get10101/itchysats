@@ -313,7 +313,10 @@ where
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let this = ctx.address().expect("self to be alive");
 
-        tokio_extras::spawn(&this.clone(), this.send_interval(SYNC_INTERVAL, || Sync));
+        tokio_extras::spawn(
+            &this.clone(),
+            this.send_interval(SYNC_INTERVAL, || Sync, xtras::IncludeSpan::Always),
+        );
     }
 
     async fn stopped(self) -> Self::Stop {}

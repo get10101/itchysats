@@ -14,11 +14,21 @@ where
     /// handler returns before scheduling a new one, thus preventing them from
     /// piling up.
     /// As a bonus, this function is non-fallible.
-    async fn send_interval<F>(self, duration: Duration, constructor: F)
+    async fn send_interval<F>(self, duration: Duration, constructor: F, verbosity: IncludeSpan)
     where
         F: Send + Sync + Fn() -> M,
         A: xtra::Handler<M, Return = ()>;
 }
+
+/// How verbose a given trace will be. If it is set to quiet, it will be disabled, alongside all
+/// of its children.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum IncludeSpan {
+    OnError,
+    Always,
+}
+
+pub const QUIET_NAME: &str = "Send message every interval (quiet)";
 
 #[async_trait]
 impl<A, M> SendInterval<A, M> for address::Address<A>
@@ -26,15 +36,23 @@ where
     A: xtra::Handler<M>,
     M: Send + 'static,
 {
-    async fn send_interval<F>(self, duration: Duration, constructor: F)
+    async fn send_interval<F>(self, duration: Duration, constructor: F, verbosity: IncludeSpan)
     where
         F: Send + Sync + Fn() -> M,
     {
-        let span = || {
-            tracing::debug_span!(
-                "Send message every interval",
-                interval_secs = %duration.as_secs()
-            )
+        let span = || match verbosity {
+            IncludeSpan::Always => {
+                tracing::debug_span!(
+                    "Send message every interval",
+                    interval_secs = %duration.as_secs(),
+                )
+            }
+            IncludeSpan::OnError => {
+                tracing::debug_span!(
+                    QUIET_NAME,
+                    interval_secs = %duration.as_secs(),
+                )
+            }
         };
 
         while self.send(constructor()).instrument(span()).await.is_ok() {

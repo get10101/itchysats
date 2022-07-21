@@ -340,8 +340,11 @@ impl xtra::Actor for Actor {
         let this = ctx.address().expect("we are alive");
         tokio_extras::spawn(
             &this,
-            this.clone()
-                .send_interval(SYNC_ANNOUNCEMENTS_INTERVAL, || SyncAnnouncements),
+            this.clone().send_interval(
+                SYNC_ANNOUNCEMENTS_INTERVAL,
+                || SyncAnnouncements,
+                xtras::IncludeSpan::Always,
+            ),
         );
 
         tokio_extras::spawn(&this.clone(), {
@@ -373,8 +376,12 @@ impl xtra::Actor for Actor {
                     .instrument(span)
                     .await;
 
-                this.send_interval(SYNC_ATTESTATIONS_INTERVAL, || SyncAttestations)
-                    .await;
+                this.send_interval(
+                    SYNC_ATTESTATIONS_INTERVAL,
+                    || SyncAttestations,
+                    xtras::IncludeSpan::Always,
+                )
+                .await;
             }
         });
     }

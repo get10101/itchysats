@@ -4067,6 +4067,9 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "xtra-libp2p-offer",
+ "xtra-libp2p-ping",
+ "xtras",
 ]
 
 [[package]]

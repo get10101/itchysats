@@ -6,10 +6,12 @@ use opentelemetry::sdk::Resource;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use time::macros::format_description;
+use tracing::Level;
+use tracing_subscriber::filter::Directive;
+use tracing_subscriber::filter::FilterExt;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
-use tracing_subscriber::Registry;
 
 pub use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -20,13 +22,20 @@ pub const LOCAL_COLLECTOR_ENDPOINT: &str = "http://localhost:4317";
 
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
-#[allow(clippy::print_stdout)] // because the logger is only initialized at the end of this function but we want to print a warning
+/// Names for specific spans which may be disabled as they are generally too spammy
+pub mod span_names {
+    pub const OLD_BROADCAST_OFFERS: &str = "Broadcast offers to taker";
+}
+
+// because the logger is only initialized at the end of this function but we want to print a warning
+#[allow(clippy::print_stdout, clippy::too_many_arguments)]
 pub fn init(
     level: LevelFilter,
     json_format: bool,
     json_span_list: bool,
     instrumentation: bool,
     use_tokio_console: bool,
+    verbose_spans: bool,
     service_name: &str,
     collector_endpoint: &str,
 ) -> Result<()> {
@@ -36,27 +45,32 @@ pub fn init(
 
     let is_terminal = atty::is(atty::Stream::Stderr);
 
-    let filter = match std::env::var_os(RUST_LOG_ENV).map(|s| s.into_string()) {
-        Some(Ok(env)) => {
-            let mut filter = log_base_directives(EnvFilter::new(""))?;
-            for directive in env.split(',') {
-                match directive.parse() {
-                    Ok(d) => filter = filter.add_directive(d),
-                    Err(e) => println!("WARN ignoring log directive: `{directive}`: {e}"),
-                };
+    let filter = || -> Result<EnvFilter> {
+        let filter = match std::env::var_os(RUST_LOG_ENV).map(|s| s.into_string()) {
+            Some(Ok(env)) => {
+                let mut filter = log_base_directives(EnvFilter::new(""))?;
+                for directive in env.split(',') {
+                    match directive.parse() {
+                        Ok(d) => filter = filter.add_directive(d),
+                        Err(e) => println!("WARN ignoring log directive: `{directive}`: {e}"),
+                    };
+                }
+                filter
             }
-            filter
-        }
-        _ => log_base_directives(EnvFilter::from_env(RUST_LOG_ENV))?,
-    };
-    let filter = filter.add_directive(format!("{level}").parse()?);
+            _ => log_base_directives(EnvFilter::from_env(RUST_LOG_ENV))?,
+        };
 
-    let filter = if use_tokio_console {
-        filter
-            .add_directive("tokio=trace".parse()?)
-            .add_directive("runtime=trace".parse()?)
-    } else {
-        filter
+        let filter = filter.add_directive(format!("{level}").parse()?);
+
+        let filter = if use_tokio_console {
+            filter
+                .add_directive("tokio=trace".parse()?)
+                .add_directive("runtime=trace".parse()?)
+        } else {
+            filter
+        };
+
+        Ok(filter)
     };
 
     let fmt_layer = tracing_subscriber::fmt::layer()
@@ -112,9 +126,26 @@ pub fn init(
         None
     };
 
-    Registry::default()
-        .with(Layer::and_then(telemetry, fmt_layer).with_filter(filter))
+    let mut error_only = vec![
+        span_names::OLD_BROADCAST_OFFERS,
+        xtras::send_interval::QUIET_NAME,
+    ];
+
+    if !verbose_spans {
+        error_only.extend([
+            xtra_libp2p_ping::ping::PING_PEER_SPAN,
+            xtra_libp2p_offer::maker::LIBP2P_BROADCAST_OFFERS_SPAN,
+        ]);
+    }
+
+    let disable_spans = tracing_subscriber::filter::filter_fn(move |meta| {
+        !(*meta.level() > Level::ERROR && error_only.contains(&meta.name()))
+    });
+
+    tracing_subscriber::registry()
         .with(console_layer)
+        .with(telemetry.with_filter(filter()?.and(disable_spans.clone())))
+        .with(fmt_layer.with_filter(filter()?.and(disable_spans)))
         .try_init()
         .context("Failed to init logger")?;
 
@@ -125,6 +156,7 @@ pub fn init(
 
 fn log_base_directives(env: EnvFilter) -> Result<EnvFilter> {
     let filter = env
+        .add_directive(Directive::from(LevelFilter::INFO))
         .add_directive("bdk=warn".parse()?) // bdk is quite spamy on debug
         .add_directive("sqlx=warn".parse()?) // sqlx logs all queries on INFO
         .add_directive("hyper=warn".parse()?)

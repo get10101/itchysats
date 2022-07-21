@@ -35,6 +35,7 @@ async fn main() -> Result<()> {
         opts.json_span_list,
         opts.instrumentation,
         opts.tokio_console,
+        opts.verbose_spans,
         &opts.service_name,
         &opts.collector_endpoint,
     )

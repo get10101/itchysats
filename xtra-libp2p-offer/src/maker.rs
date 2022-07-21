@@ -13,6 +13,8 @@ use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
 
+pub const LIBP2P_BROADCAST_OFFERS_SPAN: &str = "Broadcast offers to taker (libp2p)";
+
 pub struct Actor {
     endpoint: xtra::Address<Endpoint>,
     connected_peers: HashSet<PeerId>,
@@ -32,7 +34,7 @@ impl Actor {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
 
-        let span = tracing::debug_span!("Send offers", %peer);
+        let span = tracing::debug_span!("Send offers", %peer).or_current();
         let task = async move {
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
@@ -58,7 +60,9 @@ impl Actor {
         self.latest_offers = msg.0;
 
         for peer in self.connected_peers.iter().copied() {
-            self.send_offers(peer, ctx).await
+            self.send_offers(peer, ctx)
+                .instrument(tracing::debug_span!(LIBP2P_BROADCAST_OFFERS_SPAN))
+                .await
         }
     }
 }
