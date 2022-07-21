@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2022-07-21
+
 ### Changed
 
 - Update `xtra` to [upstream](https://github.com/Restioson/xtra). This involved re-implementing some of the features
@@ -227,7 +229,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.4.21...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/itchysats/itchysats/compare/0.4.21...0.5.0
 [0.4.21]: https://github.com/itchysats/itchysats/compare/0.4.20...0.4.21
 [0.4.20]: https://github.com/itchysats/itchysats/compare/0.4.19...0.4.20
 [0.4.19]: https://github.com/itchysats/itchysats/compare/0.4.17...0.4.19
