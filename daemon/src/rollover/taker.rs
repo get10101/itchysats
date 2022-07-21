@@ -294,12 +294,11 @@ impl Actor {
                                 .into_rollover_msg()?
                                 .try_into_msg2()?;
 
-                            let revoked_commit = finalize_revoked_commits(
-                                &dlc,
-                                dlc.commit.1,
-                                msg2,
-                                complete_fee_before_rollover,
-                            )?;
+                            let revocation_sk_theirs = msg2.revocation_sk;
+                            let revoked_commits = dlc
+                                .base_dlc_params_from_latest(complete_fee_before_rollover)
+                                .revoke_base_commit_tx(revocation_sk_theirs)
+                                .context("Maker sent invalid revocation sk")?;
 
                             let dlc = Dlc {
                                 identity: dlc.identity,
@@ -320,7 +319,7 @@ impl Actor {
                                 refund: (refund_tx, msg1.refund),
                                 maker_lock_amount: dlc.maker_lock_amount,
                                 taker_lock_amount: dlc.taker_lock_amount,
-                                revoked_commit,
+                                revoked_commit: revoked_commits,
                                 settlement_event_id: announcement.id,
                                 refund_timelock: rollover_params.refund_timelock,
                             };

@@ -14,7 +14,7 @@ use futures::StreamExt;
 use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::olivia;
-use model::olivia::BitMexPriceEventId;
+use model::BaseDlcParams;
 use model::Dlc;
 use model::FundingRate;
 use model::OrderId;
@@ -35,7 +35,7 @@ use super::protocol;
 type ListenerConnection = (
     Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
     PeerId,
-    (BitMexPriceEventId, model::CompleteFee),
+    BaseDlcParams,
 );
 
 /// Permanent actor to handle incoming substreams for the `/itchysats/rollover/1.0.0`
@@ -127,7 +127,7 @@ impl Actor {
         } = msg;
         let order_id = propose.order_id;
 
-        let (from_event_id, from_complete_fee) = match self
+        let base_dlc_params = match self
             .executor
             .execute(order_id, |cfd| {
                 cfd.verify_counterparty_peer_id(&peer.into())?;
@@ -135,7 +135,7 @@ impl Actor {
             })
             .await
         {
-            Ok(event_id) => event_id,
+            Ok(base_dlc_params) => base_dlc_params,
             Err(e) => {
                 tracing::warn!(%order_id, "Rollover failed after handling taker proposal: {e:#}");
 
@@ -152,7 +152,7 @@ impl Actor {
         // the taker will retry this should not do much harm because we will replace the proposal
         // with a new one. This is acceptable for now.
         self.pending_protocols
-            .insert(order_id, (framed, peer, (from_event_id, from_complete_fee)));
+            .insert(order_id, (framed, peer, base_dlc_params));
     }
 
     async fn handle(&mut self, msg: Accept) -> Result<()> {
@@ -167,7 +167,7 @@ impl Actor {
             tracing::debug_span!("next rollover message")
         }
 
-        let (mut framed, _, from_params) =
+        let (mut framed, _, base_dlc_params) =
             self.pending_protocols.remove(&order_id).with_context(|| {
                 format!("No active protocol for {order_id} when accepting rollover")
             })?;
@@ -191,7 +191,7 @@ impl Actor {
                                 .accept_rollover_proposal(
                                     tx_fee_rate,
                                     funding_rate,
-                                    Some(from_params),
+                                    Some((base_dlc_params.settlement_event_id(), base_dlc_params.complete_fee())),
                                     RolloverVersion::V3,
                                 )?;
 
@@ -314,17 +314,17 @@ impl Actor {
                     if let Err(e) = framed
                         .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg2(
                             RolloverMsg2 {
-                                revocation_sk: dlc.revocation,
+                                revocation_sk: base_dlc_params.revocation_sk_ours(),
                             },
                         ))))
                         .await {
                         tracing::warn!(%order_id, "Failed to last rollover message to taker, this rollover will likely be retried by the taker: {e:#}");
                     }
 
-                    let revoked_commit = finalize_revoked_commits(&dlc, dlc.commit.1,
-                        msg2,
-                        rollover_params.complete_fee_before_rollover(),
-                    )?;
+                    let revocation_sk_theirs = msg2.revocation_sk;
+                    let revoked_commits = base_dlc_params
+                        .revoke_base_commit_tx(revocation_sk_theirs)
+                        .context("Taker sent invalid revocation sk")?;
 
                     let dlc = Dlc {
                         identity: dlc.identity,
@@ -343,7 +343,7 @@ impl Actor {
                         refund: (refund_tx, msg1.refund),
                         maker_lock_amount: dlc.maker_lock_amount,
                         taker_lock_amount: dlc.taker_lock_amount,
-                        revoked_commit,
+                        revoked_commit: revoked_commits,
                         settlement_event_id: announcement.id,
                         refund_timelock: rollover_params.refund_timelock,
                     };

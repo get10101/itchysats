@@ -59,8 +59,8 @@ pub async fn load(
                 complete_fee_flow as "complete_fee_flow: models::FeeFlow"
             FROM
                 rollover_completed_event_data
-            WHERE 
-                cfd_id = $1 and 
+            WHERE
+                cfd_id = $1 and
                 event_id = $2
             "#,
         cfd_row_id,
@@ -123,6 +123,7 @@ async fn load_revoked_commit_transactions(
                 encsig_ours as "encsig_ours: models::AdaptorSignature",
                 publication_pk_theirs as "publication_pk_theirs: models::PublicKey",
                 revocation_sk_theirs as "revocation_sk_theirs: models::SecretKey",
+                revocation_sk_ours as "revocation_sk_ours: models::SecretKey",
                 script_pubkey,
                 settlement_event_id as "settlement_event_id: models::BitMexPriceEventId",
                 txid as "txid: models::Txid",
@@ -141,6 +142,9 @@ async fn load_revoked_commit_transactions(
     .map(|row| {
         Ok(RevokedCommit {
             encsig_ours: row.encsig_ours.into(),
+            revocation_sk_ours: row
+                .revocation_sk_ours
+                .map(|revocation_sk_ours| revocation_sk_ours.into()),
             revocation_sk_theirs: row.revocation_sk_theirs.into(),
             publication_pk_theirs: row.publication_pk_theirs.into(),
             script_pubkey: Script::from_hex(row.script_pubkey.as_str())?,

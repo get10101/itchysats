@@ -57,6 +57,7 @@ pub fn init_tracing(module: &'static str) {
             .add_directive("taker=debug".parse().unwrap())
             .add_directive("maker=debug".parse().unwrap())
             .add_directive("daemon=debug".parse().unwrap())
+            .add_directive("model=info".parse().unwrap())
             .add_directive("xtra_libp2p=debug".parse().unwrap())
             .add_directive("xtra_libp2p_offer=debug".parse().unwrap())
             .add_directive("xtra_libp2p_ping=debug".parse().unwrap())

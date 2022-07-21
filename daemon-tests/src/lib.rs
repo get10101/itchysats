@@ -22,6 +22,11 @@ use daemon::N_PAYOUTS;
 use model::libp2p::PeerId;
 use model::olivia::Announcement;
 use model::olivia::BitMexPriceEventId;
+use model::CfdEvent;
+use model::CompleteFee;
+use model::Dlc;
+use model::EventKind;
+use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
@@ -308,6 +313,7 @@ pub struct Taker {
     pub mocks: mocks::Mocks,
     pub feeds: Feeds,
     pub maker_peer_id: PeerId,
+    db: sqlite_db::Connection,
     _tasks: Tasks,
 }
 
@@ -335,6 +341,19 @@ impl Taker {
             .commit
             .0
             .txid()
+    }
+
+    pub fn latest_dlc(&mut self) -> Dlc {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .clone()
+    }
+
+    pub fn latest_fees(&mut self) -> CompleteFee {
+        self.first_cfd().aggregated().latest_fees()
     }
 
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
@@ -407,8 +426,11 @@ impl Taker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) =
-            projection::Actor::new(db, Network::Testnet, taker.price_feed_actor.clone().into());
+        let (proj_actor, feeds) = projection::Actor::new(
+            db.clone(),
+            Network::Testnet,
+            taker.price_feed_actor.clone().into(),
+        );
         tasks.add(projection_context.run(proj_actor));
 
         tasks.add(connect(
@@ -427,6 +449,7 @@ impl Taker {
                 .extract_peer_id()
                 .expect("to have peer id")
                 .into(),
+            db,
             _tasks: tasks,
         }
     }
@@ -461,6 +484,32 @@ impl Taker {
             })
             .await
             .unwrap();
+    }
+
+    /// Appends an event that overwrites the current DLC
+    ///
+    /// Note that the projection does not get updated, this change only manipulates the database!
+    /// When triggering another rollover this data will be loaded and used.
+    pub async fn simulate_previous_rollover(
+        &mut self,
+        id: OrderId,
+        dlc: Dlc,
+        complete_fee: CompleteFee,
+    ) {
+        tracing::info!(commit_txid = %dlc.commit.0.txid(), "Manually setting latest DLC");
+
+        self.db
+            .append_event(CfdEvent::new(
+                id,
+                EventKind::RolloverCompleted {
+                    dlc: Some(dlc),
+                    // Funding fee irrelevant because only CompleteFee is used
+                    funding_fee: dummy_funding_fee(),
+                    complete_fee: Some(complete_fee),
+                },
+            ))
+            .await
+            .unwrap()
     }
 }
 
@@ -540,6 +589,18 @@ pub fn dummy_offer_params(position_maker: Position) -> maker::cfd::OfferParams {
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
         leverage_choices: vec![Leverage::TWO],
     }
+}
+
+fn dummy_funding_fee() -> FundingFee {
+    FundingFee::calculate(
+        Price::new(dec!(10000)).unwrap(),
+        Usd::ZERO,
+        Leverage::ONE,
+        Leverage::ONE,
+        Default::default(),
+        0,
+    )
+    .unwrap()
 }
 
 fn dummy_price() -> Decimal {

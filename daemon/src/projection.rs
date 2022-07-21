@@ -300,6 +300,10 @@ impl Aggregated {
     pub fn latest_dlc(&self) -> &Option<Dlc> {
         &self.latest_dlc
     }
+    // Only used in integration tests
+    pub fn latest_fees(&self) -> model::CompleteFee {
+        self.fee_account.settle()
+    }
 }
 
 /// Returns output if it can be found or zero amount

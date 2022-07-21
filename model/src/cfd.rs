@@ -5,6 +5,7 @@ use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve;
 use crate::rollover;
+use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;
 use crate::CompleteFee;
 use crate::FeeAccount;
@@ -891,7 +892,7 @@ impl Cfd {
     pub fn start_rollover_maker(
         &self,
         from_tx_id_proposed: Txid,
-    ) -> Result<(CfdEvent, BitMexPriceEventId, CompleteFee)> {
+    ) -> Result<(CfdEvent, BaseDlcParams)> {
         if self.during_rollover {
             bail!("The CFD is already being rolled over")
         };
@@ -903,40 +904,13 @@ impl Cfd {
             .as_ref()
             .context("No DLC available when starting a rollover")?;
 
-        let current_commit_txid = dlc.commit.0.txid();
-
-        let (from_event_id, from_complete_fee) = if current_commit_txid == from_tx_id_proposed {
-            (dlc.settlement_event_id, self.fee_account.settle())
-        } else {
-            let (from_event_id, from_complete_fee) = match dlc
-                .revoked_commit
-                .iter()
-                .find(|revoke_commit| revoke_commit.txid == from_tx_id_proposed)
-            {
-                Some(revoke_commit) => {
-                    let from_event_id = revoke_commit.settlement_event_id.ok_or_else(|| anyhow!(
-                    "Proposed commit-txid {} not eligible for rollover because no event-id attached", from_tx_id_proposed
-                    ))?;
-                    let from_complete_fee = revoke_commit.complete_fee.ok_or_else(|| anyhow!(
-                        "Proposed commit-txid {} not eligible for rollover because no complete_fee attached", from_tx_id_proposed
-                    ))?;
-
-                    (from_event_id, from_complete_fee)
-                }
-                None => bail!(
-                    "Unknown commit-txid {} proposed by taker",
-                    from_tx_id_proposed
-                ),
-            };
-
-            tracing::info!(order_id=%self.id, commit_txid=%from_tx_id_proposed, %from_event_id, "Starting rollover from previous commit-txid");
-
-            (from_event_id, from_complete_fee)
-        };
+        let order_id = self.id;
+        let base_dlc_params = tracing::info_span!("", %order_id)
+            .in_scope(|| dlc.base_dlc_params(from_tx_id_proposed, self.fee_account.settle()))?;
 
         let event = CfdEvent::new(self.id, EventKind::RolloverStarted);
 
-        Ok((event, from_event_id, from_complete_fee))
+        Ok((event, base_dlc_params))
     }
 
     pub fn accept_rollover_proposal(
@@ -2312,6 +2286,13 @@ pub struct IrrelevantAttestation {
 pub struct RevokedCommit {
     // To build punish transaction
     pub encsig_ours: EcdsaAdaptorSignature,
+
+    /// Our own revocation key for this commit tx
+    ///
+    /// This is used to enable rolling over from a previous commit-txid.
+    /// The maker uses this key for verification if a taker triggers a rollover from a previous
+    /// commit-txid.
+    pub revocation_sk_ours: Option<SecretKey>,
     pub revocation_sk_theirs: SecretKey,
     pub publication_pk_theirs: PublicKey,
     // To monitor revoked commit transaction
@@ -2320,13 +2301,16 @@ pub struct RevokedCommit {
 
     /// The settlement_event_id that was associated to this commit tx
     ///
-    /// This is used to enable triggering rollovers from `settlement_event_id` and `complete_fee`.
+    /// This is used to enable rolling over from a previous commit-txid.
+    /// Used by the maker to determine the fees when a taker triggers a rollover from a previous
+    /// commit-txid.
     pub settlement_event_id: Option<BitMexPriceEventId>,
 
     /// The complete fee that was associated to this commit tx
     ///
-    /// This represents the accumulated fees at the time when the commit was active.
-    /// This is used to enable triggering rollovers from `settlement_event_id` and `complete_fee`.
+    /// This is used to enable rolling over from a previous commit-txid.
+    /// Used by the maker to determine the fees when a taker triggers a rollover from a previous
+    /// commit-txid.
     pub complete_fee: Option<CompleteFee>,
 }
 
