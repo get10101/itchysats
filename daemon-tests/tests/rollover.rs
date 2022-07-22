@@ -92,6 +92,97 @@ async fn double_rollover_an_open_cfd() {
     .await;
 }
 
+#[otel_test]
+async fn maker_rejects_rollover_of_open_cfd() {
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id, _) =
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
+
+    taker
+        .trigger_rollover_with_latest_dlc_params(order_id)
+        .await;
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
+
+    maker.system.reject_rollover(order_id).await.unwrap();
+
+    wait_next_state!(order_id, maker, taker, CfdState::Open);
+}
+
+#[otel_test]
+async fn maker_rejects_rollover_after_commit_finality() {
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id, _) =
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
+
+    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+
+    taker
+        .trigger_rollover_with_latest_dlc_params(order_id)
+        .await;
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
+
+    confirm!(commit transaction, order_id, maker, taker);
+    // Cfd would be in "OpenCommitted" if it wasn't for the rollover
+
+    maker.system.reject_rollover(order_id).await.unwrap();
+
+    // After rejecting rollover, we should display where we were before the
+    // rollover attempt
+    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+}
+
+#[otel_test]
+async fn maker_accepts_rollover_after_commit_finality() {
+    let oracle_data = OliviaData::example_0();
+    let (mut maker, mut taker, order_id, _) =
+        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
+
+    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
+    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+
+    taker
+        .trigger_rollover_with_latest_dlc_params(order_id)
+        .await;
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        CfdState::IncomingRolloverProposal,
+        CfdState::OutgoingRolloverProposal
+    );
+
+    confirm!(commit transaction, order_id, maker, taker);
+
+    maker.system.accept_rollover(order_id).await.unwrap(); // This should fail
+
+    wait_next_state!(
+        order_id,
+        maker,
+        taker,
+        // FIXME: Maker wrongly changes state even when rollover does not happen
+        CfdState::RolloverSetup,
+        CfdState::OpenCommitted
+    );
+}
+
 /// This test simulates a rollover retry
 ///
 /// We use two different oracle events: `exmaple_0` and `example_1`
@@ -277,96 +368,5 @@ async fn rollover(
             .unwrap()
             .settlement_event_id,
         "Taker's latest event-id does not match given event-id"
-    );
-}
-
-#[otel_test]
-async fn maker_rejects_rollover_of_open_cfd() {
-    let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
-
-    taker
-        .trigger_rollover_with_latest_dlc_params(order_id)
-        .await;
-
-    wait_next_state!(
-        order_id,
-        maker,
-        taker,
-        CfdState::IncomingRolloverProposal,
-        CfdState::OutgoingRolloverProposal
-    );
-
-    maker.system.reject_rollover(order_id).await.unwrap();
-
-    wait_next_state!(order_id, maker, taker, CfdState::Open);
-}
-
-#[otel_test]
-async fn maker_rejects_rollover_after_commit_finality() {
-    let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
-
-    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
-
-    taker
-        .trigger_rollover_with_latest_dlc_params(order_id)
-        .await;
-
-    wait_next_state!(
-        order_id,
-        maker,
-        taker,
-        CfdState::IncomingRolloverProposal,
-        CfdState::OutgoingRolloverProposal
-    );
-
-    confirm!(commit transaction, order_id, maker, taker);
-    // Cfd would be in "OpenCommitted" if it wasn't for the rollover
-
-    maker.system.reject_rollover(order_id).await.unwrap();
-
-    // After rejecting rollover, we should display where we were before the
-    // rollover attempt
-    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
-}
-
-#[otel_test]
-async fn maker_accepts_rollover_after_commit_finality() {
-    let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
-
-    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
-
-    taker
-        .trigger_rollover_with_latest_dlc_params(order_id)
-        .await;
-
-    wait_next_state!(
-        order_id,
-        maker,
-        taker,
-        CfdState::IncomingRolloverProposal,
-        CfdState::OutgoingRolloverProposal
-    );
-
-    confirm!(commit transaction, order_id, maker, taker);
-
-    maker.system.accept_rollover(order_id).await.unwrap(); // This should fail
-
-    wait_next_state!(
-        order_id,
-        maker,
-        taker,
-        // FIXME: Maker wrongly changes state even when rollover does not happen
-        CfdState::RolloverSetup,
-        CfdState::OpenCommitted
     );
 }

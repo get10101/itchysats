@@ -35,55 +35,6 @@ async fn taker_receives_order_from_maker_on_publication() {
     assert_eq_offers(published, received);
 }
 
-fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
-    match (published.long, received.long) {
-        (None, None) => (),
-        (Some(published), Some(received)) => assert_eq_orders(published, received),
-        (None, Some(_)) => panic!("Long orders did not match: Published None, received Some "),
-        (Some(_), None) => panic!("Long orders did not match: Published Some, received None "),
-    }
-
-    match (published.short, received.short) {
-        (None, None) => (),
-        (Some(published), Some(received)) => assert_eq_orders(published, received),
-        (None, Some(_)) => panic!("Short orders did not match: Published None, received Some "),
-        (Some(_), None) => panic!("Short orders did not match: Published Some, received None "),
-    }
-}
-
-fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
-    // we fix the leverage to TWO for our test
-    let fixed_leverage = Leverage::TWO;
-
-    // make sure that the initial funding fee per lot is flipped
-    // note: we publish as maker and receive as taker, the funding fee is to be received by one
-    // party and paid by the other
-
-    assert_eq!(
-        published
-            .leverage_details
-            .iter()
-            .find(|l| l.leverage == fixed_leverage)
-            .unwrap()
-            .initial_funding_fee_per_lot,
-        received
-            .leverage_details
-            .iter()
-            .find(|l| l.leverage == fixed_leverage)
-            .unwrap()
-            .initial_funding_fee_per_lot
-            * -1
-    );
-    // align leverage details so we can assert on the order
-    published.leverage_details = received.leverage_details.clone();
-
-    assert_eq!(published, received);
-
-    // Hard-coded to match the dummy_new_order()
-    assert_eq!(received.opening_fee.unwrap(), Amount::from_sat(2));
-    assert_eq!(received.funding_rate_hourly_percent, "0.00100");
-}
-
 #[otel_test]
 async fn taker_takes_order_and_maker_rejects() {
     let (mut maker, mut taker) = start_both().await;
@@ -205,4 +156,53 @@ async fn taker_takes_order_and_maker_accepts_and_contract_setup() {
 
     confirm!(lock transaction, order_id, maker, taker);
     wait_next_state!(order_id, maker, taker, CfdState::Open);
+}
+
+fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
+    match (published.long, received.long) {
+        (None, None) => (),
+        (Some(published), Some(received)) => assert_eq_orders(published, received),
+        (None, Some(_)) => panic!("Long orders did not match: Published None, received Some "),
+        (Some(_), None) => panic!("Long orders did not match: Published Some, received None "),
+    }
+
+    match (published.short, received.short) {
+        (None, None) => (),
+        (Some(published), Some(received)) => assert_eq_orders(published, received),
+        (None, Some(_)) => panic!("Short orders did not match: Published None, received Some "),
+        (Some(_), None) => panic!("Short orders did not match: Published Some, received None "),
+    }
+}
+
+fn assert_eq_orders(mut published: CfdOrder, received: CfdOrder) {
+    // we fix the leverage to TWO for our test
+    let fixed_leverage = Leverage::TWO;
+
+    // make sure that the initial funding fee per lot is flipped
+    // note: we publish as maker and receive as taker, the funding fee is to be received by one
+    // party and paid by the other
+
+    assert_eq!(
+        published
+            .leverage_details
+            .iter()
+            .find(|l| l.leverage == fixed_leverage)
+            .unwrap()
+            .initial_funding_fee_per_lot,
+        received
+            .leverage_details
+            .iter()
+            .find(|l| l.leverage == fixed_leverage)
+            .unwrap()
+            .initial_funding_fee_per_lot
+            * -1
+    );
+    // align leverage details so we can assert on the order
+    published.leverage_details = received.leverage_details.clone();
+
+    assert_eq!(published, received);
+
+    // Hard-coded to match the dummy_new_order()
+    assert_eq!(received.opening_fee.unwrap(), Amount::from_sat(2));
+    assert_eq!(received.funding_rate_hourly_percent, "0.00100");
 }
