@@ -512,7 +512,8 @@ impl Actor {
                     can_remove_heartbeats.matches(&daemon_semver)
                 }
                 Err(e) => {
-                    tracing::error!("{e:#}");
+                    // parsing can fail with legacy clients with version: "<=0.4.7"
+                    tracing::debug!("{e:#}");
                     false
                 }
             };
