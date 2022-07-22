@@ -20,9 +20,29 @@ pub use anyhow::Error;
 /// Connects to the BitMex websocket API, subscribes to the specified topics (comma-separated) and
 /// yields all messages.
 ///
-/// To keep the connection alive, a websocket `Ping` will be sent every 5 seconds in case no other
+/// To keep the connection alive, a websocket `Ping` is sent every 5 seconds in case no other
 /// message was received in-between. This is according to BitMex's API documentation: https://www.bitmex.com/app/wsAPI#Heartbeats
 pub fn subscribe<const N: usize>(
+    topics: [String; N],
+    network: Network,
+) -> impl Stream<Item = Result<String, Error>> + Unpin {
+    subscribe_impl(topics, network, None)
+}
+
+/// Connects with authentication to the BitMex websocket API, subscribes to the
+/// specified topics (comma-separated) and yields all messages.
+///
+/// To keep the connection alive, a websocket `Ping` is sent every 5 seconds in case no other
+/// message was received in-between. This is according to BitMex's API documentation: https://www.bitmex.com/app/wsAPI#Heartbeats
+pub fn subscribe_with_credentials<const N: usize>(
+    topics: [String; N],
+    network: Network,
+    credentials: Credentials,
+) -> impl Stream<Item = Result<String, Error>> + Unpin {
+    subscribe_impl(topics, network, Some(credentials))
+}
+
+fn subscribe_impl<const N: usize>(
     topics: [String; N],
     network: Network,
     credentials: Option<Credentials>,
