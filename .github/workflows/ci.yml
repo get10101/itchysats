@@ -95,10 +95,12 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
       - name: Compile tests before running
         run: cargo test --workspace --no-run
       - name: Test execution
-        run: cargo test --workspace
+        run: cargo nextest run --profile ci
 
   smoke_test:
     strategy:
