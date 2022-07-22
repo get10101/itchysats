@@ -14,6 +14,7 @@ mockall = "0.11"
 mockall_derive = "0.11"
 model = { path = "../model" }
 otel-tests = { path = "../otel-tests" }
+quiet-spans = { path = "../quiet-spans" }
 rand = "0.6"
 rust_decimal = "1.25"
 rust_decimal_macros = "1.25"
