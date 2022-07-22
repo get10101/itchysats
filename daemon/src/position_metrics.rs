@@ -400,7 +400,7 @@ mod metrics {
             prometheus::register_int_gauge_vec!(
                 "position_margin_satoshis",
                 "Total position margin on ItchySats.",
-                &[SYMBOL_LABEL]
+                &[POSITION_LABEL, STATUS_LABEL, SYMBOL_LABEL]
             )
             .unwrap()
         });
@@ -410,7 +410,7 @@ mod metrics {
             prometheus::register_int_gauge_vec!(
                 "position_margin_counterparty_satoshis",
                 "Total position margin of our counterparties on ItchySats.",
-                &[SYMBOL_LABEL]
+                &[POSITION_LABEL, STATUS_LABEL, SYMBOL_LABEL]
             )
             .unwrap()
         });
@@ -472,26 +472,6 @@ mod metrics {
             STATUS_REFUNDED_LABEL,
             symbol,
         );
-
-        let (margin, margin_counterparty) = cfds
-            .iter()
-            .filter(|cfd| cfd.state == AggregatedState::Open)
-            .fold(
-                (Amount::ZERO, Amount::ZERO),
-                |(sum_margin, sum_margin_counterparty), cfd| {
-                    (
-                        sum_margin + cfd.margin,
-                        sum_margin_counterparty + cfd.margin_counterparty,
-                    )
-                },
-            );
-
-        POSITION_MARGIN_GAUGE
-            .with(&HashMap::from([(SYMBOL_LABEL, symbol)]))
-            .set(margin.as_sat() as i64);
-        POSITION_MARGIN_COUNTERPARTY_GAUGE
-            .with(&HashMap::from([(SYMBOL_LABEL, symbol)]))
-            .set(margin_counterparty.as_sat() as i64);
     }
 
     fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str, symbol: &str) {
@@ -548,6 +528,32 @@ mod metrics {
                 (SYMBOL_LABEL, symbol),
             ]))
             .set(counterparties as i64);
+
+        let (margin, margin_counterparty) = position.iter().fold(
+            (Amount::ZERO, Amount::ZERO),
+            |(sum_margin, sum_margin_counterparty), cfd| {
+                (
+                    sum_margin + cfd.margin,
+                    sum_margin_counterparty + cfd.margin_counterparty,
+                )
+            },
+        );
+
+        POSITION_MARGIN_GAUGE
+            .with(&HashMap::from([
+                (POSITION_LABEL, position_label),
+                (STATUS_LABEL, status),
+                (SYMBOL_LABEL, symbol),
+            ]))
+            .set(margin.as_sat() as i64);
+
+        POSITION_MARGIN_COUNTERPARTY_GAUGE
+            .with(&HashMap::from([
+                (POSITION_LABEL, position_label),
+                (STATUS_LABEL, status),
+                (SYMBOL_LABEL, symbol),
+            ]))
+            .set(margin_counterparty.as_sat() as i64);
     }
 
     fn sum_amounts(cfds: &[&Cfd]) -> Usd {
