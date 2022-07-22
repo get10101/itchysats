@@ -18,6 +18,7 @@ http-api-problem = { version = "0.53.0", features = ["rocket"] }
 model = { path = "../model" }
 opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.10.0" }
+quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
 serde = { version = "1", features = ["derive"] }
