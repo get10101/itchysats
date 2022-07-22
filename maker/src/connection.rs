@@ -546,7 +546,7 @@ impl Actor {
                 .inc();
         });
 
-        tracing::debug!(taker_id = %identity, taker_address = %address, %wire_version, %daemon_version, %environment, ?peer_id, "Connection is ready");
+        tracing::info!(taker_id = %identity, taker_address = %address, %wire_version, %daemon_version, %environment, ?peer_id, "Connection is ready");
     }
 
     async fn handle_listener_failed(&mut self, msg: ListenerFailed, ctx: &mut xtra::Context<Self>) {
