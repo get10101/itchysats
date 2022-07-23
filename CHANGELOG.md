@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2022-07-24
+
+### Changed
+
+- made `position_margin_satoshis` and `position_margin_counterparty_satoshis` metric symbol and position dependent
+- log important taker connection info on info
+- downgrade "Could not parse daemon_version" log to debug to spam less
+
 ## [0.5.0] - 2022-07-21
 
 ### Changed
@@ -242,7 +250,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.1...HEAD
+[0.5.0]: https://github.com/itchysats/itchysats/compare/0.5.0...0.5.1
 [0.5.0]: https://github.com/itchysats/itchysats/compare/0.4.21...0.5.0
 [0.4.21]: https://github.com/itchysats/itchysats/compare/0.4.20...0.4.21
 [0.4.20]: https://github.com/itchysats/itchysats/compare/0.4.19...0.4.20
