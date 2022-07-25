@@ -31,6 +31,7 @@ use tokio_extras::FutureExt;
 use tokio_extras::Tasks;
 use tokio_util::codec::Framed;
 use tracing::Instrument;
+use tracing::Span;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -488,7 +489,7 @@ impl Actor {
                                         "we are not connected to ourselves, this should really not happen",
                                     )?;
                             }
-                        }
+                        }.instrument(tracing::debug_span!(parent: Span::none(), "Fallible task handler span"))
                     },
                     {
                         let this = this.clone();
@@ -500,7 +501,7 @@ impl Actor {
                                     error,
                                 })
                                 .await;
-                        }
+                        }.instrument(tracing::debug_span!(parent: Span::none(), "Fallible task error span"))
                     },
                 );
             });
