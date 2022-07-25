@@ -176,6 +176,76 @@ async fn maker_accepts_rollover_after_commit_finality() {
 }
 
 #[otel_test]
+async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
+    let (mut maker, mut taker, order_id, fee_calculator) =
+        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+
+    // 1. Do two rollovers
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_1(),
+        None,
+        fee_calculator.complete_fee_for_rollover_hours(24),
+    )
+    .await;
+
+    let taker_commit_txid_after_first_rollover = taker.latest_commit_txid();
+    let taker_dlc_after_first_rollover = taker.latest_dlc();
+    let taker_complete_fee_after_first_rollover = taker.latest_fees();
+
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_1(),
+        None,
+        // The second rollover increases the complete fees to 48h
+        fee_calculator.complete_fee_for_rollover_hours(48),
+    )
+    .await;
+
+    // We simulate the taker being one rollover behind by setting the
+    // latest DLC to the one of the first rollover
+    taker
+        .append_rollover_event(
+            order_id,
+            taker_dlc_after_first_rollover,
+            taker_complete_fee_after_first_rollover,
+        )
+        .await;
+
+    // 2. Retry the rollover from the first rollover DLC
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_1(),
+        Some((
+            taker_commit_txid_after_first_rollover,
+            OliviaData::example_1().announcement().id,
+        )),
+        // We expect that the rollover retry won't add additional costs, since we retry from the
+        // previous rollover we expect 48h
+        fee_calculator.complete_fee_for_rollover_hours(48),
+    )
+    .await;
+
+    // 3. Ensure that we can do another rollover after the retry
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        OliviaData::example_1(),
+        None,
+        // Additional rollover increases the complete fees to 72h
+        fee_calculator.complete_fee_for_rollover_hours(72),
+    )
+    .await;
+}
+
+#[otel_test]
 async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retry() {
     let (mut maker, mut taker, order_id, fee_calculator) =
         prepare_rollover(Position::Short, OliviaData::example_0()).await;
@@ -218,6 +288,9 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
             taker_commit_txid_after_contract_setup,
             OliviaData::example_1().announcement().id,
         )),
+        // Only one term of 24h is charged, so the expected fees are for 24h.
+        // This is due to the rollover falling back to charging one full term if the event is
+        // already past expiry.
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -286,7 +359,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
             taker_commit_txid_after_contract_setup,
             OliviaData::example_1().announcement().id,
         )),
-        // Only one term of 24h is charged, so the expected fees are for 24h.
+        // The expected to be charged for 24h because we only charge one full term
         // This is due to the rollover falling back to charging one full term if the event is
         // already past expiry.
         fee_calculator.complete_fee_for_rollover_hours(24),
@@ -302,76 +375,6 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         None,
         // After another rollover we expect to be charged for 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
-    )
-    .await;
-}
-
-#[otel_test]
-async fn given_rollover_completed_when_taker_fails_rollovers_can_retry() {
-    let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Short, OliviaData::example_0()).await;
-
-    // 1. Do two rollovers
-    rollover(
-        &mut maker,
-        &mut taker,
-        order_id,
-        OliviaData::example_1(),
-        None,
-        fee_calculator.complete_fee_for_rollover_hours(24),
-    )
-    .await;
-
-    let taker_commit_txid_after_first_rollover = taker.latest_commit_txid();
-    let taker_dlc_after_first_rollover = taker.latest_dlc();
-    let taker_complete_fee_after_first_rollover = taker.latest_fees();
-
-    rollover(
-        &mut maker,
-        &mut taker,
-        order_id,
-        OliviaData::example_1(),
-        None,
-        // The second rollover increases the complete fees to 48h
-        fee_calculator.complete_fee_for_rollover_hours(48),
-    )
-    .await;
-
-    // We simulate the taker being one rollover behind by setting the
-    // latest DLC to the one of the first rollover
-    taker
-        .append_rollover_event(
-            order_id,
-            taker_dlc_after_first_rollover,
-            taker_complete_fee_after_first_rollover,
-        )
-        .await;
-
-    // 2. Retry the rollover from the first rollover DLC
-    rollover(
-        &mut maker,
-        &mut taker,
-        order_id,
-        OliviaData::example_1(),
-        Some((
-            taker_commit_txid_after_first_rollover,
-            OliviaData::example_1().announcement().id,
-        )),
-        // We expect that the rollover retry won't add additional costs, since we retry from the
-        // previous rollover we expect 48h
-        fee_calculator.complete_fee_for_rollover_hours(48),
-    )
-    .await;
-
-    // 3. Ensure that we can do another rollover after the retry
-    rollover(
-        &mut maker,
-        &mut taker,
-        order_id,
-        OliviaData::example_1(),
-        None,
-        // Additional rollover increases the complete fees to 72h
-        fee_calculator.complete_fee_for_rollover_hours(72),
     )
     .await;
 }
