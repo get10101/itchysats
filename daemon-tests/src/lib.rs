@@ -843,9 +843,10 @@ impl Taker {
 
     /// Appends an event that overwrites the current DLC
     ///
+    /// To be used in tests that simulate a previous rollover state.
     /// Note that the projection does not get updated, this change only manipulates the database!
     /// When triggering another rollover this data will be loaded and used.
-    pub async fn simulate_previous_rollover(
+    pub async fn append_rollover_event(
         &mut self,
         id: OrderId,
         dlc: Dlc,
