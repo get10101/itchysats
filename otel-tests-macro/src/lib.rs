@@ -31,13 +31,12 @@ pub fn otel_test(_attribute: TokenStream, item: TokenStream) -> TokenStream {
         #sig {
             ::otel_tests::init_tracing(module_path!());
 
-            let fut = async #block;
+            let fut = tracing::Instrument::instrument(async #block, tracing::info_span!(stringify!(#name)));
 
+            #[cfg(feature = "otlp")]
             if ::std::env::var("ITCHYSATS_TEST_INSTRUMENTATION").unwrap_or_default() == "1" {
                 let caught = {
-                    ::otel_tests::__reexport::futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(tracing::Instrument::instrument(
-                        fut, tracing::info_span!(stringify!(#name))
-                    ))).await
+                    ::otel_tests::__reexport::futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(fut)).await
                 };
 
                 // Give the otel thread time to receive the spans before flush
@@ -55,6 +54,9 @@ pub fn otel_test(_attribute: TokenStream, item: TokenStream) -> TokenStream {
             } else {
                 fut.await
             }
+
+            #[cfg(not(feature = "otlp"))]
+            fut.await
         }
     };
 

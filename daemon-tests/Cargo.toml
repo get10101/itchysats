@@ -13,7 +13,7 @@ maker = { path = "../maker" }
 mockall = "0.11"
 mockall_derive = "0.11"
 model = { path = "../model" }
-otel-tests = { path = "../otel-tests" }
+otel-tests = { path = "../otel-tests", default-features = false }
 rand = "0.6"
 rust_decimal = "1.25"
 rust_decimal_macros = "1.25"
@@ -26,3 +26,6 @@ xtra = { version = "0.6", features = ["instrumentation"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
 xtra_productivity = { version = "0.1", features = ["instrumentation"] }
+
+[features]
+otlp = ["otel-tests/otlp"]

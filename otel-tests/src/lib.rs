@@ -1,7 +1,3 @@
-use opentelemetry::sdk::trace;
-use opentelemetry::sdk::Resource;
-use opentelemetry::KeyValue;
-use opentelemetry_otlp::WithExportConfig;
 use std::sync::Once;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -13,6 +9,7 @@ use tracing_subscriber::Registry;
 #[doc(hidden)]
 pub mod __reexport {
     pub use futures;
+    #[cfg(feature = "otlp")]
     pub use opentelemetry;
     pub use tokio;
 }
@@ -22,9 +19,23 @@ pub use otel_tests_macro::otel_test;
 static INIT_OTLP_EXPORTER: Once = Once::new();
 
 pub fn init_tracing(module: &'static str) {
+    let env = std::env::var("ITCHYSATS_TEST_INSTRUMENTATION").unwrap_or_default();
+
+    #[cfg(not(feature = "otlp"))]
+    assert!(
+        env != "1",
+        "ITCHYSATS_TEST_INSTRUMENTATION=1 will not do anything, as tests were compiled \
+             without the `otlp` feature"
+    );
+
     INIT_OTLP_EXPORTER.call_once(|| {
-        let env = std::env::var("ITCHYSATS_TEST_INSTRUMENTATION").unwrap_or_default();
+        #[cfg(feature = "otlp")]
         let telemetry = if env == "1" {
+            use opentelemetry::sdk::trace;
+            use opentelemetry::sdk::Resource;
+            use opentelemetry::KeyValue;
+            use opentelemetry_otlp::WithExportConfig;
+
             let cfg = trace::Config::default()
                 .with_resource(Resource::new([KeyValue::new("service.name", module)]));
 
@@ -67,6 +78,10 @@ pub fn init_tracing(module: &'static str) {
             .with_test_writer()
             .with_filter(filter);
 
+        #[cfg(feature = "otlp")]
         Registry::default().with(telemetry).with(fmt_layer).init();
+
+        #[cfg(not(feature = "otlp"))]
+        Registry::default().with(fmt_layer).init();
     })
 }
