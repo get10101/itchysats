@@ -1,3 +1,4 @@
+#![allow(clippy::let_unit_value)] // see: https://github.com/SergioBenitez/Rocket/issues/2211
 use crate::actor_system::ActorSystem;
 use anyhow::Result;
 use bdk::sled;
