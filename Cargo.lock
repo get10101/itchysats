@@ -308,7 +308,6 @@ dependencies = [
  "bdk",
  "rand 0.6.5",
  "secp256k1",
- "tempfile",
 ]
 
 [[package]]
@@ -910,7 +909,6 @@ dependencies = [
  "maia-core",
  "model",
  "parse-display",
- "pretty_assertions",
  "prometheus",
  "rand 0.6.5",
  "reqwest",
@@ -933,7 +931,6 @@ dependencies = [
  "tokio-extras",
  "tokio-util 0.7.3",
  "tracing",
- "tracing-subscriber",
  "uuid 1.1.2",
  "vergen-version",
  "x25519-dalek",
@@ -5704,7 +5701,6 @@ dependencies = [
  "tokio-extras",
  "tracing",
  "tracing-subscriber",
- "uuid 1.1.2",
  "xtra",
  "xtra_productivity",
 ]

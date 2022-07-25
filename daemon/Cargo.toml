@@ -60,11 +60,9 @@ xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 xtras = { path = "../xtras" }
 
 [dev-dependencies]
-pretty_assertions = "1"
 serde_test = "1"
 test-case = "2"
 time = { version = "0.3.11", features = ["std"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "tracing-log"] }
 
 [build-dependencies]
 anyhow = "1"
