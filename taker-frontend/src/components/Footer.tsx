@@ -18,6 +18,7 @@ import {
     ModalOverlay,
     Switch,
     Text,
+    Tooltip,
     useColorModeValue,
     useDisclosure,
 } from "@chakra-ui/react";
@@ -146,7 +147,11 @@ export default function Footer(
                             leftIcon={<FaRegCommentDots />}
                             variant={"ghost"}
                         >
-                            <Text display={["none", "none", "inherit"]}>Send Feedback</Text>
+                            <Tooltip
+                                label={"To receive a response please include contact details such as an email address or Telegram handle in the ticket text."}
+                            >
+                                <Text display={["none", "none", "inherit"]}>Send Feedback</Text>
+                            </Tooltip>
                         </Button>
                     </FeedbackFish>
                 </HStack>
