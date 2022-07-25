@@ -208,7 +208,7 @@ async fn main() -> Result<()> {
         &opts.collector_endpoint,
     )
     .context("initialize logger")?;
-    tracing::info!("Running version: {}", daemon::version::version());
+    tracing::info!("Running version: {}", vergen_version::git_semver());
     let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
 
     tracing::info!(
