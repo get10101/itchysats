@@ -2233,6 +2233,7 @@ dependencies = [
  "bdk",
  "bdk-ext",
  "conquer-once",
+ "derivative",
  "hex",
  "itertools",
  "libp2p-core",

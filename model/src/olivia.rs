@@ -1,6 +1,7 @@
 use anyhow::Context;
 use bdk::bitcoin::XOnlyPublicKey;
 use conquer_once::Lazy;
+use derivative::Derivative;
 use maia_core::secp256k1_zkp::SecretKey;
 use serde::Deserialize;
 use serde_with::DeserializeFromStr;
@@ -45,12 +46,17 @@ pub struct Attestation {
     pub scalars: Vec<SecretKey>,
 }
 
-#[derive(
-    Debug, Clone, Copy, SerializeDisplay, DeserializeFromStr, PartialEq, Eq, Hash, PartialOrd, Ord,
-)]
+#[derive(Derivative, Debug, Clone, Copy, SerializeDisplay, DeserializeFromStr)]
+#[derivative(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BitMexPriceEventId {
     /// The timestamp this price event refers to.
     timestamp: OffsetDateTime,
+    #[derivative(
+        PartialEq = "ignore",
+        PartialOrd = "ignore",
+        Ord = "ignore",
+        Hash = "ignore"
+    )]
     digits: usize,
 }
 
