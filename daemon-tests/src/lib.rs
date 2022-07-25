@@ -211,7 +211,7 @@ macro_rules! wait_next_state {
 pub async fn start_from_open_cfd_state(
     announcement: Announcement,
     position_maker: Position,
-) -> (Maker, Taker, OrderId, FeeStructure) {
+) -> (Maker, Taker, OrderId, FeeCalculator) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
     let mut taker = Taker::start(
         &TakerConfig::default(),
@@ -228,7 +228,7 @@ pub async fn start_from_open_cfd_state(
     let quantity = Usd::new(dec!(100));
     let taker_leverage = Leverage::TWO;
 
-    let fee_structure = FeeStructure::new(
+    let fee_calculator = FeeCalculator::new(
         offer_params.clone(),
         quantity,
         taker_leverage,
@@ -280,10 +280,10 @@ pub async fn start_from_open_cfd_state(
     confirm!(lock transaction, order_to_take.id, maker, taker);
     wait_next_state!(order_to_take.id, maker, taker, CfdState::Open);
 
-    (maker, taker, order_to_take.id, fee_structure)
+    (maker, taker, order_to_take.id, fee_calculator)
 }
 
-pub struct FeeStructure {
+pub struct FeeCalculator {
     /// Opening fee charged by the maker
     opening_fee: OpeningFee,
 
@@ -298,7 +298,7 @@ pub struct FeeStructure {
     taker_leverage: Leverage,
 }
 
-impl FeeStructure {
+impl FeeCalculator {
     pub fn new(
         offer_params: OfferParams,
         quantity: Usd,
@@ -336,7 +336,12 @@ impl FeeStructure {
         }
     }
 
-    pub fn predict_fees(
+    /// Calculates the complete fee based on given rollover hours
+    ///
+    /// Takes the initial funding fee (for the first 24h) and the opening fee and adds the rollover
+    /// fees based on the hours supplied. This allows predicting the complete fees for a CFD for
+    /// multiple rollovers based on the hours to be charged.
+    pub fn complete_fee_for_rollover_hours(
         &self,
         accumulated_rollover_hours_to_charge: i64,
     ) -> (SignedAmount, SignedAmount) {
@@ -838,9 +843,10 @@ impl Taker {
 
     /// Appends an event that overwrites the current DLC
     ///
+    /// To be used in tests that simulate a previous rollover state.
     /// Note that the projection does not get updated, this change only manipulates the database!
     /// When triggering another rollover this data will be loaded and used.
-    pub async fn simulate_previous_rollover(
+    pub async fn append_rollover_event(
         &mut self,
         id: OrderId,
         dlc: Dlc,
