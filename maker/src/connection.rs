@@ -1,7 +1,7 @@
 use crate::cfd;
 use crate::collab_settlement;
 use crate::contract_setup;
-use crate::rollover;
+use crate::legacy_rollover;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -30,6 +30,7 @@ use tokio_extras::FutureExt;
 use tokio_extras::Tasks;
 use tokio_util::codec::Framed;
 use tracing::Instrument;
+use tracing::Span;
 use xtra::message_channel::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -104,7 +105,7 @@ pub struct TakerMessage {
 
 pub struct RegisterRollover {
     pub order_id: OrderId,
-    pub address: xtra::Address<rollover::Actor>,
+    pub address: xtra::Address<legacy_rollover::Actor>,
 }
 
 pub struct Actor {
@@ -117,7 +118,7 @@ pub struct Actor {
     p2p_socket: SocketAddr,
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
-    rollover_actors: AddressMap<OrderId, rollover::Actor>,
+    rollover_actors: AddressMap<OrderId, legacy_rollover::Actor>,
 }
 
 /// A connection to a taker.
@@ -488,7 +489,7 @@ impl Actor {
                                         "we are not connected to ourselves, this should really not happen",
                                     )?;
                             }
-                        }
+                        }.instrument(tracing::debug_span!(parent: Span::none(), "Fallible task handler span"))
                     },
                     {
                         let this = this.clone();
@@ -500,7 +501,7 @@ impl Actor {
                                     error,
                                 })
                                 .await;
-                        }
+                        }.instrument(tracing::debug_span!(parent: Span::none(), "Fallible task error span"))
                     },
                 );
             });
@@ -584,7 +585,7 @@ impl Actor {
             RolloverProtocol { order_id, msg } => {
                 if let Err(NotConnected(_)) = self
                     .rollover_actors
-                    .send_async(&order_id, rollover::ProtocolMsg(msg))
+                    .send_async(&order_id, legacy_rollover::ProtocolMsg(msg))
                     .await
                 {
                     tracing::warn!(%order_id, "No active rollover actor");

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add dynamic liquidation to the DLC, enabling the CFD to be unilaterally closed every hour by either party if the oracle attests to a price close to the ends of the payout curve's domain.
+  This is currently only active _after the first rollover_.
+
+### Changed
+
+- Replace intermediate confirmation step in rollover protocol for the maker with a configurable flag which can be updated during runtime using the new `POST /rollover/config` endpoint.
+  On startup, rollovers are configured to be accepted by default.
+
 ## [0.5.1] - 2022-07-24
 
 ### Changed

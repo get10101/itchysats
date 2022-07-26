@@ -1,4 +1,5 @@
 use crate::command;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,6 +16,7 @@ use std::collections::HashSet;
 use time::Duration;
 use time::OffsetDateTime;
 use tracing::Instrument;
+use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -65,23 +67,18 @@ pub struct SyncAnnouncements;
 #[derive(Clone, Copy)]
 pub struct SyncAttestations;
 
-#[derive(Clone, Copy)]
-pub struct MonitorAttestation {
-    pub event_id: BitMexPriceEventId,
-}
-
 #[derive(Clone)]
-struct MonitorAttestations {
+pub struct MonitorAttestations {
     pub event_ids: Vec<BitMexPriceEventId>,
 }
 
-/// Message used to request the `Announcement` from the
-/// `oracle::Actor`'s local state.
+/// Message used to request `Announcement`s from the `oracle::Actor`'s
+/// local state.
 ///
-/// The `Announcement` corresponds to the [`BitMexPriceEventId`] included in
-/// the message.
-#[derive(Clone, Copy)]
-pub struct GetAnnouncement(pub BitMexPriceEventId);
+/// Each `Announcement` corresponds to a [`BitMexPriceEventId`]
+/// included in the message.
+#[derive(Clone)]
+pub struct GetAnnouncements(pub Vec<BitMexPriceEventId>);
 
 #[derive(Debug, Clone)]
 pub struct Attestation(olivia::Attestation);
@@ -103,7 +100,7 @@ struct NewAttestationFetched {
 
 #[derive(Default, Clone)]
 struct Cfd {
-    pending_attestation: Option<BitMexPriceEventId>,
+    event_ids: Option<Vec<BitMexPriceEventId>>,
     version: u32,
 }
 
@@ -111,11 +108,11 @@ impl Cfd {
     fn apply(mut self, event: CfdEvent) -> Self {
         self.version += 1;
 
-        let settlement_event_id = match event.event {
+        let event_ids = match event.event {
             EventKind::ContractSetupCompleted { dlc: None, .. } => return self,
-            EventKind::ContractSetupCompleted { dlc: Some(dlc), .. } => dlc.settlement_event_id,
+            EventKind::ContractSetupCompleted { dlc: Some(dlc), .. } => dlc.event_ids(),
             EventKind::RolloverCompleted { dlc: None, .. } => return self,
-            EventKind::RolloverCompleted { dlc: Some(dlc), .. } => dlc.settlement_event_id,
+            EventKind::RolloverCompleted { dlc: Some(dlc), .. } => dlc.event_ids(),
             // TODO: There might be a few cases where we do not need to monitor the attestation,
             // e.g. when we already agreed to collab. settle. Ignoring it for now
             // because I don't want to think about it and it doesn't cause much harm to do the
@@ -126,7 +123,7 @@ impl Cfd {
         // we can comfortably overwrite what was there because events are processed in order, thus
         // old attestations don't matter.
         Self {
-            pending_attestation: Some(settlement_event_id),
+            event_ids: Some(event_ids),
             ..self
         }
     }
@@ -184,7 +181,7 @@ impl Actor {
 
                 let code = response.status();
                 if !code.is_success() {
-                    anyhow::bail!("GET {url} responded with {code}");
+                    bail!("GET {url} responded with {code}");
                 }
 
                 let announcement = response
@@ -239,7 +236,7 @@ impl Actor {
 
                     let code = response.status();
                     if !code.is_success() {
-                        anyhow::bail!("GET {url} responded with {code}");
+                        bail!("GET {url} responded with {code}");
                     }
 
                     let attestation = response
@@ -271,28 +268,31 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    fn handle_monitor_attestation(&mut self, msg: MonitorAttestation) {
-        self.add_pending_attestation(msg.event_id)
-    }
-
     fn handle_monitor_attestations(&mut self, msg: MonitorAttestations) {
         for id in msg.event_ids.into_iter() {
             self.add_pending_attestation(id);
         }
     }
 
-    fn handle_get_announcement(
+    fn handle_get_announcements(
         &mut self,
-        msg: GetAnnouncement,
-    ) -> Result<olivia::Announcement, NoAnnouncement> {
-        self.announcements
-            .get_key_value(&msg.0)
-            .map(|(id, (time, nonce_pks))| olivia::Announcement {
-                id: *id,
-                expected_outcome_time: *time,
-                nonce_pks: nonce_pks.clone(),
+        GetAnnouncements(ids): GetAnnouncements,
+    ) -> Result<Vec<olivia::Announcement>, NoAnnouncement> {
+        let announcements = ids
+            .iter()
+            .map(|id| {
+                self.announcements
+                    .get_key_value(id)
+                    .map(|(id, (time, nonce_pks))| olivia::Announcement {
+                        id: *id,
+                        expected_outcome_time: *time,
+                        nonce_pks: nonce_pks.clone(),
+                    })
+                    .ok_or(NoAnnouncement(*id))
             })
-            .ok_or(NoAnnouncement(msg.0))
+            .collect::<Result<_, _>>()?;
+
+        Ok(announcements)
     }
 
     fn handle_new_announcement_fetched(&mut self, msg: NewAnnouncementFetched) {
@@ -351,14 +351,11 @@ impl xtra::Actor for Actor {
             let db = self.db.clone();
             async move {
                 let span = tracing::debug_span!("Register pending attestations to monitor");
-                let pending_attestations = db
+                let event_ids = db
                     .load_all_open_cfds::<Cfd>(())
                     .filter_map(|res| async move {
                         match res {
-                            Ok(Cfd {
-                                pending_attestation,
-                                ..
-                            }) => pending_attestation,
+                            Ok(Cfd { event_ids, .. }) => event_ids,
                             Err(e) => {
                                 tracing::warn!("Failed to load CFD from database: {e:#}");
                                 None
@@ -371,7 +368,7 @@ impl xtra::Actor for Actor {
 
                 let _: Result<(), xtra::Error> = this
                     .send(MonitorAttestations {
-                        event_ids: pending_attestations,
+                        event_ids: event_ids.concat(),
                     })
                     .instrument(span)
                     .await;
@@ -404,6 +401,61 @@ impl Attestation {
 
     pub fn id(&self) -> BitMexPriceEventId {
         self.0.id
+    }
+}
+
+/// Source of announcements based on their event IDs.
+///
+/// This is just a wrapper around a `MessageChannel` which would
+/// provide the same use. It is needed so that we can implement
+/// foreign traits on it to fulfil the requirements of external APIs.
+#[derive(Clone)]
+pub struct AnnouncementsChannel(
+    MessageChannel<GetAnnouncements, Result<Vec<olivia::Announcement>, NoAnnouncement>>,
+);
+
+impl AnnouncementsChannel {
+    pub fn new(
+        channel: MessageChannel<
+            GetAnnouncements,
+            Result<Vec<olivia::Announcement>, NoAnnouncement>,
+        >,
+    ) -> Self {
+        Self(channel)
+    }
+}
+
+#[async_trait]
+impl rollover::v_1_0_0::protocol::GetAnnouncements for AnnouncementsChannel {
+    async fn get_announcements(
+        &self,
+        events: Vec<BitMexPriceEventId>,
+    ) -> Result<Vec<olivia::Announcement>> {
+        let announcements = self
+            .0
+            .send(GetAnnouncements(events))
+            .await
+            .context("Oracle actor disconnected")?
+            .context("Failed to get announcements")?;
+
+        Ok(announcements)
+    }
+}
+
+#[async_trait]
+impl rollover::v_2_0_0::protocol::GetAnnouncements for AnnouncementsChannel {
+    async fn get_announcements(
+        &self,
+        events: Vec<BitMexPriceEventId>,
+    ) -> Result<Vec<olivia::Announcement>> {
+        let announcements = self
+            .0
+            .send(GetAnnouncements(events))
+            .await
+            .context("Oracle actor disconnected")?
+            .context("Failed to get announcements")?;
+
+        Ok(announcements)
     }
 }
 

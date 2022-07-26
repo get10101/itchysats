@@ -22,6 +22,7 @@ prometheus = { version = "0.13", default-features = false }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
 rocket-basicauth = { path = "../rocket-basicauth" }
+rollover = { path = "../xtra-libp2p-rollover", package = "xtra-libp2p-rollover" }
 rust-embed = "6.4"
 rust-embed-rocket = { path = "../rust-embed-rocket" }
 semver = "1.0.12"
@@ -35,6 +36,7 @@ tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = "1.1"
+vergen-version = { path = "../vergen-version" }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6", features = ["instrumentation"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }

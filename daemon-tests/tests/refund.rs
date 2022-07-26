@@ -15,7 +15,7 @@ use tokio_extras::time::sleep;
 async fn open_cfd_is_refunded() {
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(oracle_data.announcement(), Position::Short).await;
+        start_from_open_cfd_state(oracle_data.announcements(), Position::Short).await;
     confirm!(commit transaction, order_id, maker, taker);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition

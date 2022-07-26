@@ -308,7 +308,6 @@ dependencies = [
  "bdk",
  "rand 0.6.5",
  "secp256k1",
- "tempfile",
 ]
 
 [[package]]
@@ -483,9 +482,9 @@ checksum = "f0b3de4a0c5e67e16066a0715723abd91edc2f9001d09c46e1dca929351e130e"
 
 [[package]]
 name = "cache-padded"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "631ae5198c9be5e753e5cc215e1bd73c2b466a3565173db433f52bb9d3e66dba"
+checksum = "c1db59621ec70f09c5e9b597b220c7a2b43611f4710dc03ceb8748637775692c"
 
 [[package]]
 name = "catty"
@@ -910,7 +909,6 @@ dependencies = [
  "maia-core",
  "model",
  "parse-display",
- "pretty_assertions",
  "prometheus",
  "rand 0.6.5",
  "reqwest",
@@ -933,15 +931,15 @@ dependencies = [
  "tokio-extras",
  "tokio-util 0.7.3",
  "tracing",
- "tracing-subscriber",
  "uuid 1.1.2",
- "vergen",
+ "vergen-version",
  "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
  "xtra-libp2p",
  "xtra-libp2p-offer",
  "xtra-libp2p-ping",
+ "xtra-libp2p-rollover",
  "xtra_productivity",
  "xtras",
 ]
@@ -2098,12 +2096,14 @@ dependencies = [
  "tokio-util 0.7.3",
  "tracing",
  "uuid 1.1.2",
+ "vergen-version",
  "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
  "xtra-libp2p",
  "xtra-libp2p-offer",
  "xtra-libp2p-ping",
+ "xtra-libp2p-rollover",
  "xtra_productivity",
  "xtras",
 ]
@@ -2228,9 +2228,11 @@ name = "model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bdk",
  "bdk-ext",
  "conquer-once",
+ "derivative",
  "hex",
  "itertools",
  "libp2p-core",
@@ -4488,6 +4490,7 @@ dependencies = [
  "tokio-extras",
  "tracing",
  "uuid 0.8.2",
+ "vergen-version",
  "webbrowser",
  "x25519-dalek",
  "xtra",
@@ -5178,6 +5181,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vergen-version"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "vergen",
+]
+
+[[package]]
 name = "version_check"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5658,6 +5669,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "xtra-libp2p-rollover"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "asynchronous-codec",
+ "bdk",
+ "bdk-ext",
+ "futures",
+ "libp2p-core",
+ "maia 0.2.0",
+ "maia-core",
+ "model",
+ "rand 0.6.5",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tokio-extras",
+ "tracing",
+ "xtra",
+ "xtra-libp2p",
+ "xtra_productivity",
+]
+
+[[package]]
 name = "xtra_productivity"
 version = "0.1.0"
 source = "git+https://github.com/comit-network/xtra-productivity?rev=0bfd589b42a63149221dec7e95aca932875374dd#0bfd589b42a63149221dec7e95aca932875374dd"
@@ -5679,7 +5715,6 @@ dependencies = [
  "tokio-extras",
  "tracing",
  "tracing-subscriber",
- "uuid 1.1.2",
  "xtra",
  "xtra_productivity",
 ]
