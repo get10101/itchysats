@@ -180,7 +180,6 @@ async fn main() -> Result<()> {
                 routes::post_cfd_action,
                 routes::get_health_check,
                 routes::get_cfds,
-                routes::get_takers,
                 routes::get_metrics,
                 routes::put_sync_wallet,
                 routes::get_version,

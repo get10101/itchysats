@@ -11,7 +11,6 @@ use daemon::wallet;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
 use model::FundingRate;
-use model::Identity;
 use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
@@ -54,7 +53,6 @@ pub async fn maker_feed(
     let mut rx_offers = rx.offers.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_quote = rx.quote.clone();
-    let mut rx_connected_takers = rx.connected_takers.clone();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -72,9 +70,6 @@ pub async fn maker_feed(
             yield cfds.to_sse_event()
         }
 
-        let takers = rx_connected_takers.borrow().clone();
-        yield takers.to_sse_event();
-
         loop{
             select! {
                 Ok(()) = rx_wallet.changed() => {
@@ -85,10 +80,6 @@ pub async fn maker_feed(
                     let offers = rx_offers.borrow().clone();
                     yield Event::json(&offers.long).event("long_offer");
                     yield Event::json(&offers.short).event("short_offer");
-                }
-                Ok(()) = rx_connected_takers.changed() => {
-                    let takers = rx_connected_takers.borrow().clone();
-                    yield takers.to_sse_event();
                 }
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();
@@ -248,19 +239,6 @@ pub async fn get_cfds<'r>(
             .title("CFDs not yet available")
             .detail("CFDs are still being loaded from the database. Please retry later.")),
     }
-}
-
-#[rocket::get("/takers")]
-#[instrument(name = "GET /takers", skip_all, err)]
-pub async fn get_takers<'r>(
-    rx: &State<Feeds>,
-    _auth: Authenticated,
-) -> Result<Json<Vec<Identity>>, HttpApiProblem> {
-    let rx = rx.inner();
-    let rx_connected_takers = rx.connected_takers.clone();
-    let takers = rx_connected_takers.borrow().clone();
-
-    Ok(Json(takers))
 }
 
 #[rocket::get("/metrics")]

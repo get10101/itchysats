@@ -523,10 +523,6 @@ impl Maker {
         &mut self.feeds.offers
     }
 
-    pub fn connected_takers_feed(&mut self) -> &mut watch::Receiver<Vec<Identity>> {
-        &mut self.feeds.connected_takers
-    }
-
     #[instrument(name = "Start maker", skip_all)]
     pub async fn start(config: &MakerConfig) -> Self {
         let port = match config.dedicated_port {
