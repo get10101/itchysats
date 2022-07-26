@@ -1,6 +1,5 @@
 use crate::noise;
 use crate::setup_taker;
-use crate::version;
 use crate::wire;
 use crate::wire::EncryptedJsonCodec;
 use crate::wire::Version;
@@ -203,7 +202,7 @@ impl Actor {
         write
             .send(wire::TakerToMaker::HelloV4 {
                 proposed_wire_version: proposed_version.clone(),
-                daemon_version: version::version().to_string(),
+                daemon_version: vergen_version::git_semver().to_string(),
                 peer_id: self.peer_id,
                 environment: self.environment.into(),
             })

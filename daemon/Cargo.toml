@@ -48,6 +48,7 @@ tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 tracing = { version = "0.1" }
 uuid = { version = "1.1", features = ["serde", "v4"] }
+vergen-version = { path = "../vergen-version" }
 x25519-dalek = { version = "1.1" }
 xtra = { version = "0.6", features = ["instrumentation", "sink"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
@@ -65,5 +66,4 @@ time = { version = "0.3.11", features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "tracing-log"] }
 
 [build-dependencies]
-vergen = "7"
 anyhow = "1"

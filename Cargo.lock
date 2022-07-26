@@ -935,7 +935,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid 1.1.2",
- "vergen",
+ "vergen-version",
  "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
@@ -2096,6 +2096,7 @@ dependencies = [
  "tokio-util 0.7.3",
  "tracing",
  "uuid 1.1.2",
+ "vergen-version",
  "x25519-dalek",
  "xtra",
  "xtra-bitmex-price-feed",
@@ -4478,6 +4479,7 @@ dependencies = [
  "tokio-extras",
  "tracing",
  "uuid 0.8.2",
+ "vergen-version",
  "webbrowser",
  "x25519-dalek",
  "xtra",
@@ -5165,6 +5167,14 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "time",
+]
+
+[[package]]
+name = "vergen-version"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "vergen",
 ]
 
 [[package]]
