@@ -1,3 +1,4 @@
+#![allow(clippy::let_unit_value)] // see: https://github.com/SergioBenitez/Rocket/issues/2211
 use rocket::http::Header;
 use rocket::http::Status;
 use rocket::outcome::try_outcome;

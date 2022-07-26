@@ -51,6 +51,7 @@ use serde::Serialize;
 use sqlite_db;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Write;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -1552,7 +1553,7 @@ impl TxUrl {
 
     /// Highlight particular transaction output in the TxUrl
     fn with_output_index(mut self, index: u32) -> Self {
-        self.url.push_str(&format!(":{index}"));
+        let _ = write!(self.url, ":{index}");
         self
     }
 
