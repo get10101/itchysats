@@ -18,6 +18,8 @@ status = [
   "clippy (xtra-libp2p-ping)",
   "clippy (sqlite-db)",
   "clippy (xtra-libp2p-offer)",
+  "clippy (otel-tests)",
+  "clippy (otel-tests-macro)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",
