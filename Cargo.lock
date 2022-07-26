@@ -957,6 +957,7 @@ dependencies = [
  "mockall_derive",
  "model",
  "otel-tests",
+ "quiet-spans",
  "rand 0.6.5",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2079,6 +2080,7 @@ dependencies = [
  "maia-core",
  "model",
  "prometheus",
+ "quiet-spans",
  "rocket",
  "rocket-basicauth",
  "rust-embed",
@@ -3177,6 +3179,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
+name = "quiet-spans"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4043,6 +4053,7 @@ dependencies = [
  "model",
  "opentelemetry",
  "opentelemetry-otlp",
+ "quiet-spans",
  "rocket",
  "rocket-basicauth",
  "serde",
@@ -5545,7 +5556,7 @@ dependencies = [
 [[package]]
 name = "xtra"
 version = "0.6.0"
-source = "git+https://github.com/Restioson/xtra?rev=ff782ad379abad33c715173d21e2221189e252c0#ff782ad379abad33c715173d21e2221189e252c0"
+source = "git+https://github.com/Restioson/xtra?rev=285b3e986013888cb68b9219464ef325d2468c2c#285b3e986013888cb68b9219464ef325d2468c2c"
 dependencies = [
  "async-trait",
  "catty",
@@ -5620,6 +5631,7 @@ dependencies = [
  "futures",
  "model",
  "prometheus",
+ "quiet-spans",
  "rust_decimal",
  "rust_decimal_macros",
  "sluice",
@@ -5644,6 +5656,7 @@ dependencies = [
  "conquer-once",
  "futures",
  "prometheus",
+ "quiet-spans",
  "rand 0.8.4",
  "tokio",
  "tokio-extras",
@@ -5696,6 +5709,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "quiet-spans",
  "thiserror",
  "tokio",
  "tokio-extras",
