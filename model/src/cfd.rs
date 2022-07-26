@@ -3,7 +3,7 @@ use crate::hex_transaction;
 use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
-use crate::payout_curve;
+use crate::payouts::Payouts;
 use crate::rollover;
 use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;
@@ -25,6 +25,7 @@ use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -40,14 +41,11 @@ use bdk::bitcoin::TxOut;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
-use itertools::Itertools;
 use maia::spending_tx_sighash;
-use maia_core::generate_payouts;
 use maia_core::secp256k1_zkp;
 use maia_core::secp256k1_zkp::ecdsa::Signature;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::SECP256K1;
-use maia_core::Payout;
 use maia_core::TransactionExt;
 use num::Zero;
 use rust_decimal::Decimal;
@@ -1081,9 +1079,9 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(!self.is_in_collaborative_settlement());
-        anyhow::ensure!(self.role == Role::Taker);
-        anyhow::ensure!(self.can_settle_collaboratively());
+        ensure!(!self.is_in_collaborative_settlement());
+        ensure!(self.role == Role::Taker);
+        ensure!(self.can_settle_collaboratively());
 
         let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1104,15 +1102,15 @@ impl Cfd {
         n_payouts: usize,
         proposed_settlement_transaction: &Transaction,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
-        anyhow::ensure!(!self.is_in_collaborative_settlement());
-        anyhow::ensure!(self.role == Role::Maker);
-        anyhow::ensure!(self.can_settle_collaboratively());
+        ensure!(!self.is_in_collaborative_settlement());
+        ensure!(self.role == Role::Maker);
+        ensure!(self.can_settle_collaboratively());
 
         let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
         let local_settlement_transaction = settlement_tx.unsigned_transaction();
 
-        anyhow::ensure!(
+        ensure!(
             *local_settlement_transaction == *proposed_settlement_transaction,
             "Proposed collab settlement does not equal locally created one. Local: {local_settlement_transaction:?}, proposed: {proposed_settlement_transaction:?}"
         );
@@ -1132,7 +1130,7 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
-        let payout_curve = calculate_payouts(
+        let payouts = Payouts::new(
             self.position,
             self.role,
             self.initial_price,
@@ -1141,11 +1139,12 @@ impl Cfd {
             self.short_leverage,
             n_payouts,
             self.fee_account.settle(),
-        )?;
+        )?
+        .settlement();
 
         let payout = {
             let current_price = current_price.try_into_u64()?;
-            payout_curve
+            payouts
                 .iter()
                 .find(|&x| x.digits().range().contains(&current_price))
                 .context("find current price on the payout curve")?
@@ -1178,14 +1177,14 @@ impl Cfd {
         proposal: SettlementProposal,
         n_payouts: usize,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(!self.is_in_collaborative_settlement());
-        anyhow::ensure!(self.role == Role::Maker);
-        anyhow::ensure!(self.can_settle_collaboratively());
-        anyhow::ensure!(proposal.order_id == self.id);
+        ensure!(!self.is_in_collaborative_settlement());
+        ensure!(self.role == Role::Maker);
+        ensure!(self.can_settle_collaboratively());
+        ensure!(proposal.order_id == self.id);
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payout_curve_long = calculate_payouts(
+        let payouts = Payouts::new(
             self.position,
             self.role,
             self.initial_price,
@@ -1194,11 +1193,12 @@ impl Cfd {
             self.short_leverage,
             n_payouts,
             self.fee_account.settle(),
-        )?;
+        )?
+        .settlement();
 
         let payout = {
             let proposal_price = proposal.price.try_into_u64()?;
-            payout_curve_long
+            payouts
                 .iter()
                 .find(|&x| x.digits().range().contains(&proposal_price))
                 .context("find current price on the payout curve")?
@@ -1218,10 +1218,10 @@ impl Cfd {
         self,
         theirs: &SettlementProposal,
     ) -> Result<CfdEvent> {
-        anyhow::ensure!(self.role == Role::Maker);
+        ensure!(self.role == Role::Maker);
 
         let ours = self.settlement_proposal;
-        anyhow::ensure!(
+        ensure!(
             self.settlement_proposal.as_ref() == Some(theirs),
             "Settlement proposal mismatch: calculated {ours:?}, got {theirs:?}",
         );
@@ -1247,7 +1247,7 @@ impl Cfd {
 
     pub fn reject_contract_setup(self, reason: anyhow::Error) -> Result<CfdEvent> {
         let version = self.version;
-        anyhow::ensure!(
+        ensure!(
             version <= 1,
             "Rejecting contract setup not allowed because cfd in version {version}",
         );
@@ -1371,7 +1371,7 @@ impl Cfd {
     }
 
     pub fn handle_cet_timelock_expired(self) -> Result<CfdEvent> {
-        anyhow::ensure!(!self.is_final());
+        ensure!(!self.is_final());
 
         let cfd_event = self
             .cet
@@ -1430,7 +1430,7 @@ impl Cfd {
     }
 
     pub fn manual_commit_to_blockchain(&self) -> Result<CfdEvent> {
-        anyhow::ensure!(!self.is_closed());
+        ensure!(!self.is_closed());
 
         let dlc = self.dlc.as_ref().context("Cannot commit without a DLC")?;
 
@@ -1523,7 +1523,7 @@ impl Cfd {
                 tracing::debug!("Peer ID {peer_id} invoking a protocol on CFD that got created without counterparty peer ID");
             }
             Some(counterparty_peer_id) => {
-                anyhow::ensure!(
+                ensure!(
                     counterparty_peer_id == *peer_id,
                     "Peer ID mismatch. CFD was created with {counterparty_peer_id}, but
                 protocol got invoked by {peer_id}"
@@ -1696,6 +1696,84 @@ impl Cfd {
         }
 
         self
+    }
+}
+
+#[async_trait::async_trait]
+pub trait ExecuteOnCfd {
+    async fn execute<T>(
+        &self,
+        id: OrderId,
+        command: impl FnOnce(Cfd) -> Result<T> + Send,
+    ) -> Result<T::Rest>
+    where
+        T: ExtractEventFromTuple + Send,
+        T::Rest: Send;
+}
+
+// TODO: Delete this weird thing once all our commands return only an `Event` and not other stuff as
+// well.
+pub trait ExtractEventFromTuple {
+    type Rest;
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest);
+}
+
+impl ExtractEventFromTuple for Option<CfdEvent> {
+    type Rest = ();
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (self, ())
+    }
+}
+
+impl ExtractEventFromTuple for CfdEvent {
+    type Rest = ();
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self), ())
+    }
+}
+
+impl<TOne> ExtractEventFromTuple for (CfdEvent, TOne) {
+    type Rest = TOne;
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self.0), self.1)
+    }
+}
+
+impl<TOne, TTwo> ExtractEventFromTuple for (CfdEvent, TOne, TTwo) {
+    type Rest = (TOne, TTwo);
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self.0), (self.1, self.2))
+    }
+}
+
+impl<TOne, TTwo, TThree> ExtractEventFromTuple for (CfdEvent, TOne, TTwo, TThree) {
+    type Rest = (TOne, TTwo, TThree);
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self.0), (self.1, self.2, self.3))
+    }
+}
+
+impl<TOne, TTwo, TThree, TFour> ExtractEventFromTuple for (CfdEvent, TOne, TTwo, TThree, TFour) {
+    type Rest = (TOne, TTwo, TThree, TFour);
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self.0), (self.1, self.2, self.3, self.4))
+    }
+}
+
+impl<TOne, TTwo, TThree, TFour, TFive> ExtractEventFromTuple
+    for (CfdEvent, TOne, TTwo, TThree, TFour, TFive)
+{
+    type Rest = (TOne, TTwo, TThree, TFour, TFive);
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (Some(self.0), (self.1, self.2, self.3, self.4, self.5))
     }
 }
 
@@ -2358,41 +2436,6 @@ impl CollaborativeSettlement {
 
     pub fn payout(&self) -> Amount {
         self.payout
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(err)]
-pub fn calculate_payouts(
-    position: Position,
-    role: Role,
-    price: Price,
-    quantity: Usd,
-    long_leverage: Leverage,
-    short_leverage: Leverage,
-    n_payouts: usize,
-    fee: CompleteFee,
-) -> Result<Vec<Payout>> {
-    let payouts = payout_curve::calculate(
-        price,
-        quantity,
-        long_leverage,
-        short_leverage,
-        n_payouts,
-        fee,
-    )?;
-
-    match (position, role) {
-        (Position::Long, Role::Taker) | (Position::Short, Role::Maker) => payouts
-            .into_iter()
-            .map(|payout| generate_payouts(payout.range, payout.short, payout.long))
-            .flatten_ok()
-            .collect(),
-        (Position::Short, Role::Taker) | (Position::Long, Role::Maker) => payouts
-            .into_iter()
-            .map(|payout| generate_payouts(payout.range, payout.long, payout.short))
-            .flatten_ok()
-            .collect(),
     }
 }
 

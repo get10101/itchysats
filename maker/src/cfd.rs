@@ -2,8 +2,8 @@ use crate::collab_settlement;
 use crate::connection;
 use crate::connection::NoConnection;
 use crate::contract_setup;
+use crate::legacy_rollover;
 use crate::metrics::time_to_first_position;
-use crate::rollover;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
@@ -11,11 +11,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::command;
-use daemon::libp2p_utils::can_use_libp2p;
 use daemon::oracle;
 use daemon::oracle::NoAnnouncement;
 use daemon::process_manager;
 use daemon::projection;
+use daemon::rollover;
 use daemon::wallet;
 use daemon::wire;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
@@ -46,6 +46,7 @@ use std::collections::HashSet;
 use time::Duration;
 use tokio_extras::FutureExt;
 use tracing::instrument;
+use xtra::prelude::MessageChannel;
 use xtra::Actor as _;
 use xtra_productivity::xtra_productivity;
 use xtras::address_map::NotConnected;
@@ -99,6 +100,9 @@ pub struct TakerConnected {
 pub struct TakerDisconnected {
     pub id: Identity,
 }
+
+#[derive(Clone, Copy)]
+pub struct GetOffers;
 
 #[derive(Clone)]
 pub struct OfferParams {
@@ -186,7 +190,7 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     projection: xtra::Address<projection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
     executor: command::Executor,
-    rollover_actors: AddressMap<OrderId, rollover::Actor>,
+    rollover_actors: AddressMap<OrderId, legacy_rollover::Actor>,
     takers: xtra::Address<T>,
     current_offers: Option<MakerOffers>,
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
@@ -195,7 +199,6 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     connected_takers: HashSet<Identity>,
     n_payouts: usize,
-    libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
     libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
 }
@@ -213,7 +216,6 @@ impl<O, T, W> Actor<O, T, W> {
         oracle: xtra::Address<O>,
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         n_payouts: usize,
-        libp2p_rollover: xtra::Address<daemon::rollover::maker::Actor>,
         libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
         libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
     ) -> Self {
@@ -234,7 +236,6 @@ impl<O, T, W> Actor<O, T, W> {
             n_payouts,
             connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
-            libp2p_rollover,
             libp2p_collab_settlement,
             libp2p_offer,
         }
@@ -287,7 +288,7 @@ where
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
         + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
         + xtra::Handler<connection::RegisterRollover, Return = ()>,
@@ -301,7 +302,7 @@ where
         version: RolloverVersion,
         this: &xtra::Address<Self>,
     ) -> Result<()> {
-        let (rollover_actor_addr, fut) = rollover::Actor::new(
+        let (rollover_actor_addr, fut) = legacy_rollover::Actor::new(
             order_id,
             self.n_payouts,
             self.takers.clone().into(),
@@ -326,7 +327,7 @@ where
 
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
         + xtra::Handler<oracle::MonitorAttestation>,
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
@@ -424,7 +425,9 @@ where
         // state
         let announcement = self
             .oracle
-            .send(oracle::GetAnnouncement(order_to_take.oracle_event_id))
+            .send(oracle::GetAnnouncements(vec![
+                order_to_take.oracle_event_id,
+            ]))
             .await??;
 
         // 5. Start up contract setup actor
@@ -432,7 +435,7 @@ where
             self.db.clone(),
             self.process_manager.clone(),
             (order_to_take.clone(), cfd.quantity(), self.n_payouts),
-            (self.oracle_pk, announcement),
+            (self.oracle_pk, announcement[0].clone()),
             self.wallet.clone().into(),
             self.wallet.clone().into(),
             (
@@ -606,51 +609,11 @@ impl<O, T, W> Actor<O, T, W> {
             .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
 
         let order_id = msg.order_id;
-
-        // We try to dispatch to libp2p rollover first
-        // Using send here is fine because we dispatch to a task internally
-        match self
-            .libp2p_rollover
-            .send(daemon::rollover::maker::Accept {
-                order_id,
-                tx_fee_rate: current_offers.tx_fee_rate,
-                long_funding_rate: current_offers.funding_rate_long,
-                short_funding_rate: current_offers.funding_rate_short,
-            })
-            .await
-        {
-            // Return early if dispatch to libp2p rollover worked
-            Ok(Ok(())) => return Ok(()),
-            Ok(Err(error)) => {
-                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
-                if can_use_libp2p(&cfd) {
-                    tracing::error!("Failed to accept rollover for libp2p: {error:#}");
-                    return Err(error);
-                }
-
-                tracing::debug!("Try fallback to legacy rollover because unable to handle accept via libp2p: {error:#}");
-            }
-            Err(error) => {
-                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
-                if can_use_libp2p(&cfd) {
-                    tracing::error!(
-                        "Failed to dispatch accept to libp2p rollover actor: {error:#}"
-                    );
-                    return Err(anyhow!(error));
-                }
-
-                // we should never see this given that the libp2p rollover actor is always running
-                tracing::error!("Try fallback to legacy rollover because unable to dispatch accept to libp2p rollover actor: {error:#}");
-            }
-        }
-
-        // We fallback to dispatch to legacy rollover in case libp2p rollover failed and we don't
-        // know the peer-id
         match self
             .rollover_actors
             .send_async(
                 &order_id,
-                rollover::AcceptRollover {
+                legacy_rollover::AcceptRollover {
                     tx_fee_rate: current_offers.tx_fee_rate,
                     long_funding_rate: current_offers.funding_rate_long,
                     short_funding_rate: current_offers.funding_rate_short,
@@ -671,45 +634,9 @@ impl<O, T, W> Actor<O, T, W> {
 
     async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
         let order_id = msg.order_id;
-
-        // We try to dispatch to libp2p rollover first
-        // Using send here is fine because we dispatch to a task internally
-        match self
-            .libp2p_rollover
-            .send(daemon::rollover::maker::Reject { order_id })
-            .await
-        {
-            // Return early if dispatch to libp2p rollover worked
-            Ok(Ok(())) => return Ok(()),
-            Ok(Err(error)) => {
-                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
-
-                if can_use_libp2p(&cfd) {
-                    tracing::error!("Failed to reject rollover for libp2p: {error:#}");
-                    return Err(error);
-                }
-
-                tracing::debug!("Try fallback to legacy rollover because unable to handle reject via libp2p: {error:#}");
-            }
-            Err(error) => {
-                let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
-                if can_use_libp2p(&cfd) {
-                    tracing::error!(
-                        "Failed to dispatch reject to libp2p rollover actor: {error:#}"
-                    );
-                    return Err(anyhow!(error));
-                }
-
-                // we should never see this given that the libp2p rollover actor is always running
-                tracing::error!("Try fallback to legacy rollover because unable to dispatch reject to libp2p rollover actor: {error:#}");
-            }
-        }
-
-        // We fallback to dispatch to legacy rollover in case libp2p rollover failed and we don't
-        // know the peer-id
         match self
             .rollover_actors
-            .send_async(&order_id, rollover::RejectRollover)
+            .send_async(&order_id, legacy_rollover::RejectRollover)
             .await
         {
             Ok(_) => Ok(()),
@@ -721,6 +648,10 @@ impl<O, T, W> Actor<O, T, W> {
                 bail!("Reject failed: No active rollover for order {order_id}")
             }
         }
+    }
+
+    async fn handle(&mut self, _: GetOffers) -> Option<MakerOffers> {
+        self.current_offers.clone()
     }
 }
 
@@ -765,7 +696,7 @@ where
 #[xtra_productivity]
 impl<O, T, W> Actor<O, T, W>
 where
-    O: xtra::Handler<oracle::GetAnnouncement, Return = Result<Announcement, NoAnnouncement>>
+    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
         + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
@@ -952,6 +883,39 @@ where
                 }
             }
         }
+    }
+}
+
+/// Source of offer rates used for rolling over CFDs.
+#[derive(Clone)]
+pub struct RatesChannel(MessageChannel<GetOffers, Option<MakerOffers>>);
+
+impl RatesChannel {
+    pub fn new(channel: MessageChannel<GetOffers, Option<MakerOffers>>) -> Self {
+        Self(channel)
+    }
+}
+
+#[async_trait]
+impl rollover::protocol::GetRates for RatesChannel {
+    async fn get_rates(&self) -> Result<rollover::protocol::Rates> {
+        let MakerOffers {
+            funding_rate_long,
+            funding_rate_short,
+            tx_fee_rate,
+            ..
+        } = self
+            .0
+            .send(GetOffers)
+            .await
+            .context("CFD actor disconnected")?
+            .context("No up-to-date rates")?;
+
+        Ok(rollover::protocol::Rates::new(
+            funding_rate_long,
+            funding_rate_short,
+            tx_fee_rate,
+        ))
     }
 }
 

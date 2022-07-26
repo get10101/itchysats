@@ -2,6 +2,7 @@
 
 use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::bitcoin::Txid;
+use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -64,9 +65,7 @@ pub mod setup_contract;
 // TODO: Remove setup_contract_deprecated module after phasing out legacy networking
 pub mod setup_contract_deprecated;
 pub mod setup_taker;
-pub mod shared_protocol;
 pub mod taker_cfd;
-mod transaction_ext;
 pub mod version;
 pub mod wallet;
 pub mod wire;
@@ -105,8 +104,8 @@ impl<O, W, P> TakerActorSystem<O, W, P>
 where
     O: Handler<oracle::MonitorAttestation, Return = ()>
         + Handler<
-            oracle::GetAnnouncement,
-            Return = Result<olivia::Announcement, oracle::NoAnnouncement>,
+            oracle::GetAnnouncements,
+            Return = Result<Vec<olivia::Announcement>, oracle::NoAnnouncement>,
         > + Actor<Stop = ()>,
     W: Handler<wallet::BuildPartyParams, Return = Result<maia_core::PartyParams>>
         + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
@@ -222,7 +221,7 @@ where
                     endpoint_addr.clone(),
                     executor.clone(),
                     oracle_pk,
-                    oracle_addr.clone().into(),
+                    oracle::AnnouncementsChannel::new(oracle_addr.clone().into()),
                     n_payouts,
                 )
             }
@@ -382,7 +381,7 @@ where
         let threshold = QUOTE_INTERVAL_MINUTES.minutes() * 2;
 
         if latest_quote.is_older_than(threshold) {
-            anyhow::bail!(
+            bail!(
                 "Latest quote is older than {} minutes. Refusing to settle with old price.",
                 threshold.whole_minutes()
             )

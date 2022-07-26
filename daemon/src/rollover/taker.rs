@@ -1,26 +1,22 @@
-use crate::command;
-use crate::oracle;
-use crate::oracle::NoAnnouncement;
 use crate::rollover;
 use crate::rollover::protocol::*;
-use crate::shared_protocol::format_expect_msg_within;
-use crate::Txid;
 use anyhow::Context;
+use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::Txid;
 use bdk_ext::keypair;
 use futures::SinkExt;
 use futures::StreamExt;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
-use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::Dlc;
+use model::ExecuteOnCfd;
 use model::OrderId;
 use model::Role;
 use model::Timestamp;
 use std::time::Duration;
 use tokio_extras::FutureExt;
-use xtra::message_channel::MessageChannel;
 use xtra::Address;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
@@ -34,17 +30,20 @@ use xtra_productivity::xtra_productivity;
 const DECISION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// One actor to rule all the rollovers
-pub struct Actor {
+pub struct Actor<E, O> {
     endpoint: Address<Endpoint>,
     oracle_pk: XOnlyPublicKey,
-    get_announcement:
-        MessageChannel<oracle::GetAnnouncement, Result<olivia::Announcement, NoAnnouncement>>,
+    oracle: O,
     n_payouts: usize,
-    executor: command::Executor,
+    executor: E,
 }
 
 #[async_trait]
-impl xtra::Actor for Actor {
+impl<E, O> xtra::Actor for Actor<E, O>
+where
+    E: Send + Sync + 'static,
+    O: Send + Sync + 'static,
+{
     type Stop = ();
 
     async fn stopped(self) -> Self::Stop {}
@@ -58,30 +57,26 @@ pub struct ProposeRollover {
     pub from_settlement_event_id: BitMexPriceEventId,
 }
 
-impl Actor {
+impl<E, O> Actor<E, O> {
     pub fn new(
         endpoint: Address<Endpoint>,
-        executor: command::Executor,
+        executor: E,
         oracle_pk: XOnlyPublicKey,
-        get_announcement: MessageChannel<
-            oracle::GetAnnouncement,
-            Result<olivia::Announcement, NoAnnouncement>,
-        >,
+        get_announcement: O,
         n_payouts: usize,
     ) -> Self {
         Self {
             endpoint,
             executor,
-            get_announcement,
+            oracle: get_announcement,
             oracle_pk,
             n_payouts,
         }
     }
 }
 
-impl Actor {
-    #[tracing::instrument(skip(self))]
-    async fn open_substream(&self, peer_id: PeerId) -> anyhow::Result<Substream> {
+impl<E, O> Actor<E, O> {
+    async fn open_substream(&self, peer_id: PeerId) -> Result<Substream> {
         let substream = self
             .endpoint
             .send(OpenSubstream::single_protocol(
@@ -99,7 +94,11 @@ impl Actor {
 }
 
 #[xtra_productivity]
-impl Actor {
+impl<E, O> Actor<E, O>
+where
+    E: ExecuteOnCfd + Clone + Send + Sync + 'static,
+    O: GetAnnouncements + Clone + Send + Sync + 'static,
+{
     pub async fn handle(&mut self, msg: ProposeRollover, ctx: &mut xtra::Context<Self>) {
         let ProposeRollover {
             order_id,
@@ -121,7 +120,7 @@ impl Actor {
             &ctx.address().expect("self to be alive"),
             {
                 let executor = self.executor.clone();
-                let get_announcement = self.get_announcement.clone();
+                let oracle = self.oracle.clone();
                 let oracle_pk = self.oracle_pk;
                 let n_payouts = self.n_payouts;
                 async move {
@@ -176,10 +175,9 @@ impl Actor {
                                 })
                                 .await?;
 
-                            let announcement = get_announcement
-                                .send(oracle::GetAnnouncement(oracle_event_id))
+                            let announcement = oracle
+                                .get_announcements(vec![oracle_event_id])
                                 .await
-                                .context("Oracle actor disconnected")?
                                 .context("Failed to get announcement")?;
 
                             tracing::info!(%order_id, "Rollover proposal got accepted");
@@ -212,7 +210,10 @@ impl Actor {
                                 .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                                 .await
                                 .with_context(|| {
-                                    format_expect_msg_within("Msg0", ROLLOVER_MSG_TIMEOUT)
+                                    format!(
+                                        "Expected Msg0 within {} seconds",
+                                        ROLLOVER_MSG_TIMEOUT.as_secs()
+                                    )
                                 })?
                                 .context("Empty stream instead of Msg0")?
                                 .context("Unable to decode listener Msg0")?
@@ -231,7 +232,7 @@ impl Actor {
                             let own_cfd_txs = build_own_cfd_transactions(
                                 &dlc,
                                 rollover_params,
-                                &announcement,
+                                &announcement[0],
                                 oracle_pk,
                                 our_position,
                                 n_payouts,
@@ -252,7 +253,10 @@ impl Actor {
                                 .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                                 .await
                                 .with_context(|| {
-                                    format_expect_msg_within("Msg1", ROLLOVER_MSG_TIMEOUT)
+                                    format!(
+                                        "Expected Msg1 within {} seconds",
+                                        ROLLOVER_MSG_TIMEOUT.as_secs()
+                                    )
                                 })?
                                 .context("Empty stream instead of Msg1")?
                                 .context("Unable to decode listener Msg1")?
@@ -262,7 +266,7 @@ impl Actor {
                             let commit_desc = build_commit_descriptor(punish_params);
                             let (cets, refund_tx) = build_and_verify_cets_and_refund(
                                 &dlc,
-                                &announcement,
+                                &announcement[0],
                                 oracle_pk,
                                 publish_pk,
                                 our_role,
@@ -287,7 +291,10 @@ impl Actor {
                                 .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                                 .await
                                 .with_context(|| {
-                                    format_expect_msg_within("Msg2", ROLLOVER_MSG_TIMEOUT)
+                                    format!(
+                                        "Expected Msg2 within {} seconds",
+                                        ROLLOVER_MSG_TIMEOUT.as_secs()
+                                    )
                                 })?
                                 .context("Empty stream instead of Msg2")?
                                 .context("Unable to decode listener Msg2")?
@@ -320,7 +327,7 @@ impl Actor {
                                 maker_lock_amount: dlc.maker_lock_amount,
                                 taker_lock_amount: dlc.taker_lock_amount,
                                 revoked_commit: revoked_commits,
-                                settlement_event_id: announcement.id,
+                                settlement_event_id: announcement[0].id,
                                 refund_timelock: rollover_params.refund_timelock,
                             };
 

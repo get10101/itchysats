@@ -241,14 +241,7 @@ pub async fn start_from_open_cfd_state(
         .await
         .unwrap();
 
-    taker
-        .mocks
-        .mock_oracle_announcement_with(announcement.clone())
-        .await;
-    maker
-        .mocks
-        .mock_oracle_announcement_with(announcement)
-        .await;
+    mock_oracle_announcements(&mut maker, &mut taker, announcement).await;
 
     let order_to_take = match position_maker {
         Position::Short => received.short,
@@ -921,10 +914,10 @@ pub async fn mock_oracle_announcements(
 ) {
     taker
         .mocks
-        .mock_oracle_announcement_with(announcement.clone())
+        .mock_oracle_announcement_with(vec![announcement.clone()])
         .await;
     maker
         .mocks
-        .mock_oracle_announcement_with(announcement)
+        .mock_oracle_announcement_with(vec![announcement])
         .await;
 }

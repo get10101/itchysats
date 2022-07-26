@@ -483,9 +483,9 @@ checksum = "f0b3de4a0c5e67e16066a0715723abd91edc2f9001d09c46e1dca929351e130e"
 
 [[package]]
 name = "cache-padded"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "631ae5198c9be5e753e5cc215e1bd73c2b466a3565173db433f52bb9d3e66dba"
+checksum = "c1db59621ec70f09c5e9b597b220c7a2b43611f4710dc03ceb8748637775692c"
 
 [[package]]
 name = "catty"
@@ -2226,6 +2226,7 @@ name = "model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bdk",
  "bdk-ext",
  "conquer-once",

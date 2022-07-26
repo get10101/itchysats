@@ -1,4 +1,5 @@
 use crate::command;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,6 +16,7 @@ use std::collections::HashSet;
 use time::Duration;
 use time::OffsetDateTime;
 use tracing::Instrument;
+use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
@@ -75,13 +77,13 @@ struct MonitorAttestations {
     pub event_ids: Vec<BitMexPriceEventId>,
 }
 
-/// Message used to request the `Announcement` from the
-/// `oracle::Actor`'s local state.
+/// Message used to request `Announcement`s from the `oracle::Actor`'s
+/// local state.
 ///
-/// The `Announcement` corresponds to the [`BitMexPriceEventId`] included in
-/// the message.
-#[derive(Clone, Copy)]
-pub struct GetAnnouncement(pub BitMexPriceEventId);
+/// Each `Announcement` corresponds to a [`BitMexPriceEventId`]
+/// included in the message.
+#[derive(Clone)]
+pub struct GetAnnouncements(pub Vec<BitMexPriceEventId>);
 
 #[derive(Debug, Clone)]
 pub struct Attestation(olivia::Attestation);
@@ -184,7 +186,7 @@ impl Actor {
 
                 let code = response.status();
                 if !code.is_success() {
-                    anyhow::bail!("GET {url} responded with {code}");
+                    bail!("GET {url} responded with {code}");
                 }
 
                 let announcement = response
@@ -239,7 +241,7 @@ impl Actor {
 
                     let code = response.status();
                     if !code.is_success() {
-                        anyhow::bail!("GET {url} responded with {code}");
+                        bail!("GET {url} responded with {code}");
                     }
 
                     let attestation = response
@@ -281,18 +283,25 @@ impl Actor {
         }
     }
 
-    fn handle_get_announcement(
+    fn handle_get_announcements(
         &mut self,
-        msg: GetAnnouncement,
-    ) -> Result<olivia::Announcement, NoAnnouncement> {
-        self.announcements
-            .get_key_value(&msg.0)
-            .map(|(id, (time, nonce_pks))| olivia::Announcement {
-                id: *id,
-                expected_outcome_time: *time,
-                nonce_pks: nonce_pks.clone(),
+        GetAnnouncements(ids): GetAnnouncements,
+    ) -> Result<Vec<olivia::Announcement>, NoAnnouncement> {
+        let announcements = ids
+            .iter()
+            .map(|id| {
+                self.announcements
+                    .get_key_value(id)
+                    .map(|(id, (time, nonce_pks))| olivia::Announcement {
+                        id: *id,
+                        expected_outcome_time: *time,
+                        nonce_pks: nonce_pks.clone(),
+                    })
+                    .ok_or(NoAnnouncement(*id))
             })
-            .ok_or(NoAnnouncement(msg.0))
+            .collect::<Result<_, _>>()?;
+
+        Ok(announcements)
     }
 
     fn handle_new_announcement_fetched(&mut self, msg: NewAnnouncementFetched) {
@@ -404,6 +413,44 @@ impl Attestation {
 
     pub fn id(&self) -> BitMexPriceEventId {
         self.0.id
+    }
+}
+
+/// Source of announcements based on their event IDs.
+///
+/// This is just a wrapper around a `MessageChannel` which would
+/// provide the same use. It is needed so that we can implement
+/// foreign traits on it to fulfil the requirements of external APIs.
+#[derive(Clone)]
+pub struct AnnouncementsChannel(
+    MessageChannel<GetAnnouncements, Result<Vec<olivia::Announcement>, NoAnnouncement>>,
+);
+
+impl AnnouncementsChannel {
+    pub fn new(
+        channel: MessageChannel<
+            GetAnnouncements,
+            Result<Vec<olivia::Announcement>, NoAnnouncement>,
+        >,
+    ) -> Self {
+        Self(channel)
+    }
+}
+
+#[async_trait]
+impl crate::rollover::protocol::GetAnnouncements for AnnouncementsChannel {
+    async fn get_announcements(
+        &self,
+        events: Vec<BitMexPriceEventId>,
+    ) -> Result<Vec<olivia::Announcement>> {
+        let announcements = self
+            .0
+            .send(GetAnnouncements(events))
+            .await
+            .context("Oracle actor disconnected")?
+            .context("Failed to get announcements")?;
+
+        Ok(announcements)
     }
 }
 
