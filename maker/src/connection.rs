@@ -1,7 +1,6 @@
 use crate::cfd;
 use crate::collab_settlement;
 use crate::contract_setup;
-use crate::legacy_rollover;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -104,11 +103,6 @@ pub struct TakerMessage {
     pub msg: wire::MakerToTaker,
 }
 
-pub struct RegisterRollover {
-    pub order_id: OrderId,
-    pub address: xtra::Address<legacy_rollover::Actor>,
-}
-
 pub struct Actor {
     connections: HashMap<Identity, Connection>,
     taker_connected_channel: MessageChannel<cfd::TakerConnected, Result<()>>,
@@ -119,7 +113,6 @@ pub struct Actor {
     p2p_socket: SocketAddr,
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
-    rollover_actors: AddressMap<OrderId, legacy_rollover::Actor>,
 }
 
 /// A connection to a taker.
@@ -233,7 +226,6 @@ impl Actor {
             p2p_socket,
             setup_actors: AddressMap::default(),
             settlement_actors: AddressMap::default(),
-            rollover_actors: AddressMap::default(),
         }
     }
 
@@ -555,10 +547,6 @@ impl Actor {
         tracing::warn!("TCP listener failed: {:#}", msg.error);
         ctx.stop_self();
     }
-
-    async fn handle_rollover_proposed(&mut self, msg: RegisterRollover) {
-        self.rollover_actors.insert(msg.order_id, msg.address);
-    }
 }
 
 #[xtra_productivity]
@@ -582,15 +570,6 @@ impl Actor {
                     tracing::warn!(%order_id, "No active setup actor");
                 }
             }
-            RolloverProtocol { order_id, msg } => {
-                if let Err(NotConnected(_)) = self
-                    .rollover_actors
-                    .send_async(&order_id, legacy_rollover::ProtocolMsg(msg))
-                    .await
-                {
-                    tracing::warn!(%order_id, "No active rollover actor");
-                }
-            }
             Settlement {
                 order_id,
                 msg: taker_to_maker::Settlement::Initiate { sig_taker },
@@ -601,18 +580,6 @@ impl Actor {
                     .await
                 {
                     tracing::warn!(%order_id, "No active settlement actor");
-                }
-            }
-            ProposeRollover { order_id, .. }
-            | ProposeRolloverV2 { order_id, .. }
-            | ProposeRolloverV3 { order_id, .. } => {
-                if self.rollover_actors.len() < 2 {
-                    let _ = self.taker_msg_channel.send_async_safe(msg).await;
-                } else {
-                    let ignored = order_id;
-                    for ongoing in self.rollover_actors.keys() {
-                        tracing::trace!(target:"wire", %ongoing, %ignored, "Ignoring rollover request because there is still a rollover ongoing.")
-                    }
                 }
             }
             DeprecatedTakeOrder { .. }

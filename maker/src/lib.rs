@@ -14,7 +14,6 @@ pub mod cfd;
 mod collab_settlement;
 mod connection;
 mod contract_setup;
-mod legacy_rollover;
 mod metrics;
 pub mod routes;
 

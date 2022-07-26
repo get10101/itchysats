@@ -228,8 +228,7 @@ pub struct Aggregated {
     /// return to previous state
     state: CfdState,
 
-    /// Negotiated states of protocols
-    rollover_state: Option<ProtocolNegotiationState>,
+    /// Negotiation state of collaborative settlement protocol.
     settlement_state: Option<ProtocolNegotiationState>,
 
     version: u32,
@@ -249,7 +248,6 @@ impl Aggregated {
             commit_published: false,
             refund_published: false,
             state: CfdState::PendingSetup,
-            rollover_state: None,
             settlement_state: None,
             version: 0,
             creation_timestamp: Timestamp::now(),
@@ -282,15 +280,6 @@ impl Aggregated {
                     Role::Taker => CfdState::OutgoingSettlementProposal,
                 },
                 ProtocolNegotiationState::Accepted => CfdState::IncomingSettlementProposal,
-            };
-        };
-        if let Some(rollover_state) = self.rollover_state {
-            return match rollover_state {
-                ProtocolNegotiationState::Started => match role {
-                    Role::Maker => CfdState::IncomingRolloverProposal,
-                    Role::Taker => CfdState::OutgoingRolloverProposal,
-                },
-                ProtocolNegotiationState::Accepted => CfdState::RolloverSetup,
             };
         };
         self.state
@@ -438,7 +427,6 @@ impl Cfd {
                 funding_fee,
                 complete_fee,
             } => {
-                self.aggregated.rollover_state = None;
                 self.expiry_timestamp = dlc.as_ref().map(|dlc| dlc.settlement_event_id.timestamp());
                 self.aggregated.latest_dlc = dlc;
 
@@ -453,11 +441,11 @@ impl Cfd {
 
                 self.aggregated.state = CfdState::Open;
             }
-            RolloverRejected => {
-                self.aggregated.rollover_state = None;
+            RolloverStarted { .. } | RolloverAccepted => {
+                self.aggregated.state = CfdState::RolloverSetup;
             }
-            RolloverFailed => {
-                self.aggregated.rollover_state = None;
+            RolloverRejected | RolloverFailed => {
+                self.aggregated.state = CfdState::Open;
             }
             CollaborativeSettlementStarted { proposal } => {
                 self.aggregated.settlement_state = Some(ProtocolNegotiationState::Started);
@@ -553,12 +541,6 @@ impl Cfd {
             RevokeConfirmed => {
                 // TODO: Implement revoked logic
                 self.aggregated.state = CfdState::OpenCommitted;
-            }
-            RolloverStarted { .. } => {
-                self.aggregated.rollover_state = Some(ProtocolNegotiationState::Started);
-            }
-            RolloverAccepted => {
-                self.aggregated.rollover_state = Some(ProtocolNegotiationState::Accepted);
             }
         };
 
@@ -700,11 +682,6 @@ impl Cfd {
             }
             (CfdState::IncomingSettlementProposal, Role::Taker) => HashSet::new(),
             (CfdState::OutgoingSettlementProposal, _) => HashSet::new(),
-            (CfdState::IncomingRolloverProposal, Role::Maker) => {
-                HashSet::from([CfdAction::AcceptRollover, CfdAction::RejectRollover])
-            }
-            (CfdState::IncomingRolloverProposal, Role::Taker) => HashSet::new(),
-            (CfdState::OutgoingRolloverProposal, _) => HashSet::new(),
             (CfdState::RolloverSetup, _) => HashSet::new(),
             (CfdState::Closed, _) => HashSet::new(),
             (CfdState::PendingRefund, _) => HashSet::new(),
@@ -1413,8 +1390,6 @@ pub enum CfdState {
     OpenCommitted,
     IncomingSettlementProposal,
     OutgoingSettlementProposal,
-    IncomingRolloverProposal,
-    OutgoingRolloverProposal,
     RolloverSetup,
     Closed,
     PendingRefund,
@@ -1437,8 +1412,6 @@ pub enum CfdAction {
     Settle,
     AcceptSettlement,
     RejectSettlement,
-    AcceptRollover,
-    RejectRollover,
 }
 
 mod round_to_two_dp {

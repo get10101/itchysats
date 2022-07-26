@@ -129,10 +129,6 @@ export class State {
                 return "Close Proposed";
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
                 return "Closing";
-            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
-                return "Funding";
-            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
-                return "Funding";
             case StateKey.ROLLOVER_SETUP:
                 return "Rollover Setup";
             case StateKey.PENDING_REFUND:
@@ -158,8 +154,6 @@ export class State {
         switch (this.key) {
             case StateKey.OPEN:
             case StateKey.PENDING_OPEN:
-            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
-            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
                 return green;
 
             case StateKey.REJECTED:
@@ -196,7 +190,6 @@ export class State {
             case StateKey.OPEN_COMMITTED:
             case StateKey.PENDING_REFUND:
             case StateKey.OUTGOING_SETTLEMENT_PROPOSAL:
-            case StateKey.OUTGOING_ROLLOVER_PROPOSAL:
             case StateKey.PENDING_CET:
             case StateKey.PENDING_CLOSE:
                 return StateGroupKey.OPEN;
@@ -204,7 +197,6 @@ export class State {
             case StateKey.INCOMING_SETTLEMENT_PROPOSAL:
                 return StateGroupKey.PENDING_SETTLEMENT;
 
-            case StateKey.INCOMING_ROLLOVER_PROPOSAL:
             case StateKey.ROLLOVER_SETUP:
                 return StateGroupKey.PENDING_ROLLOVER;
 
@@ -229,8 +221,6 @@ export const enum StateKey {
     OPEN_COMMITTED = "OpenCommitted",
     OUTGOING_SETTLEMENT_PROPOSAL = "OutgoingSettlementProposal",
     INCOMING_SETTLEMENT_PROPOSAL = "IncomingSettlementProposal",
-    OUTGOING_ROLLOVER_PROPOSAL = "OutgoingRolloverProposal",
-    INCOMING_ROLLOVER_PROPOSAL = "IncomingRolloverProposal",
     ROLLOVER_SETUP = "RolloverSetup",
     PENDING_REFUND = "PendingRefund",
     REFUNDED = "Refunded",

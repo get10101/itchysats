@@ -2,7 +2,6 @@ use crate::collab_settlement;
 use crate::connection;
 use crate::connection::NoConnection;
 use crate::contract_setup;
-use crate::legacy_rollover;
 use crate::metrics::time_to_first_position;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -36,9 +35,7 @@ use model::Origin;
 use model::Position;
 use model::Price;
 use model::Role;
-use model::RolloverVersion;
 use model::SettlementProposal;
-use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
 use sqlite_db;
@@ -78,11 +75,6 @@ pub struct AcceptSettlement {
 
 #[derive(Clone, Copy)]
 pub struct RejectSettlement {
-    pub order_id: OrderId,
-}
-
-#[derive(Clone, Copy)]
-pub struct AcceptRollover {
     pub order_id: OrderId,
 }
 
@@ -175,13 +167,6 @@ pub struct FromTaker {
     pub msg: wire::TakerToMaker,
 }
 
-/// Proposed rollover
-#[derive(Debug, Clone, PartialEq)]
-struct RolloverProposal {
-    pub order_id: OrderId,
-    pub timestamp: Timestamp,
-}
-
 pub struct Actor<O: 'static, T: 'static, W: 'static> {
     db: sqlite_db::Connection,
     wallet: xtra::Address<W>,
@@ -190,7 +175,6 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     projection: xtra::Address<projection::Actor>,
     process_manager: xtra::Address<process_manager::Actor>,
     executor: command::Executor,
-    rollover_actors: AddressMap<OrderId, legacy_rollover::Actor>,
     takers: xtra::Address<T>,
     current_offers: Option<MakerOffers>,
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
@@ -227,7 +211,6 @@ impl<O, T, W> Actor<O, T, W> {
             projection,
             process_manager: process_manager.clone(),
             executor: command::Executor::new(db, process_manager),
-            rollover_actors: AddressMap::default(),
             takers,
             current_offers: None,
             setup_actors: AddressMap::default(),
@@ -282,45 +265,6 @@ where
             tracing::warn!("Removed unknown taker: {:?}", &taker_id);
         }
         self.update_connected_takers().await?;
-        Ok(())
-    }
-}
-
-impl<O, T, W> Actor<O, T, W>
-where
-    O: xtra::Handler<oracle::GetAnnouncements, Return = Result<Vec<Announcement>, NoAnnouncement>>
-        + xtra::Handler<oracle::MonitorAttestation, Return = ()>,
-    T: xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
-        + xtra::Handler<connection::RegisterRollover, Return = ()>,
-    W: 'static,
-{
-    #[instrument(skip(self, taker_id, this), err)]
-    async fn handle_propose_rollover(
-        &mut self,
-        RolloverProposal { order_id, .. }: RolloverProposal,
-        taker_id: Identity,
-        version: RolloverVersion,
-        this: &xtra::Address<Self>,
-    ) -> Result<()> {
-        let (rollover_actor_addr, fut) = legacy_rollover::Actor::new(
-            order_id,
-            self.n_payouts,
-            self.takers.clone().into(),
-            taker_id,
-            self.oracle_pk,
-            self.oracle.clone().into(),
-            self.process_manager.clone(),
-            self.takers.clone().into(),
-            self.db.clone(),
-            version,
-        )
-        .create(None)
-        .run();
-
-        tokio_extras::spawn(this, fut);
-
-        self.rollover_actors.insert(order_id, rollover_actor_addr);
-
         Ok(())
     }
 }
@@ -602,54 +546,6 @@ impl<O, T, W> Actor<O, T, W> {
         }
     }
 
-    async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
-        let current_offers = self
-            .current_offers
-            .as_ref()
-            .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
-
-        let order_id = msg.order_id;
-        match self
-            .rollover_actors
-            .send_async(
-                &order_id,
-                legacy_rollover::AcceptRollover {
-                    tx_fee_rate: current_offers.tx_fee_rate,
-                    long_funding_rate: current_offers.funding_rate_long,
-                    short_funding_rate: current_offers.funding_rate_short,
-                },
-            )
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(NotConnected(e)) => {
-                self.executor
-                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
-                    .await?;
-
-                bail!("Accept failed: No active rollover for order {order_id}")
-            }
-        }
-    }
-
-    async fn handle_reject_rollover(&mut self, msg: RejectRollover) -> Result<()> {
-        let order_id = msg.order_id;
-        match self
-            .rollover_actors
-            .send_async(&order_id, legacy_rollover::RejectRollover)
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(NotConnected(e)) => {
-                self.executor
-                    .execute(order_id, |cfd| Ok(cfd.fail_rollover(anyhow!(e))))
-                    .await?;
-
-                bail!("Reject failed: No active rollover for order {order_id}")
-            }
-        }
-    }
-
     async fn handle(&mut self, _: GetOffers) -> Option<MakerOffers> {
         self.current_offers.clone()
     }
@@ -701,8 +597,7 @@ where
     T: xtra::Handler<connection::ConfirmOrder, Return = Result<()>>
         + xtra::Handler<connection::TakerMessage, Return = Result<(), NoConnection>>
         + xtra::Handler<connection::BroadcastOffers, Return = ()>
-        + xtra::Handler<connection::settlement::Response, Return = Result<()>>
-        + xtra::Handler<connection::RegisterRollover, Return = ()>,
+        + xtra::Handler<connection::settlement::Response, Return = Result<()>>,
     W: xtra::Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
         + xtra::Handler<wallet::BuildPartyParams, Return = Result<PartyParams>>,
 {
@@ -814,65 +709,7 @@ where
             } => {
                 unreachable!("Handled within `collab_settlement::Actor");
             }
-            wire::TakerToMaker::ProposeRollover {
-                order_id,
-                timestamp,
-            } => {
-                if let Err(e) = self
-                    .handle_propose_rollover(
-                        RolloverProposal {
-                            order_id,
-                            timestamp,
-                        },
-                        taker_id,
-                        RolloverVersion::V1,
-                        &this,
-                    )
-                    .await
-                {
-                    tracing::warn!("Failed to handle rollover proposal: {:#}", e);
-                }
-            }
-            wire::TakerToMaker::ProposeRolloverV2 {
-                order_id,
-                timestamp,
-            } => {
-                if let Err(e) = self
-                    .handle_propose_rollover(
-                        RolloverProposal {
-                            order_id,
-                            timestamp,
-                        },
-                        taker_id,
-                        RolloverVersion::V2,
-                        &this,
-                    )
-                    .await
-                {
-                    tracing::warn!("Failed to handle rollover proposal V2: {:#}", e);
-                }
-            }
-            wire::TakerToMaker::ProposeRolloverV3 {
-                order_id,
-                timestamp,
-            } => {
-                if let Err(e) = self
-                    .handle_propose_rollover(
-                        RolloverProposal {
-                            order_id,
-                            timestamp,
-                        },
-                        taker_id,
-                        RolloverVersion::V3,
-                        &this,
-                    )
-                    .await
-                {
-                    tracing::warn!("Failed to handle rollover proposal V3: {:#}", e);
-                }
-            }
-            wire::TakerToMaker::RolloverProtocol { .. }
-            | wire::TakerToMaker::Protocol { .. }
+            wire::TakerToMaker::Protocol { .. }
             | wire::TakerToMaker::Hello(_)
             | wire::TakerToMaker::HelloV2 { .. }
             | wire::TakerToMaker::HelloV3 { .. }

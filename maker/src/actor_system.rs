@@ -313,20 +313,6 @@ where
         Ok(())
     }
 
-    pub async fn accept_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor
-            .send(cfd::AcceptRollover { order_id })
-            .await??;
-        Ok(())
-    }
-
-    pub async fn reject_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor
-            .send(cfd::RejectRollover { order_id })
-            .await??;
-        Ok(())
-    }
-
     pub async fn commit(&self, order_id: OrderId) -> Result<()> {
         self.executor
             .execute(order_id, |cfd| cfd.manual_commit_to_blockchain())

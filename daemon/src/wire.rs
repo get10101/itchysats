@@ -116,25 +116,9 @@ pub enum TakerToMaker {
         quantity: Usd,
         leverage: Leverage,
     },
-    ProposeRollover {
-        order_id: OrderId,
-        timestamp: Timestamp,
-    },
-    ProposeRolloverV2 {
-        order_id: OrderId,
-        timestamp: Timestamp,
-    },
-    ProposeRolloverV3 {
-        order_id: OrderId,
-        timestamp: Timestamp,
-    },
     Protocol {
         order_id: OrderId,
         msg: SetupMsg,
-    },
-    RolloverProtocol {
-        order_id: OrderId,
-        msg: RolloverMsg,
     },
     Settlement {
         order_id: OrderId,
@@ -157,15 +141,6 @@ impl TakerToMaker {
                 SetupMsg::Msg2(_) => "TakerToMaker::Protocol::Msg2",
                 SetupMsg::Msg3(_) => "TakerToMaker::Protocol::Msg3",
             },
-            TakerToMaker::ProposeRollover { .. } => "TakerToMaker::ProposeRollover",
-            TakerToMaker::ProposeRolloverV2 { .. } => "TakerToMaker::ProposeRolloverV2",
-            TakerToMaker::ProposeRolloverV3 { .. } => "TakerToMaker::ProposeRolloverV3",
-            TakerToMaker::RolloverProtocol { msg, .. } => match msg {
-                RolloverMsg::Msg0(_) => "TakerToMaker::RolloverProtocol::Msg0",
-                RolloverMsg::Msg1(_) => "TakerToMaker::RolloverProtocol::Msg1",
-                RolloverMsg::Msg2(_) => "TakerToMaker::RolloverProtocol::Msg2",
-                RolloverMsg::Msg3(_) => "TakerToMaker::RolloverProtocol::Msg3",
-            },
             TakerToMaker::Settlement { msg, .. } => match msg {
                 taker_to_maker::Settlement::Propose { .. } => "TakerToMaker::Settlement::Propose",
                 taker_to_maker::Settlement::Initiate { .. } => "TakerToMaker::Settlement::Initiate",
@@ -183,11 +158,7 @@ impl TakerToMaker {
         match self {
             DeprecatedTakeOrder { order_id, .. }
             | TakeOrder { order_id, .. }
-            | ProposeRollover { order_id, .. }
-            | ProposeRolloverV2 { order_id, .. }
-            | ProposeRolloverV3 { order_id, .. }
             | Protocol { order_id, .. }
-            | RolloverProtocol { order_id, .. }
             | Settlement { order_id, .. } => Some(*order_id),
             Hello(_) | HelloV2 { .. } | HelloV3 { .. } | HelloV4 { .. } | Unknown => None,
         }
