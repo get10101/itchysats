@@ -18,19 +18,16 @@ import { Link as ReachLink, Outlet, useLocation } from "react-router-dom";
 import { VIEWPORT_WIDTH_PX } from "../App";
 import { Cfd, ConnectionStatus, isClosed } from "../types";
 import History from "./History";
-import PromoBanner from "./PromoBanner";
 
 interface TradePageLayoutProps {
     cfds: Cfd[];
     connectedToMaker: ConnectionStatus;
-    showPromoBanner: boolean;
     showExtraInfo: boolean;
 }
 
-export function TradePageLayout({ cfds, connectedToMaker, showPromoBanner, showExtraInfo }: TradePageLayoutProps) {
+export function TradePageLayout({ cfds, connectedToMaker, showExtraInfo }: TradePageLayoutProps) {
     return (
         <VStack w={"100%"}>
-            {showPromoBanner && <PromoBanner />}
             <NavigationButtons />
             <Outlet />
             <HistoryLayout cfds={cfds} connectedToMaker={connectedToMaker} showExtraInfo={showExtraInfo} />

@@ -126,10 +126,6 @@ export const App = () => {
     dayjs.extend(utc);
     dayjs.extend(isBetween);
 
-    // Show promo banner from 29.03.2022 until 18.04.2022 (specify midnight the
-    // next day as the end)
-    const isWithinPromoPeriod = dayjs().utc().isBetween("2022-03-29", "2022-04-19");
-
     // TODO: Eventually this should be calculated with what the maker defines in the offer, for now we assume full hour
     const nextFullHour = dayjs().utc().minute(0).add(1, "hour");
 
@@ -211,7 +207,6 @@ export const App = () => {
                         <TradePageLayout
                             cfds={cfds}
                             connectedToMaker={connectedToMaker}
-                            showPromoBanner={isWithinPromoPeriod}
                             showExtraInfo={showExtraInfo}
                         />
                     }
