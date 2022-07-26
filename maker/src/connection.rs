@@ -463,90 +463,94 @@ impl Actor {
             .send_async_safe(cfd::TakerConnected { id: identity })
             .await;
 
-        tracing::debug_span!("Test span container").in_scope(|| {
-            let mut tasks = Tasks::default();
+        let mut tasks = Tasks::default();
 
-            tracing::debug_span!("Add fallible").in_scope(|| {
-                tasks.add_fallible(
-                    {
-                        let this = this.clone();
+        tasks.add_fallible(
+            {
+                let this = this.clone();
 
-                        async move {
-                            loop {
-                                let msg = read
-                                    .try_next()
-                                    .await
-                                    .context("Failed to read from socket")?
-                                    .context("End of stream")?;
+                async move {
+                    loop {
+                        let msg = read
+                            .try_next()
+                            .await
+                            .context("Failed to read from socket")?
+                            .context("End of stream")?;
 
-                                this.send(cfd::FromTaker {
-                                    peer_id,
-                                    taker_id: identity,
-                                    msg,
-                                })
-                                    .await
-                                    .context(
-                                        "we are not connected to ourselves, this should really not happen",
-                                    )?;
-                            }
-                        }.instrument(tracing::debug_span!(parent: Span::none(), "Fallible task handler span"))
-                    },
-                    {
-                        let this = this.clone();
-
-                        move |error| async move {
-                            let _ = this
-                                .send(ReadFail {
-                                    taker_id: identity,
-                                    error,
-                                })
-                                .await;
-                        }.instrument(tracing::debug_span!(parent: Span::none(), "Fallible task error span"))
-                    },
-                );
-            });
-
-            let can_remove_heartbeats = match parse_daemon_version(&daemon_version) {
-                Ok(daemon_semver) => {
-                    let can_remove_heartbeats =
-                        semver::VersionReq::parse("> 0.5").expect("to parse VersionReq");
-                    can_remove_heartbeats.matches(&daemon_semver)
+                        this.send(cfd::FromTaker {
+                            peer_id,
+                            taker_id: identity,
+                            msg,
+                        })
+                        .await
+                        .context(
+                            "we are not connected to ourselves, this should really not happen",
+                        )?;
+                    }
                 }
-                Err(e) => {
-                    // parsing can fail with legacy clients with version: "<=0.4.7"
-                    tracing::debug!("{e:#}");
-                    false
-                }
-            };
+                .instrument(tracing::debug_span!(
+                    parent: Span::none(),
+                    "Fallible task handler span"
+                ))
+            },
+            {
+                let this = this.clone();
 
-            if can_remove_heartbeats {
-                tracing::info!(
-                    "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
-                );
-            } else {
-                tasks.add(this.send_interval(self.heartbeat_interval, move || SendHeartbeat(identity), xtras::IncludeSpan::Never));
+                move |error| async move {
+                    let _ = this
+                        .send(ReadFail {
+                            taker_id: identity,
+                            error,
+                        })
+                        .await;
+                }
+            },
+        );
+
+        let can_remove_heartbeats = match parse_daemon_version(&daemon_version) {
+            Ok(daemon_semver) => {
+                let can_remove_heartbeats =
+                    semver::VersionReq::parse("> 0.5").expect("to parse VersionReq");
+                can_remove_heartbeats.matches(&daemon_semver)
             }
+            Err(e) => {
+                // parsing can fail with legacy clients with version: "<=0.4.7"
+                tracing::debug!("{e:#}");
+                false
+            }
+        };
 
-            self.connections.insert(
-                identity,
-                Connection {
-                    taker: identity,
-                    write,
-                    wire_version: wire_version.clone(),
-                    environment,
-                    daemon_version: daemon_version.clone(),
-                    _tasks: tasks,
-                },
+        if can_remove_heartbeats {
+            tracing::info!(
+                "Omitting legacy heartbeat protocol - libp2p connection monitoring should suffice"
             );
+        } else {
+            tasks.add(this.send_interval(
+                self.heartbeat_interval,
+                move || SendHeartbeat(identity),
+                xtras::IncludeSpan::Never,
+            ));
+        }
 
-            NUM_CONNECTIONS_GAUGE
-                .with(&HashMap::from([
-                    (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
-                    (DAEMON_VERSION_LABEL, daemon_version.as_str()),
-                    (ENVIRONMENT_LABEL, environment.to_string().as_str()),
-                ]))
-                .inc();
-        });
+        self.connections.insert(
+            identity,
+            Connection {
+                taker: identity,
+                write,
+                wire_version: wire_version.clone(),
+                environment,
+                daemon_version: daemon_version.clone(),
+                _tasks: tasks,
+            },
+        );
+
+        NUM_CONNECTIONS_GAUGE
+            .with(&HashMap::from([
+                (WIRE_VERSION_LABEL, wire_version.to_string().as_str()),
+                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+                (ENVIRONMENT_LABEL, environment.to_string().as_str()),
+            ]))
+            .inc();
 
         tracing::info!(taker_id = %identity, taker_address = %address, %wire_version, %daemon_version, %environment, ?peer_id, "Connection is ready");
     }
