@@ -24,7 +24,7 @@ async fn collaboratively_close_an_open_cfd_maker_going_long() {
 #[otel_test]
 async fn maker_rejects_collab_settlement_after_commit_finality() {
     let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(OliviaData::example_0().announcement(), Position::Short).await;
+        start_from_open_cfd_state(OliviaData::example_0().announcements(), Position::Short).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
@@ -50,7 +50,7 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
 #[otel_test]
 async fn maker_accepts_collab_settlement_after_commit_finality() {
     let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(OliviaData::example_0().announcement(), Position::Short).await;
+        start_from_open_cfd_state(OliviaData::example_0().announcements(), Position::Short).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
@@ -75,7 +75,7 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
 
 async fn collaboratively_close_an_open_cfd(maker_position: Position) {
     let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(OliviaData::example_0().announcement(), maker_position).await;
+        start_from_open_cfd_state(OliviaData::example_0().announcements(), maker_position).await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system

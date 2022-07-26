@@ -59,7 +59,6 @@ pub mod oracle;
 pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
-pub mod rollover;
 pub mod seed;
 pub mod setup_contract;
 // TODO: Remove setup_contract_deprecated module after phasing out legacy networking
@@ -101,7 +100,7 @@ pub struct TakerActorSystem<O, W, P> {
 
 impl<O, W, P> TakerActorSystem<O, W, P>
 where
-    O: Handler<oracle::MonitorAttestation, Return = ()>
+    O: Handler<oracle::MonitorAttestations, Return = ()>
         + Handler<
             oracle::GetAnnouncements,
             Return = Result<Vec<olivia::Announcement>, oracle::NoAnnouncement>,
@@ -216,7 +215,7 @@ where
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
             move || {
-                rollover::taker::Actor::new(
+                rollover::v_2_0_0::taker::Actor::new(
                     endpoint_addr.clone(),
                     executor.clone(),
                     oracle_pk,

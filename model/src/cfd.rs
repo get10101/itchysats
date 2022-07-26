@@ -41,6 +41,7 @@ use bdk::bitcoin::TxOut;
 use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::miniscript::DescriptorTrait;
+use itertools::Itertools;
 use maia::spending_tx_sighash;
 use maia_core::secp256k1_zkp;
 use maia_core::secp256k1_zkp::ecdsa::Signature;
@@ -60,6 +61,8 @@ use std::str;
 use time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+mod rollover_v_1_0_0;
 
 pub const CET_TIMELOCK: u32 = 12;
 
@@ -889,7 +892,7 @@ impl Cfd {
 
     pub fn start_rollover_maker(
         &self,
-        from_tx_id_proposed: Txid,
+        from_txid_proposed: Txid,
     ) -> Result<(CfdEvent, BaseDlcParams)> {
         if self.during_rollover {
             bail!("The CFD is already being rolled over")
@@ -904,7 +907,7 @@ impl Cfd {
 
         let order_id = self.id;
         let base_dlc_params = tracing::info_span!("", %order_id)
-            .in_scope(|| dlc.base_dlc_params(from_tx_id_proposed, self.fee_account.settle()))?;
+            .in_scope(|| dlc.base_dlc_params(from_txid_proposed, self.fee_account.settle()))?;
 
         let event = CfdEvent::new(self.id, EventKind::RolloverStarted);
 
@@ -917,7 +920,13 @@ impl Cfd {
         funding_rate: FundingRate,
         from_params: Option<(BitMexPriceEventId, CompleteFee)>,
         version: rollover::Version,
-    ) -> Result<(CfdEvent, RolloverParams, Dlc, Position, BitMexPriceEventId)> {
+    ) -> Result<(
+        CfdEvent,
+        RolloverParams,
+        Dlc,
+        Position,
+        Vec<BitMexPriceEventId>,
+    )> {
         if !self.during_rollover {
             bail!("The CFD is not rolling over");
         }
@@ -927,7 +936,8 @@ impl Cfd {
         }
 
         let now = OffsetDateTime::now_utc();
-        let to_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+        let to_event_ids = olivia::hourly_events(now, now + self.settlement_interval)?;
+        let settlement_event_id = to_event_ids.last().context("Empty to_event_ids")?;
 
         // If a `from_event_id` was specified we use it, otherwise we use the
         // `settlement_event_id` of the current dlc to calculate the costs.
@@ -953,9 +963,11 @@ impl Cfd {
         let hours_to_charge = match version {
             rollover::Version::V1 => 1,
             rollover::Version::V2 => self.hours_to_extend_in_rollover(now)?,
-            rollover::Version::V3 => {
-                self.hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)?
-            }
+            rollover::Version::V3 => self.hours_to_extend_in_rollover_based_on_event(
+                *settlement_event_id,
+                now,
+                from_event_id,
+            )?,
         };
 
         let funding_fee = FundingFee::calculate(
@@ -990,7 +1002,7 @@ impl Cfd {
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,
-            to_event_id,
+            to_event_ids,
         ))
     }
 
@@ -998,6 +1010,7 @@ impl Cfd {
         &self,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
+        maker_to_event_ids: &[BitMexPriceEventId],
         from_event_id: BitMexPriceEventId,
     ) -> Result<(CfdEvent, RolloverParams, Dlc, Position)> {
         if !self.during_rollover {
@@ -1012,13 +1025,23 @@ impl Cfd {
 
         let now = OffsetDateTime::now_utc();
 
-        let to_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+        let to_event_ids = olivia::hourly_events(now, now + self.settlement_interval)?;
+
+        ensure!(
+            to_event_ids == maker_to_event_ids,
+            "Disagreement when comparing `to_event_ids`"
+        );
+
+        let settlement_event_id = to_event_ids.last().context("Empty to_event_ids")?;
 
         // TODO: This should not be calculated here but we should just rely on `complete_fee`
         //  This requires more refactoring because the `RolloverCompleted` event currently depends
         //  on the `funding_fee` from the `RolloverParams`.
-        let hours_to_charge =
-            self.hours_to_extend_in_rollover_based_on_event(to_event_id, now, from_event_id)?;
+        let hours_to_charge = self.hours_to_extend_in_rollover_based_on_event(
+            *settlement_event_id,
+            now,
+            from_event_id,
+        )?;
         let funding_fee = FundingFee::calculate(
             self.initial_price,
             self.quantity,
@@ -1341,9 +1364,15 @@ impl Cfd {
         let cet = dlc.signed_cet(attestation)?;
 
         let cet = match cet {
-            Ok(cet) => cet,
-            Err(IrrelevantAttestation { .. }) => {
+            Ok(Ok(cet)) => cet,
+            Ok(Err(IrrelevantAttestation { .. })) => {
                 return Ok(None);
+            }
+            Err(PriceOutOfRange { id, .. }) if dlc.liquidation_event_ids().contains(&id) => {
+                return Ok(None);
+            }
+            Err(e @ PriceOutOfRange { .. }) => {
+                return Err(anyhow!(e).context("Failed to decrypt settlement CET"));
             }
         };
 
@@ -2292,21 +2321,26 @@ impl Dlc {
     pub fn signed_cet(
         &self,
         attestation: &olivia::Attestation,
-    ) -> Result<Result<Transaction, IrrelevantAttestation>> {
-        let cets = match self.cets.get(&attestation.id) {
+    ) -> Result<Result<Result<Transaction, IrrelevantAttestation>, PriceOutOfRange>> {
+        let event_id = attestation.id;
+        let price = attestation.price;
+        let cets = match self.cets.get(&event_id) {
             Some(cets) => cets,
             None => {
-                return Ok(Err(IrrelevantAttestation {
-                    id: attestation.id,
-                    tx_id: self.lock.0.txid(),
-                }))
+                return Ok(Ok(Err(IrrelevantAttestation {
+                    id: event_id,
+                    txid: self.lock.0.txid(),
+                })))
             }
         };
 
         let cet = cets
             .iter()
-            .find(|Cet { range, .. }| range.contains(&attestation.price))
-            .context("Price out of range of cets")?;
+            .find(|Cet { range, .. }| range.contains(&price))
+            .ok_or(PriceOutOfRange {
+                id: event_id,
+                price,
+            })?;
         let encsig = cet.adaptor_sig;
 
         let mut decryption_sk = attestation.scalars[0];
@@ -2343,15 +2377,62 @@ impl Dlc {
             (counterparty_pubkey, counterparty_sig),
         )?;
 
-        Ok(Ok(signed_cet))
+        Ok(Ok(Ok(signed_cet)))
+    }
+
+    /// All the oracle event IDs associated with the DLC.
+    ///
+    /// This includes:
+    /// - the settlement event; and
+    /// - all the liquidation events that precede it.
+    pub fn event_ids(&self) -> Vec<BitMexPriceEventId> {
+        self.cets.keys().copied().collect_vec()
+    }
+
+    pub fn liquidation_event_ids(&self) -> Vec<BitMexPriceEventId> {
+        // A CFD only has one settlement event at a time. Therefore,
+        // all other events recorded must be liquidation events.
+        self.event_ids()
+            .iter()
+            .copied()
+            .filter(|id| *id != self.settlement_event_id) // only keep events which are _not_ the settlement event
+            .collect()
+    }
+
+    pub fn identity_pk(&self) -> PublicKey {
+        PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
+            SECP256K1,
+            &self.identity,
+        ))
+    }
+
+    pub fn maker_identity_pk(&self, own_role: Role) -> PublicKey {
+        match own_role {
+            Role::Maker => self.identity_pk(),
+            Role::Taker => self.identity_counterparty,
+        }
+    }
+
+    pub fn taker_identity_pk(&self, own_role: Role) -> PublicKey {
+        match own_role {
+            Role::Maker => self.identity_counterparty,
+            Role::Taker => self.identity_pk(),
+        }
     }
 }
 
 #[derive(Debug, thiserror::Error, Clone, Copy)]
-#[error("Attestation {id} is irrelevant for DLC {tx_id}")]
+#[error("Attestation {id} is irrelevant for DLC with lock TX {txid}")]
 pub struct IrrelevantAttestation {
     id: BitMexPriceEventId,
-    tx_id: Txid,
+    txid: Txid,
+}
+
+#[derive(Debug, thiserror::Error, Clone, Copy)]
+#[error("Attested price {price} is not in range of any CETs for event {id}")]
+pub struct PriceOutOfRange {
+    id: BitMexPriceEventId,
+    price: u64,
 }
 
 /// Information which we need to remember in order to construct a

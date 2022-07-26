@@ -209,7 +209,7 @@ macro_rules! wait_next_state {
 /// For convenience, returns also OrderId of the opened Cfd.
 /// `announcement` is used during Cfd's creation.
 pub async fn start_from_open_cfd_state(
-    announcement: Announcement,
+    announcements: Vec<Announcement>,
     position_maker: Position,
 ) -> (Maker, Taker, OrderId, FeeCalculator) {
     let mut maker = Maker::start(&MakerConfig::default()).await;
@@ -241,7 +241,7 @@ pub async fn start_from_open_cfd_state(
         .await
         .unwrap();
 
-    mock_oracle_announcements(&mut maker, &mut taker, announcement).await;
+    mock_oracle_announcements(&mut maker, &mut taker, announcements).await;
 
     let order_to_take = match position_maker {
         Position::Short => received.short,
@@ -691,6 +691,15 @@ impl Taker {
             .txid()
     }
 
+    pub fn latest_settlement_event_id(&mut self) -> BitMexPriceEventId {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .settlement_event_id
+    }
+
     pub fn latest_dlc(&mut self) -> Dlc {
         self.first_cfd()
             .aggregated()
@@ -910,14 +919,14 @@ fn dummy_price() -> Decimal {
 pub async fn mock_oracle_announcements(
     maker: &mut Maker,
     taker: &mut Taker,
-    announcement: Announcement,
+    announcements: Vec<Announcement>,
 ) {
     taker
         .mocks
-        .mock_oracle_announcement_with(vec![announcement.clone()])
+        .mock_oracle_announcement_with(announcements.clone())
         .await;
     maker
         .mocks
-        .mock_oracle_announcement_with(vec![announcement])
+        .mock_oracle_announcement_with(announcements)
         .await;
 }

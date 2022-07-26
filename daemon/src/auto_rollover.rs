@@ -1,7 +1,5 @@
 use crate::command;
 use crate::oracle;
-use crate::rollover;
-use crate::rollover::taker::ProposeRollover;
 use crate::Txid;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,6 +7,7 @@ use futures::StreamExt;
 use model::libp2p::PeerId;
 use model::olivia::BitMexPriceEventId;
 use model::OrderId;
+use rollover::v_2_0_0::taker::ProposeRollover;
 use sqlite_db;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -20,14 +19,14 @@ use xtras::SendInterval;
 pub struct Actor {
     db: sqlite_db::Connection,
     libp2p_rollover:
-        Address<rollover::taker::Actor<command::Executor, oracle::AnnouncementsChannel>>,
+        Address<rollover::v_2_0_0::taker::Actor<command::Executor, oracle::AnnouncementsChannel>>,
 }
 
 impl Actor {
     pub fn new(
         db: sqlite_db::Connection,
         libp2p_rollover: Address<
-            rollover::taker::Actor<command::Executor, oracle::AnnouncementsChannel>,
+            rollover::v_2_0_0::taker::Actor<command::Executor, oracle::AnnouncementsChannel>,
         >,
     ) -> Self {
         Self {

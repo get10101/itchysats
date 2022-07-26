@@ -21,6 +21,7 @@ status = [
   "clippy (otel-tests)",
   "clippy (otel-tests-macro)",
   "clippy (vergen-version)",
+  "clippy (xtra-libp2p-rollover)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",

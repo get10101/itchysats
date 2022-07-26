@@ -26,7 +26,7 @@ async fn force_close_an_open_cfd_maker_going_long() {
 async fn force_close_open_cfd(maker_position: Position) {
     let oracle_data = OliviaData::example_0();
     let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(oracle_data.announcement(), maker_position).await;
+        start_from_open_cfd_state(oracle_data.announcements(), maker_position).await;
     // Taker initiates force-closing
     taker.system.commit(order_id).await.unwrap();
 
@@ -44,7 +44,12 @@ async fn force_close_open_cfd(maker_position: Position) {
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // Delivering correct attestation moves the state `PendingCet`
-    simulate_attestation!(taker, maker, order_id, oracle_data.attestation());
+    simulate_attestation!(
+        taker,
+        maker,
+        order_id,
+        oracle_data.attestations()[0].clone()
+    );
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);

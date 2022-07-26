@@ -27,7 +27,7 @@ pub struct Actor {
     start_monitoring: MessageChannel<StartMonitoring, ()>,
     monitor_cet_finality: MessageChannel<MonitorCetFinality, Result<()>>,
     monitor_collaborative_settlement: MessageChannel<MonitorCollaborativeSettlement, ()>,
-    monitor_attestation: MessageChannel<oracle::MonitorAttestation, ()>,
+    monitor_attestation: MessageChannel<oracle::MonitorAttestations, ()>,
 }
 
 pub struct Event(CfdEvent);
@@ -49,7 +49,7 @@ impl Actor {
         start_monitoring: MessageChannel<StartMonitoring, ()>,
         monitor_cet_finality: MessageChannel<MonitorCetFinality, Result<()>>,
         monitor_collaborative_settlement: MessageChannel<MonitorCollaborativeSettlement, ()>,
-        monitor_attestation: MessageChannel<oracle::MonitorAttestation, ()>,
+        monitor_attestation: MessageChannel<oracle::MonitorAttestations, ()>,
     ) -> Self {
         Self {
             db,
@@ -96,8 +96,8 @@ impl Actor {
                     .await?;
 
                 self.monitor_attestation
-                    .send_async_safe(oracle::MonitorAttestation {
-                        event_id: dlc.settlement_event_id,
+                    .send_async_safe(oracle::MonitorAttestations {
+                        event_ids: dlc.event_ids(),
                     })
                     .await?;
             }
@@ -187,8 +187,8 @@ impl Actor {
                     .await?;
 
                 self.monitor_attestation
-                    .send_async_safe(oracle::MonitorAttestation {
-                        event_id: dlc.settlement_event_id,
+                    .send_async_safe(oracle::MonitorAttestations {
+                        event_ids: dlc.event_ids(),
                     })
                     .await?;
             }

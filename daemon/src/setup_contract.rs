@@ -26,6 +26,7 @@ use model::shared_protocol::verify_cets;
 use model::shared_protocol::verify_signature;
 use model::Cet;
 use model::Dlc;
+use model::OraclePayouts;
 use model::Payouts;
 use model::Position;
 use model::Role;
@@ -33,7 +34,6 @@ use model::SetupParams;
 use model::TransactionExt;
 use model::CET_TIMELOCK;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::time::Duration;
 use tokio_extras::FutureExt;
 use tracing::instrument;
@@ -59,7 +59,7 @@ const CONTRACT_SETUP_MSG_TIMEOUT: Duration = Duration::from_secs(120);
 pub async fn new(
     mut sink: impl Sink<SetupMsg, Error = anyhow::Error> + Unpin,
     mut stream: impl Stream<Item = SetupMsg> + Unpin,
-    (oracle_pk, announcement): (XOnlyPublicKey, olivia::Announcement),
+    (oracle_pk, announcements): (XOnlyPublicKey, Vec<olivia::Announcement>),
     setup_params: SetupParams,
     build_party_params_channel: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
     sign_channel: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
@@ -68,7 +68,7 @@ pub async fn new(
     n_payouts: usize,
 ) -> Result<Dlc> {
     tracing::debug!(?setup_params, ?role, ?position, ?n_payouts);
-    tracing::trace!(?oracle_pk, ?announcement);
+    tracing::trace!(?oracle_pk, ?announcements);
 
     let (sk, pk) = keypair::new(&mut rand::thread_rng());
     let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
@@ -134,21 +134,19 @@ pub async fn new(
         )
     }
 
-    let settlement_event_id = announcement.id;
-    let payouts = HashMap::from_iter([(
-        announcement.into(),
-        Payouts::new(
-            position,
-            role,
-            setup_params.price,
-            setup_params.quantity,
-            setup_params.long_leverage,
-            setup_params.short_leverage,
-            n_payouts,
-            setup_params.fee_account.settle(),
-        )?
-        .settlement(),
-    )]);
+    let settlement_event_id = announcements.last().context("Empty announcements")?.id;
+
+    let payouts = Payouts::new(
+        position,
+        role,
+        setup_params.price,
+        setup_params.quantity,
+        setup_params.long_leverage,
+        setup_params.short_leverage,
+        n_payouts,
+        setup_params.fee_account.settle(),
+    )?;
+    let payouts_per_event = OraclePayouts::new(payouts, announcements)?;
 
     let own_cfd_txs = tokio::task::spawn_blocking({
         let maker_params = params.maker().clone();
@@ -162,7 +160,7 @@ pub async fn new(
                 (taker_params, taker_punish),
                 oracle_pk,
                 (CET_TIMELOCK, setup_params.refund_timelock),
-                payouts,
+                payouts_per_event.into(),
                 sk,
                 setup_params.tx_fee_rate.to_u32(),
             )
