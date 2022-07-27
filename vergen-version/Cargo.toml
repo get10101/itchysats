@@ -2,10 +2,7 @@
 name = "vergen-version"
 version = "0.1.0"
 edition = "2021"
-description = "Expose workspace version with git hash using vergen"
+description = "Expose workspace version with git hash using git-version"
 
 [dependencies]
-
-[build-dependencies]
-anyhow = "1"
-vergen = "7"
+git-version = "0.3.5"
