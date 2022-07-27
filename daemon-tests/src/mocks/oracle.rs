@@ -34,16 +34,21 @@ impl xtra::Actor for OracleActor {
 
 #[xtra_productivity]
 impl OracleActor {
+    /// Handle a request to get `Announcement`s.
+    ///
+    /// We _ignore_ the message that is supposed to indicate which `Announcement`s the sender is
+    /// requesting. Instead, we return whatever `Announcement`s we have mocked beforehand.
     async fn handle(
         &mut self,
-        msg: oracle::GetAnnouncements,
+        _: oracle::GetAnnouncements,
     ) -> Result<Vec<olivia::Announcement>, oracle::NoAnnouncement> {
-        self.mock
+        Ok(self
+            .mock
             .lock()
             .await
             .announcements
             .clone()
-            .ok_or(oracle::NoAnnouncement(msg.0[0]))
+            .expect("To have mocked announcements"))
     }
 
     async fn handle(&mut self, _msg: oracle::MonitorAttestations) {}
@@ -52,6 +57,7 @@ impl OracleActor {
 
     async fn handle(&mut self, _msg: oracle::SyncAttestations) {}
 }
+
 pub struct MockOracle {
     executor: command::Executor,
     announcements: Option<Vec<olivia::Announcement>>,
