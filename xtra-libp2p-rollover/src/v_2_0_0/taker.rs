@@ -18,6 +18,7 @@ use model::Timestamp;
 use std::time::Duration;
 use tokio_extras::FutureExt;
 use xtra::Address;
+use xtra_libp2p::endpoint;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtra_libp2p::Substream;
@@ -84,12 +85,41 @@ impl<E, O> Actor<E, O> {
                 v_2_0_0::PROTOCOL,
             ))
             .await
-            .context("Endpoint is disconnected")?
-            .context("No connection to peer")?
-            .await
-            .context("Failed to open substream")?;
+            .context("Endpoint is disconnected")?;
+
+        let substream = match substream.context("No connection to peer") {
+            Ok(substream) => substream,
+            Err(e) => {
+                self.emergency_drop_connection(peer_id, &e).await?;
+                return Err(e);
+            }
+        };
+
+        let substream = match substream.await.context("Failed to open substream") {
+            Ok(substream) => substream,
+            Err(e) => {
+                self.emergency_drop_connection(peer_id, &e).await?;
+                return Err(e);
+            }
+        };
 
         Ok(substream)
+    }
+
+    /// Emergency drop the connection
+    ///
+    /// This can be triggered by the taker in case the rollover protocol encounters an error when
+    /// opening a substream. This is only used for scenarios where the taker might have a broken
+    /// connection, but the endpoint does not detect it. To make sure that rollover can recover
+    /// the protocol can trigger an emergency re-connect in the hope that the next rollover retry
+    /// will work.
+    async fn emergency_drop_connection(&self, peer_id: PeerId, e: &anyhow::Error) -> Result<()> {
+        tracing::error!(%peer_id, "Dropping connection, because failed to open substream for rollover: {e:#}");
+        self.endpoint
+            .send(endpoint::Disconnect(peer_id.inner()))
+            .await?;
+
+        Ok(())
     }
 }
 
