@@ -3,6 +3,7 @@ use anyhow::Result;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
 use daemon::projection::MakerOffers;
+use model::OrderId;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -79,5 +80,16 @@ pub fn one_cfd_with_state(expected_state: CfdState) -> impl Fn(Vec<Cfd>) -> Opti
         [_one_that_doesnt_match_state] => None,
         [] => None,
         _more_than_one => panic!("More than one CFD in feed!"),
+    }
+}
+
+pub fn cfd_with_state(
+    order_id: OrderId,
+    expected_state: CfdState,
+) -> impl Fn(Vec<Cfd>) -> Option<Cfd> {
+    move |cfds: Vec<Cfd>| match cfds.iter().find(|cfd| cfd.order_id == order_id) {
+        Some(cfd) if cfd.state == expected_state => Some(cfd.clone()),
+        Some(_cfd_that_does_not_match_state) => None,
+        None => None,
     }
 }

@@ -13,6 +13,7 @@ use daemon::command;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::oracle::NoAnnouncement;
+use daemon::order;
 use daemon::position_metrics;
 use daemon::process_manager;
 use daemon::projection;
@@ -138,12 +139,6 @@ where
             oracle_addr.clone().into(),
         )));
 
-        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
-            let executor = executor.clone();
-            move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
-        });
-        tasks.add(collab_settlement_supervisor.run_log_summary());
-
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
         let (supervisor, maker_offer_address) = Supervisor::new({
@@ -151,6 +146,33 @@ where
             move || xtra_libp2p_offer::maker::Actor::new(endpoint_addr.clone())
         });
         tasks.add(supervisor.run_log_summary());
+
+        let (order_supervisor, order) = Supervisor::new({
+            let oracle = oracle_addr.clone();
+            let db = db.clone();
+            let process_manager = process_manager_addr.clone();
+            let wallet = wallet_addr.clone();
+            let projection = projection_actor.clone();
+            let maker_offer_address = maker_offer_address.clone();
+            move || {
+                order::maker::Actor::new(
+                    n_payouts,
+                    oracle_pk,
+                    oracle.clone().into(),
+                    (db.clone(), process_manager.clone()),
+                    (wallet.clone().into(), wallet.clone().into()),
+                    projection.clone(),
+                    maker_offer_address.clone().into(),
+                )
+            }
+        });
+        tasks.add(order_supervisor.run_log_summary());
+
+        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
+            let executor = executor.clone();
+            move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
+        });
+        tasks.add(collab_settlement_supervisor.run_log_summary());
 
         let cfd_actor_addr = cfd::Actor::new(
             db.clone(),
@@ -165,6 +187,7 @@ where
             n_payouts,
             libp2p_collab_settlement_addr.clone(),
             maker_offer_address.clone(),
+            order.clone(),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -218,6 +241,7 @@ where
             identity.libp2p,
             ENDPOINT_CONNECTION_TIMEOUT,
             [
+                (daemon::order::PROTOCOL_NAME, order.into()),
                 (
                     rollover::v_1_0_0::PROTOCOL,
                     rollover_v_1_0_0_addr.clone().into(),

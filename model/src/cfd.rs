@@ -66,6 +66,9 @@ mod rollover_v_1_0_0;
 
 pub const CET_TIMELOCK: u32 = 12;
 
+// TODO: Clean this up to be a separate type
+pub type OfferId = OrderId;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct OrderId(Uuid);
 
@@ -116,8 +119,8 @@ impl From<OrderId> for Uuid {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct MakerOffers {
-    pub long: Option<Order>,
-    pub short: Option<Order>,
+    pub long: Option<Offer>,
+    pub short: Option<Offer>,
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate_long: FundingRate,
     pub funding_rate_short: FundingRate,
@@ -139,7 +142,7 @@ impl MakerOffers {
     /// Picks the order to take if available
     ///
     /// Returns the order to take without removing it.
-    pub fn pick_order_to_take(&self, id: OrderId) -> Option<Order> {
+    pub fn pick_offer_to_take(&self, id: OfferId) -> Option<Offer> {
         if let Some(long) = &self.long {
             if long.id == id {
                 return Some(long.clone());
@@ -151,28 +154,6 @@ impl MakerOffers {
             }
         }
         None
-    }
-
-    /// Takes the order if available
-    ///
-    /// Resets the order that was taken to None.
-    pub fn take_order(mut self, id: OrderId) -> (Option<Order>, Self) {
-        if let Some(long) = &self.long {
-            if long.id == id {
-                let order = long.clone();
-                self.long = None;
-                return (Some(order), self);
-            }
-        }
-        if let Some(short) = &self.short {
-            if short.id == id {
-                let order = short.clone();
-                self.short = None;
-
-                return (Some(order), self);
-            }
-        }
-        (None, self)
     }
 
     /// Update the orders after one of them got taken.
@@ -212,8 +193,8 @@ impl From<Origin> for Role {
 
 /// A concrete order created by a maker for a taker
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Order {
-    pub id: OrderId,
+pub struct Offer {
+    pub id: OfferId,
 
     pub trading_pair: TradingPair,
 
@@ -259,7 +240,7 @@ pub struct Order {
     pub opening_fee: OpeningFee,
 }
 
-impl Order {
+impl Offer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         position_maker: Position,
@@ -276,8 +257,8 @@ impl Order {
     ) -> Self {
         // allowing deprecated use of field `leverage_taker` here for backwards compatibility.
         #[allow(deprecated)]
-        Order {
-            id: OrderId::default(),
+        Offer {
+            id: OfferId::default(),
             price,
             min_quantity,
             max_quantity,
@@ -578,6 +559,7 @@ pub struct Cfd {
 
     // static
     id: OrderId,
+    offer_id: OfferId,
     position: Position,
     initial_price: Price,
     initial_funding_rate: FundingRate,
@@ -630,6 +612,7 @@ impl Cfd {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: OrderId,
+        offer_id: OfferId,
         position: Position,
         initial_price: Price,
         taker_leverage: Leverage,
@@ -660,6 +643,7 @@ impl Cfd {
         Cfd {
             version: 0,
             id,
+            offer_id,
             position,
             initial_price,
             long_leverage,
@@ -695,7 +679,8 @@ impl Cfd {
 
     /// A convenience method, creating a Cfd from an Order
     pub fn from_order(
-        order: &Order,
+        order_id: OrderId,
+        offer: &Offer,
         quantity: Usd,
         counterparty_network_identity: Identity,
         counterparty_peer_id: Option<PeerId>,
@@ -703,23 +688,24 @@ impl Cfd {
         taker_leverage: Leverage,
     ) -> Self {
         let position = match role {
-            Role::Maker => order.position_maker,
-            Role::Taker => order.position_maker.counter_position(),
+            Role::Maker => offer.position_maker,
+            Role::Taker => offer.position_maker.counter_position(),
         };
 
         Cfd::new(
-            order.id,
+            order_id,
+            offer.id,
             position,
-            order.price,
+            offer.price,
             taker_leverage,
-            order.settlement_interval,
+            offer.settlement_interval,
             role,
             quantity,
             counterparty_network_identity,
             counterparty_peer_id,
-            order.opening_fee,
-            order.funding_rate,
-            order.tx_fee_rate,
+            offer.opening_fee,
+            offer.funding_rate,
+            offer.tx_fee_rate,
         )
     }
 
@@ -1496,6 +1482,10 @@ impl Cfd {
 
     pub fn id(&self) -> OrderId {
         self.id
+    }
+
+    pub fn offer_id(&self) -> OfferId {
+        self.offer_id
     }
 
     pub fn position(&self) -> Position {
@@ -3792,7 +3782,7 @@ mod tests {
         let order_id = OrderId::default();
 
         let taker_long = Cfd::taker_long_from_order(
-            Order::dummy_short()
+            Offer::dummy_short()
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
@@ -3801,7 +3791,7 @@ mod tests {
         .with_id(order_id);
 
         let maker_short = Cfd::maker_short_from_order(
-            Order::dummy_short()
+            Offer::dummy_short()
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
@@ -3869,10 +3859,10 @@ mod tests {
     #[test]
     fn given_order_creation_timestamp_outdated_then_order_outdated() {
         let creation_timestamp = Timestamp::now();
-        let order = Order::dummy_short().with_creation_timestamp(creation_timestamp);
+        let order = Offer::dummy_short().with_creation_timestamp(creation_timestamp);
 
         let now =
-            OffsetDateTime::now_utc() + Duration::seconds(Order::OUTDATED_AFTER_MINS * 60 + 1);
+            OffsetDateTime::now_utc() + Duration::seconds(Offer::OUTDATED_AFTER_MINS * 60 + 1);
 
         assert!(order.is_creation_timestamp_outdated(now))
     }
@@ -3880,10 +3870,10 @@ mod tests {
     #[test]
     fn given_order_creation_timestamp_not_outdated_then_order_not_outdated() {
         let creation_timestamp = Timestamp::now();
-        let order = Order::dummy_short().with_creation_timestamp(creation_timestamp);
+        let order = Offer::dummy_short().with_creation_timestamp(creation_timestamp);
 
         let now =
-            OffsetDateTime::now_utc() + Duration::seconds(Order::OUTDATED_AFTER_MINS * 60 - 1);
+            OffsetDateTime::now_utc() + Duration::seconds(Offer::OUTDATED_AFTER_MINS * 60 - 1);
 
         assert!(!order.is_creation_timestamp_outdated(now))
     }
@@ -3895,7 +3885,7 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //             now
 
-        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -3911,7 +3901,7 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //                       now
 
-        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -3927,7 +3917,7 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //   now
 
-        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -3943,7 +3933,7 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //   now
 
-        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -3962,7 +3952,7 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //                       now
 
-        let order = Order::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
+        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
         ));
 
@@ -4077,11 +4067,12 @@ mod tests {
     }
 
     impl Cfd {
-        fn taker_long_from_order(mut order: Order, quantity: Usd, leverage: Leverage) -> Self {
-            order.origin = Origin::Theirs;
+        fn taker_long_from_order(mut offer: Offer, quantity: Usd, leverage: Leverage) -> Self {
+            offer.origin = Origin::Theirs;
 
             Cfd::from_order(
-                &order,
+                OrderId::default(),
+                &offer,
                 quantity,
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4090,9 +4081,10 @@ mod tests {
             )
         }
 
-        fn maker_short_from_order(order: Order, quantity: Usd, leverage: Leverage) -> Self {
+        fn maker_short_from_order(offer: Offer, quantity: Usd, leverage: Leverage) -> Self {
             Cfd::from_order(
-                &order,
+                OrderId::default(),
+                &offer,
                 quantity,
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4103,7 +4095,8 @@ mod tests {
 
         fn dummy_taker_long() -> Self {
             Cfd::from_order(
-                &Order::dummy_short(),
+                OrderId::default(),
+                &Offer::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4114,7 +4107,8 @@ mod tests {
 
         fn dummy_maker_short() -> Self {
             Cfd::from_order(
-                &Order::dummy_short(),
+                OrderId::default(),
+                &Offer::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4125,7 +4119,8 @@ mod tests {
 
         fn dummy_not_open_yet() -> Self {
             Cfd::from_order(
-                &Order::dummy_short(),
+                OrderId::default(),
+                &Offer::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4298,7 +4293,8 @@ mod tests {
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
             let cfd = Cfd::from_order(
-                &Order::dummy_short(),
+                OrderId::default(),
+                &Offer::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4313,7 +4309,8 @@ mod tests {
 
         fn dummy_final(event_id: BitMexPriceEventId) -> Self {
             let cfd = Cfd::from_order(
-                &Order::dummy_short(),
+                OrderId::default(),
+                &Offer::dummy_short(),
                 Usd::new(dec!(1000)),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4347,9 +4344,9 @@ mod tests {
         }
     }
 
-    impl Order {
+    impl Offer {
         fn dummy_short() -> Self {
-            Order::new(
+            Offer::new(
                 Position::Short,
                 Price::new(dec!(1000)).unwrap(),
                 Usd::new(dec!(100)),

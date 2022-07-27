@@ -15,8 +15,8 @@ mod tests {
     use model::FundingRate;
     use model::Leverage;
     use model::MakerOffers;
+    use model::Offer;
     use model::OpeningFee;
-    use model::Order;
     use model::Origin;
     use model::Position;
     use model::Price;
@@ -199,16 +199,16 @@ mod tests {
 
     pub fn dummy_maker_offers() -> Option<MakerOffers> {
         Some(MakerOffers {
-            long: Some(dummy_order(Position::Long)),
-            short: Some(dummy_order(Position::Short)),
+            long: Some(dummy_offer(Position::Long)),
+            short: Some(dummy_offer(Position::Short)),
             tx_fee_rate: TxFeeRate::default(),
             funding_rate_long: FundingRate::new(Decimal::ONE).unwrap(),
             funding_rate_short: FundingRate::new(Decimal::NEGATIVE_ONE).unwrap(),
         })
     }
 
-    fn dummy_order(position: Position) -> Order {
-        Order::new(
+    fn dummy_offer(position: Position) -> Offer {
+        Offer::new(
             position,
             Price::new(dec!(1000)).unwrap(),
             Usd::new(dec!(100)),

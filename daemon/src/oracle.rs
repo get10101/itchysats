@@ -20,7 +20,7 @@ use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
 
-/// Timout to be passed into the reqwest client for doing http requests against the oracle.
+/// Timeout to be passed into the reqwest client for doing http requests against the oracle.
 ///
 /// 10 seconds was chosen arbitrarily. It should be plenty to fetch from the oracle and does not let
 /// us wait forever.

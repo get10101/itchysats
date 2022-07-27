@@ -92,6 +92,10 @@ impl OliviaData {
             .collect()
     }
 
+    pub fn settlement_attestation(&self) -> oracle::Attestation {
+        self.attestations().last().unwrap().clone()
+    }
+
     const OLIVIA_PK: &'static str =
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7";
 

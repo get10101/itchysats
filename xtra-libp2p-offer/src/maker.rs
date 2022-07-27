@@ -66,6 +66,10 @@ impl Actor {
                 .await
         }
     }
+
+    async fn handle(&mut self, _: GetLatestOffers) -> Option<MakerOffers> {
+        self.latest_offers.clone()
+    }
 }
 
 #[xtra_productivity]
@@ -88,13 +92,16 @@ impl Actor {
 
 /// Instruct the `offer::maker::Actor` to broadcast to all
 /// connected peers an update to the current offers.
-pub struct NewOffers(Option<MakerOffers>);
+pub struct NewOffers(pub Option<MakerOffers>);
 
 impl NewOffers {
     pub fn new(offers: Option<MakerOffers>) -> Self {
         Self(offers)
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct GetLatestOffers;
 
 #[async_trait]
 impl xtra::Actor for Actor {

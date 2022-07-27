@@ -22,6 +22,8 @@ use std::str::FromStr;
 use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 
+pub type OfferId = OrderId;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct OrderId(Hyphenated);
@@ -40,10 +42,10 @@ impl<'de> Deserialize<'de> for OrderId {
     where
         D: serde::Deserializer<'de>,
     {
-        let uuid = String::deserialize(deserializer)?;
-        let uuid = uuid.parse::<Uuid>().map_err(D::Error::custom)?;
+        let order_id = String::deserialize(deserializer)?;
+        let order_id = order_id.parse::<Uuid>().map_err(D::Error::custom)?;
 
-        Ok(Self(uuid.hyphenated()))
+        Ok(Self(order_id.hyphenated()))
     }
 }
 

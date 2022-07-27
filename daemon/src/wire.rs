@@ -419,7 +419,7 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SetupMsg {
     /// Message enabling setting up lock and based on that commit, refund and cets

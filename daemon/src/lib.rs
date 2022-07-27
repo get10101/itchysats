@@ -16,7 +16,8 @@ use model::libp2p::PeerId;
 use model::olivia;
 use model::Identity;
 use model::Leverage;
-use model::Order;
+use model::Offer;
+use model::OfferId;
 use model::OrderId;
 use model::Price;
 use model::Role;
@@ -56,6 +57,7 @@ pub mod monitor;
 pub mod noise;
 mod online_status;
 pub mod oracle;
+pub mod order;
 pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
@@ -82,9 +84,10 @@ pub const PING_INTERVAL: Duration = Duration::from_secs(30);
 pub const N_PAYOUTS: usize = 200;
 
 pub struct TakerActorSystem<O, W, P> {
-    pub cfd_actor: Address<taker_cfd::Actor<O, W>>,
+    pub cfd_actor: Address<taker_cfd::Actor>,
     pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
+    _oracle_actor: Address<O>,
     pub auto_rollover_actor: Address<auto_rollover::Actor>,
     pub price_feed_actor: Address<P>,
     executor: command::Executor,
@@ -176,6 +179,27 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
+        let (order_supervisor, order) = Supervisor::new({
+            let oracle = oracle_addr.clone();
+            let db = db.clone();
+            let process_manager = process_manager_addr;
+            let wallet = wallet_actor_addr.clone();
+            let projection = projection_actor.clone();
+            let endpoint = endpoint_addr.clone();
+            move || {
+                order::taker::Actor::new(
+                    n_payouts,
+                    oracle_pk,
+                    oracle.clone().into(),
+                    (db.clone(), process_manager.clone()),
+                    (wallet.clone().into(), wallet.clone().into()),
+                    projection.clone(),
+                    endpoint.clone(),
+                )
+            }
+        });
+        tasks.add(order_supervisor.run_log_summary());
+
         let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
@@ -192,14 +216,9 @@ where
         let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
             db.clone(),
-            wallet_actor_addr.clone(),
-            oracle_pk,
             projection_actor,
-            process_manager_addr,
-            connection_actor_addr.clone(),
-            oracle_addr.clone(),
             libp2p_collab_settlement_addr,
-            n_payouts,
+            order,
             maker_identity,
             PeerId::from(
                 maker_multiaddr
@@ -214,6 +233,7 @@ where
         let (rollover_supervisor, libp2p_rollover_addr) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
+            let oracle_addr = oracle_addr.clone();
             move || {
                 rollover::v_2_0_0::taker::Actor::new(
                     endpoint_addr.clone(),
@@ -324,6 +344,7 @@ where
             cfd_actor: cfd_actor_addr,
             connection_actor: connection_actor_addr,
             wallet_actor: wallet_actor_addr,
+            _oracle_actor: oracle_addr,
             auto_rollover_actor: auto_rollover_addr,
             price_feed_actor,
             executor,
@@ -337,20 +358,22 @@ where
     }
 
     #[instrument(skip(self), err)]
-    pub async fn take_offer(
+    pub async fn place_order(
         &self,
-        order_id: OrderId,
+        offer_id: OfferId,
         quantity: Usd,
         leverage: Leverage,
-    ) -> Result<()> {
-        self.cfd_actor
-            .send(taker_cfd::TakeOffer {
-                order_id,
+    ) -> Result<OrderId> {
+        let order_id = self
+            .cfd_actor
+            .send(taker_cfd::PlaceOrder {
+                offer_id,
                 quantity,
                 leverage,
             })
             .await??;
-        Ok(())
+
+        Ok(order_id)
     }
 
     #[instrument(skip(self), err)]

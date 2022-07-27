@@ -19,7 +19,7 @@ use maia_core::PartyParams;
 use model::olivia::Announcement;
 use model::Dlc;
 use model::Identity;
-use model::Order;
+use model::Offer;
 use model::Role;
 use model::Usd;
 use xtra::prelude::MessageChannel;
@@ -27,7 +27,7 @@ use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
 
 pub struct Actor {
-    order: Order,
+    offer: Offer,
     quantity: Usd,
     n_payouts: usize,
     oracle_pk: XOnlyPublicKey,
@@ -47,7 +47,7 @@ impl Actor {
     pub fn new(
         db: sqlite_db::Connection,
         process_manager: xtra::Address<process_manager::Actor>,
-        (order, quantity, n_payouts): (Order, Usd, usize),
+        (offer, quantity, n_payouts): (Offer, Usd, usize),
         (oracle_pk, announcement): (XOnlyPublicKey, Announcement),
         build_party_params: MessageChannel<wallet::BuildPartyParams, Result<PartyParams>>,
         sign: MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
@@ -60,7 +60,7 @@ impl Actor {
     ) -> Self {
         Self {
             executor: command::Executor::new(db, process_manager),
-            order,
+            offer,
             quantity,
             n_payouts,
             oracle_pk,
@@ -76,7 +76,7 @@ impl Actor {
     }
 
     async fn contract_setup(&mut self, this: xtra::Address<Self>) -> Result<()> {
-        let order_id = self.order.id;
+        let order_id = self.offer.id;
 
         let (sender, receiver) = mpsc::unbounded();
         // store the writing end to forward messages from the taker to
@@ -127,7 +127,7 @@ impl Actor {
     async fn emit_complete(&mut self, dlc: Dlc, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order.id, |cfd| cfd.complete_contract_setup(dlc))
+            .execute(self.offer.id, |cfd| cfd.complete_contract_setup(dlc))
             .await
         {
             tracing::error!("Failed to execute `complete_contract_setup` command: {e:#}");
@@ -147,7 +147,7 @@ impl Actor {
     async fn emit_reject(&mut self, reason: anyhow::Error, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order.id, |cfd| cfd.reject_contract_setup(reason))
+            .execute(self.offer.id, |cfd| cfd.reject_contract_setup(reason))
             .await
         {
             tracing::error!("Failed to execute `reject_contract_setup` command: {e:#}");
@@ -159,7 +159,7 @@ impl Actor {
     async fn emit_fail(&mut self, error: anyhow::Error, ctx: &mut xtra::Context<Self>) {
         if let Err(e) = self
             .executor
-            .execute(self.order.id, |cfd| Ok(cfd.fail_contract_setup(error)))
+            .execute(self.offer.id, |cfd| Ok(cfd.fail_contract_setup(error)))
             .await
         {
             tracing::error!("Failed to execute `fail_contract_setup` command: {e:#}");
@@ -182,7 +182,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     fn handle(&mut self, _msg: Accepted, ctx: &mut xtra::Context<Self>) {
-        let order_id = self.order.id;
+        let order_id = self.offer.id;
 
         if self.setup_msg_sender.is_some() {
             tracing::warn!(%order_id, "Contract setup already active");
@@ -226,7 +226,7 @@ impl Actor {
             .taker
             .send(connection::TakerMessage {
                 taker_id: self.taker_id,
-                msg: wire::MakerToTaker::RejectOrder(self.order.id),
+                msg: wire::MakerToTaker::RejectOrder(self.offer.id),
             })
             .await;
 
@@ -256,9 +256,9 @@ impl xtra::Actor for Actor {
     type Stop = ();
     async fn started(&mut self, ctx: &mut xtra::Context<Self>) {
         let quantity = self.quantity;
-        if quantity < self.order.min_quantity || quantity > self.order.max_quantity {
-            let min = self.order.min_quantity;
-            let max = self.order.max_quantity;
+        if quantity < self.offer.min_quantity || quantity > self.offer.max_quantity {
+            let min = self.offer.min_quantity;
+            let max = self.offer.max_quantity;
 
             let reason =
                 format!("Order rejected: quantity {quantity} not in range [{min}, {max}]",);
@@ -268,7 +268,7 @@ impl xtra::Actor for Actor {
                 .taker
                 .send(connection::TakerMessage {
                     taker_id: self.taker_id,
-                    msg: wire::MakerToTaker::RejectOrder(self.order.id),
+                    msg: wire::MakerToTaker::RejectOrder(self.offer.id),
                 })
                 .await;
 
