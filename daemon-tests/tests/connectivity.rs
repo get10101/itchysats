@@ -1,11 +1,9 @@
 use daemon::connection::ConnectionStatus;
 use daemon_tests::flow::next;
-use daemon_tests::start_both;
 use daemon_tests::Maker;
 use daemon_tests::MakerConfig;
 use daemon_tests::Taker;
 use daemon_tests::TakerConfig;
-use model::Identity;
 use otel_tests::otel_test;
 use std::time::Duration;
 use tokio_extras::time::sleep;
@@ -52,18 +50,4 @@ async fn taker_notices_lack_of_maker() {
     );
 }
 
-#[otel_test]
-async fn maker_notices_lack_of_taker() {
-    let (mut maker, taker) = start_both().await;
-    assert_eq!(
-        vec![taker.id],
-        next(maker.connected_takers_feed()).await.unwrap()
-    );
-
-    drop(taker);
-
-    assert_eq!(
-        Vec::<Identity>::new(),
-        next(maker.connected_takers_feed()).await.unwrap()
-    );
-}
+// TODO: Reinstate maker_notices_lack_of_taker by allowing to query Endpoint

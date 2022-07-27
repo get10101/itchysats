@@ -41,7 +41,6 @@ use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
 use sqlite_db;
-use std::collections::HashSet;
 use time::Duration;
 use tokio_extras::FutureExt;
 use tracing::instrument;
@@ -196,7 +195,6 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
     oracle: xtra::Address<O>,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
-    connected_takers: HashSet<Identity>,
     n_payouts: usize,
     libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
@@ -233,24 +231,10 @@ impl<O, T, W> Actor<O, T, W> {
             oracle,
             time_to_first_position,
             n_payouts,
-            connected_takers: HashSet::new(),
             settlement_actors: AddressMap::default(),
             libp2p_collab_settlement,
             libp2p_offer,
         }
-    }
-
-    #[tracing::instrument(skip(self))]
-    async fn update_connected_takers(&mut self) -> Result<()> {
-        self.projection
-            .send_async_safe(projection::Update(
-                self.connected_takers
-                    .clone()
-                    .into_iter()
-                    .collect::<Vec<Identity>>(),
-            ))
-            .await?;
-        Ok(())
     }
 }
 
@@ -266,21 +250,13 @@ where
             })
             .await?;
 
-        if !self.connected_takers.insert(taker_id) {
-            tracing::warn!("Taker already connected: {:?}", &taker_id);
-        }
-        self.update_connected_takers().await?;
         self.time_to_first_position
             .send_async_safe(time_to_first_position::Connected::new(taker_id))
             .await?;
         Ok(())
     }
 
-    async fn handle_taker_disconnected(&mut self, taker_id: Identity) -> Result<()> {
-        if !self.connected_takers.remove(&taker_id) {
-            tracing::warn!("Removed unknown taker: {:?}", &taker_id);
-        }
-        self.update_connected_takers().await?;
+    async fn handle_taker_disconnected(&mut self, _taker_id: Identity) -> Result<()> {
         Ok(())
     }
 }

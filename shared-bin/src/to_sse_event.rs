@@ -4,7 +4,6 @@ use daemon::bdk::bitcoin::Amount;
 use daemon::connection;
 use daemon::projection::Cfd;
 use daemon::projection::Quote;
-use model::Identity;
 use model::Timestamp;
 use rocket::response::stream::Event;
 use serde::Serialize;
@@ -16,12 +15,6 @@ pub trait ToSseEvent {
 impl ToSseEvent for Vec<Cfd> {
     fn to_sse_event(&self) -> Event {
         Event::json(&self).event("cfds")
-    }
-}
-
-impl ToSseEvent for Vec<Identity> {
-    fn to_sse_event(&self) -> Event {
-        Event::json(&self).event("takers")
     }
 }
 
