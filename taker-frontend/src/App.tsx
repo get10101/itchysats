@@ -228,7 +228,6 @@ export const App = () => {
                         githubVersion={githubVersion}
                         daemonVersion={daemonVersion}
                         onClose={onClose}
-                        walletInfo={walletInfo}
                         connectedToMaker={connectedToMaker}
                         nextFundingEvent={nextFundingEvent}
                         referencePrice={referencePrice}
