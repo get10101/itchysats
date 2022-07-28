@@ -82,7 +82,7 @@ function HistoryLayout({ cfds, connectedToMaker, showExtraInfo }: HistoryLayoutP
 function NavigationButtons() {
     const location = useLocation();
     let { symbol: symbolString } = useParams();
-    let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.BtcUsd;
+    let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
 
     const isLongSelected = location.pathname.includes("long");
     const isShortSelected = !isLongSelected;
@@ -94,11 +94,11 @@ function NavigationButtons() {
 
     let buttonLabel;
     switch (symbol) {
-        case Symbol.BtcUsd: {
+        case Symbol.btcusd: {
             buttonLabel = "BTC";
             break;
         }
-        case Symbol.EthUsd: {
+        case Symbol.ethusd: {
             buttonLabel = "ETH";
             break;
         }
@@ -117,7 +117,7 @@ function NavigationButtons() {
                 >
                     <Button
                         as={ReachLink}
-                        to={symbolString + "/long"}
+                        to={"/trade/" + symbolString + "/long/"}
                         color={isLongSelected ? selectedButton : unSelectedButton}
                         bg={isLongSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
@@ -130,7 +130,7 @@ function NavigationButtons() {
                     </Button>
                     <Button
                         as={ReachLink}
-                        to={symbolString + "/short"}
+                        to={"/trade/" + symbolString + "/short/"}
                         color={isShortSelected ? selectedButton : unSelectedButton}
                         bg={isShortSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
