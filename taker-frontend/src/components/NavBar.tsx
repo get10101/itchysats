@@ -84,6 +84,10 @@ export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, re
     );
 }
 
+function TextDivider() {
+    return <Divider orientation={"vertical"} borderColor={useColorModeValue("black", "white")} height={"20px"} />;
+}
+
 interface SidebarProps extends BoxProps {
     connectedToMaker: ConnectionStatus;
     onClose: () => void;
@@ -246,7 +250,7 @@ const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ..
             bg={useColorModeValue("white", "gray.900")}
             borderBottomWidth="1px"
             borderBottomColor={useColorModeValue("gray.200", "gray.700")}
-            justifyContent={{ base: "space-between", md: "flex-end" }}
+            justifyContent={{ base: "space-between", md: "flex" }}
             zIndex={102}
             {...rest}
         >
@@ -257,6 +261,59 @@ const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ..
                 aria-label="open menu"
                 icon={<FiMenu />}
             />
+
+            <Spacer />
+            <Box>
+                <HStack>
+                    <Text fontSize={{ md: "sm", base: "xs" }}>{"Funding "}</Text>
+                    <Skeleton
+                        isLoaded={nextFundingEvent != null}
+                        // height={"20px"}
+                        display={"flex"}
+                        alignItems={"center"}
+                    >
+                        <Tooltip
+                            label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
+                            hasArrow
+                        >
+                            <HStack>
+                                <Text
+                                    as={"b"}
+                                    fontSize={{ md: "sm", base: "xs" }}
+                                    textOverflow={"ellipsis"}
+                                    overflow={"hidden"}
+                                    whiteSpace={"nowrap"}
+                                >
+                                    {nextFundingEvent}
+                                </Text>
+                            </HStack>
+                        </Tooltip>
+                    </Skeleton>
+                    <TextDivider />
+                    <Text display={["inherit", "inherit", "none"]} fontSize={{ md: "sm", base: "xs" }}>Ref. Price</Text>
+                    <Text display={["none", "none", "inherit"]} fontSize={{ md: "sm", base: "xs" }}>
+                        Reference Price
+                    </Text>
+                    <Skeleton
+                        isLoaded={referencePrice !== undefined}
+                        display={"flex"}
+                        alignItems={"center"}
+                    >
+                        <Tooltip
+                            label={"The price the Oracle attests to, the BitMEX BXBT index price"}
+                            hasArrow
+                        >
+                            <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
+                                {/* The minWidth helps with not letting the elements in Nav jump because the width changes*/}
+                                <Text as={"b"} fontSize={{ md: "sm", base: "xs" }}>
+                                    <DollarAmount amount={referencePrice || 0} />
+                                </Text>
+                            </Link>
+                        </Tooltip>
+                    </Skeleton>
+                </HStack>
+            </Box>
+            <Spacer />
 
             <Box display={{ base: "flex", md: "none" }}>
                 <LogoWithoutText />
