@@ -32,7 +32,7 @@ import { HEADER_HEIGHT, Symbol } from "../App";
 import logoIcon from "../images/logo.svg";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
-import { ConnectionStatus, WalletInfo } from "../types";
+import { ConnectionStatus } from "../types";
 import DollarAmount from "./DollarAmount";
 
 interface LinkItemProps {
@@ -46,14 +46,13 @@ const LinkItems: Array<LinkItemProps> = [
 ];
 
 interface NavBarProps {
-    walletInfo: WalletInfo | null;
     connectedToMaker: ConnectionStatus;
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
     children: ReactNode;
 }
 
-export default function Nav({ walletInfo, connectedToMaker, nextFundingEvent, referencePrice, children }: NavBarProps) {
+export default function Nav({ connectedToMaker, nextFundingEvent, referencePrice, children }: NavBarProps) {
     const { isOpen, onOpen, onClose } = useDisclosure();
     return (
         <Box minH="100vh" bg={useColorModeValue("gray.100", "gray.900")}>

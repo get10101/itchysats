@@ -3,7 +3,7 @@ import * as React from "react";
 import { Outlet } from "react-router-dom";
 import { SemVer } from "semver";
 import { BG_DARK, BG_LIGHT, FOOTER_HEIGHT, HEADER_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_WIDTH_PX } from "../App";
-import { ConnectionStatus, IdentityInfo, WalletInfo } from "../types";
+import { ConnectionStatus, IdentityInfo } from "../types";
 import Footer from "./Footer";
 import IncompatibleWarning from "./IncompatibleWarning";
 import Nav from "./NavBar";
@@ -16,7 +16,6 @@ type MainPageProps = {
     daemonVersion: SemVer | null | undefined;
     onCloseOutdatedWarning: () => void;
     onCloseIncompatibleWarning: () => void;
-    walletInfo: WalletInfo | null;
     connectedToMaker: ConnectionStatus;
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
@@ -33,7 +32,6 @@ export function MainPageLayout(
         daemonVersion,
         onCloseOutdatedWarning,
         onCloseIncompatibleWarning,
-        walletInfo,
         connectedToMaker,
         nextFundingEvent,
         referencePrice,
@@ -57,7 +55,6 @@ export function MainPageLayout(
                 && <IncompatibleWarning onClose={onCloseIncompatibleWarning} />}
 
             <Nav
-                walletInfo={walletInfo}
                 connectedToMaker={connectedToMaker}
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
