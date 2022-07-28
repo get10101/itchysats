@@ -5,7 +5,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
 import { MainPageLayout } from "./components/MainPageLayout";
@@ -50,8 +50,9 @@ export const BG_DARK = "gray.800";
 export const FAQ_URL = "http://faq.itchysats.network";
 
 export enum Symbol {
-    BtcUsd = "btcusd",
-    EthUsd = "ethusd",
+    // we use lower case variant names because of react-router using lower-case routes by default and it is easier to match
+    btcusd = "btcusd",
+    ethusd = "ethusd",
 }
 
 const parseSymbol = (symbol: Symbol) => {
@@ -60,11 +61,11 @@ const parseSymbol = (symbol: Symbol) => {
             // falling through to default
         }
         // eslint-disable-next-line no-fallthrough
-        case Symbol.EthUsd: {
+        case Symbol.ethusd: {
             // TODO: falling through because unimplemented at the moment
         }
         // eslint-disable-next-line no-fallthrough
-        case Symbol.BtcUsd: {
+        case Symbol.btcusd: {
             // falling through to default
         }
         // eslint-disable-next-line no-fallthrough
@@ -83,9 +84,12 @@ export const App = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    let { symbol: symbolString } = useParams();
-    // if no symbol was set, we default to BtcUsd
-    let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.BtcUsd;
+    // ideally we could be using useParams() here but `App` is on the top level and is not aware of any params yet,
+    // hence we parse the location.
+    let symbol = Symbol.btcusd;
+    if (location.pathname.includes("ethusd")) {
+        symbol = Symbol.ethusd;
+    }
 
     let { bitmexStream, daemon_long_offer, daemon_short_offer } = parseSymbol(symbol);
 
@@ -208,9 +212,9 @@ export const App = () => {
 
     const pathname = location.pathname;
     useEffect(() => {
-        let btcusd: string = Symbol.BtcUsd;
-        if (!pathname.includes("long") && !pathname.includes("short") && !pathname.includes("wallet")) {
-            navigate(btcusd + "/long");
+        let btcusd = Symbol.btcusd;
+        if (!pathname.includes("trade") && !pathname.includes("wallet")) {
+            navigate(`/trade/${btcusd}/long`);
         }
     }, [navigate, pathname]);
 
@@ -248,7 +252,7 @@ export const App = () => {
                     }
                 >
                     <Route
-                        path=":symbol/long"
+                        path="/trade/:symbol/long"
                         element={
                             <Trade
                                 offer={longOffer}
@@ -259,7 +263,7 @@ export const App = () => {
                         }
                     />
                     <Route
-                        path=":symbol/short"
+                        path="/trade/:symbol/short/"
                         element={
                             <Trade
                                 offer={shortOffer}

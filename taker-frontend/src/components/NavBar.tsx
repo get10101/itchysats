@@ -14,6 +14,7 @@ import {
     IconButton,
     Image,
     Link,
+    Select,
     Skeleton,
     Spacer,
     Text,
@@ -26,8 +27,8 @@ import React, { ReactNode } from "react";
 import { IconType } from "react-icons";
 import { FaWallet } from "react-icons/fa";
 import { FiHome, FiMenu } from "react-icons/fi";
-import { Link as ReachLink } from "react-router-dom";
-import { HEADER_HEIGHT } from "../App";
+import { Link as ReachLink, useNavigate, useParams } from "react-router-dom";
+import { HEADER_HEIGHT, Symbol } from "../App";
 import logoIcon from "../images/logo.svg";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
@@ -109,6 +110,15 @@ const LogoWithoutText = () => {
 };
 
 const SidebarContent = ({ connectedToMaker, onClose, ...rest }: SidebarProps) => {
+    const navigate = useNavigate();
+    const { symbol: symbolString } = useParams();
+    let currentSymbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
+
+    const onSymbolChange = (symbol: string) => {
+        onClose();
+        navigate(`/trade/${symbol}/long`);
+    };
+
     return (
         <Box
             transition="3s ease"
@@ -125,6 +135,18 @@ const SidebarContent = ({ connectedToMaker, onClose, ...rest }: SidebarProps) =>
                 <CloseButton display={{ base: "flex", md: "none" }} onClick={onClose} />
             </Flex>
 
+            <Flex
+                align="center"
+                // p="4"
+                // mx="4"
+                mt={"4"}
+                // mb={"4"}
+                borderRadius="lg"
+                role="group"
+                w={"100%"}
+            >
+                <SymbolSelector current={currentSymbol} onChange={onSymbolChange} />
+            </Flex>
             <Divider />
 
             {LinkItems.map((link) => (
@@ -230,6 +252,28 @@ interface MobileProps extends FlexProps {
     referencePrice: number | undefined;
     onOpen: () => void;
 }
+
+interface SymbolSelectorProps {
+    current: Symbol;
+    onChange: (val: string) => void;
+}
+
+const SymbolSelector = ({ current, onChange }: SymbolSelectorProps) => {
+    let btcUsd = Symbol.btcusd;
+    let ethUsd = Symbol.ethusd;
+
+    return (
+        <Select
+            w={"100%"}
+            placeholder="Select option"
+            defaultValue={current}
+            onChange={(value) => onChange(value.target.value)}
+        >
+            <option value={btcUsd}>BTCUSD</option>
+            <option value={ethUsd}>ETHUSD</option>
+        </Select>
+    );
+};
 
 const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ...rest }: MobileProps) => {
     const { toggleColorMode } = useColorMode();
