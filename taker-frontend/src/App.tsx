@@ -59,11 +59,6 @@ export const App = () => {
     const [githubVersion, setGithubVersion] = useState<SemVer | null>();
     const [daemonVersion, setDaemonVersion] = useState<SemVer | null>();
 
-    let outdated = false;
-    if (githubVersion && daemonVersion) {
-        outdated = githubVersion > daemonVersion;
-    }
-
     useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
         shouldReconnect: () => true,
         onMessage: (message) => {
@@ -78,6 +73,18 @@ export const App = () => {
         void fetchGithubVersion(setGithubVersion);
         void fetchDaemonVersion(setDaemonVersion);
     }, []);
+
+    const {
+        isOpen: outdatedWarningIsVisible,
+        onOpen: onOutdatedWarningOpen,
+        onClose: onOutdatedWarningClose,
+    } = useDisclosure();
+
+    useEffect(() => {
+        if (githubVersion && daemonVersion) {
+            onOutdatedWarningOpen();
+        }
+    }, [githubVersion, daemonVersion]);
 
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
@@ -166,11 +173,6 @@ export const App = () => {
         }
     }, [toast, connectedToMakerOrUndefined]);
 
-    const {
-        isOpen: outdatedWarningIsVisible,
-        onClose,
-    } = useDisclosure({ defaultIsOpen: outdated });
-
     const pathname = location.pathname;
     useEffect(() => {
         if (pathname !== "/long" && pathname !== "/short" && pathname !== "/wallet") {
@@ -187,7 +189,7 @@ export const App = () => {
                         outdatedWarningIsVisible={outdatedWarningIsVisible}
                         githubVersion={githubVersion}
                         daemonVersion={daemonVersion}
-                        onClose={onClose}
+                        onOutdatedWarningClose={onOutdatedWarningClose}
                         walletInfo={walletInfo}
                         connectedToMaker={connectedToMaker}
                         nextFundingEvent={nextFundingEvent}

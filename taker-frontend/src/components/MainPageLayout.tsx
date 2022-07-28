@@ -12,7 +12,7 @@ type MainPageProps = {
     outdatedWarningIsVisible: boolean;
     githubVersion: SemVer | null | undefined;
     daemonVersion: SemVer | null | undefined;
-    onClose: () => void;
+    onOutdatedWarningClose: () => void;
     walletInfo: WalletInfo | null;
     connectedToMaker: ConnectionStatus;
     nextFundingEvent: string | null;
@@ -27,7 +27,7 @@ export function MainPageLayout(
         outdatedWarningIsVisible,
         githubVersion,
         daemonVersion,
-        onClose,
+        onOutdatedWarningClose,
         walletInfo,
         connectedToMaker,
         nextFundingEvent,
@@ -40,7 +40,13 @@ export function MainPageLayout(
     return (
         <>
             {outdatedWarningIsVisible
-                && <OutdatedWarning githubVersion={githubVersion} daemonVersion={daemonVersion} onClose={onClose} />}
+                && (
+                    <OutdatedWarning
+                        githubVersion={githubVersion}
+                        daemonVersion={daemonVersion}
+                        onClose={onOutdatedWarningClose}
+                    />
+                )}
 
             <Nav
                 walletInfo={walletInfo}
