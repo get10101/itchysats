@@ -10,7 +10,7 @@ type OutdatedWarningProps = {
 
 export default function OutdatedWarning({ githubVersion, daemonVersion, onClose }: OutdatedWarningProps) {
     return (
-        <Alert status="info">
+        <Alert status="info" position={"sticky"} top={0} zIndex={100}>
             <AlertIcon />
             <AlertTitle>Your daemon is outdated!</AlertTitle>
             <AlertDescription>

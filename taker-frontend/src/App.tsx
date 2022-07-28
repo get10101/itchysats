@@ -84,7 +84,7 @@ export const App = () => {
         if (githubVersion && daemonVersion) {
             onOutdatedWarningOpen();
         }
-    }, [githubVersion, daemonVersion]);
+    }, [githubVersion, daemonVersion, onOutdatedWarningOpen]);
 
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
