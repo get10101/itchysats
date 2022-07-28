@@ -43,7 +43,7 @@ export interface Offer {
 // TODO: Evaluate moving these globals into the theme to make them accessible through that
 export const VIEWPORT_WIDTH = 1000;
 export const FOOTER_HEIGHT = 50;
-export const HEADER_HEIGHT = 100;
+export const HEADER_HEIGHT = 50;
 export const VIEWPORT_WIDTH_PX = VIEWPORT_WIDTH + "px";
 export const BG_LIGHT = "gray.50";
 export const BG_DARK = "gray.800";
