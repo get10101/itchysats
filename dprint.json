@@ -5,7 +5,8 @@
   "rustfmt": {
     "imports_granularity": "item",
     "wrap_comments": true,
-    "comment_width": 120
+    "comment_width": 100,
+    "max_width": 100
   },
   "sql": {
     "uppercase": true
