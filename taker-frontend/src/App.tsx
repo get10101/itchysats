@@ -5,7 +5,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
 import { MainPageLayout } from "./components/MainPageLayout";
@@ -50,10 +50,45 @@ export const BG_LIGHT = "gray.50";
 export const BG_DARK = "gray.800";
 export const FAQ_URL = "http://faq.itchysats.network";
 
+export enum Symbol {
+    BtcUsd = "btcusd",
+    EthUsd = "ethusd",
+}
+
+const parseSymbol = (symbol: Symbol) => {
+    switch (symbol) {
+        case undefined: {
+            // falling through to default
+        }
+        // eslint-disable-next-line no-fallthrough
+        case Symbol.EthUsd: {
+            // TODO: falling through because unimplemented at the moment
+        }
+        // eslint-disable-next-line no-fallthrough
+        case Symbol.BtcUsd: {
+            // falling through to default
+        }
+        // eslint-disable-next-line no-fallthrough
+        default:
+            return {
+                bitmexStream: "wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT",
+                // TODO: make offer events symbol dependent becase we only want subscribe to those offers we are currently interested in.
+                daemon_long_offer: "long_offer",
+                daemon_short_offer: "short_offer",
+            };
+    }
+};
+
 export const App = () => {
     const toast = useToast();
     const navigate = useNavigate();
     const location = useLocation();
+
+    let { symbol: symbolString } = useParams();
+    // if no symbol was set, we default to BtcUsd
+    let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.BtcUsd;
+
+    let { bitmexStream, daemon_long_offer, daemon_short_offer } = parseSymbol(symbol);
 
     let [referencePrice, setReferencePrice] = useState<number>();
     let [showExtraInfo, setExtraInfo] = useState(false);
@@ -65,7 +100,7 @@ export const App = () => {
         outdated = githubVersion > daemonVersion;
     }
 
-    useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
+    useWebSocket(bitmexStream, {
         shouldReconnect: () => true,
         onMessage: (message) => {
             const data: BXBTData[] = JSON.parse(message.data).data;
@@ -83,8 +118,8 @@ export const App = () => {
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
-    const makerLong = useLatestEvent<MakerOffer>(source, "long_offer", intoMakerOffer);
-    const makerShort = useLatestEvent<MakerOffer>(source, "short_offer", intoMakerOffer);
+    const makerLong = useLatestEvent<MakerOffer>(source, daemon_long_offer, intoMakerOffer);
+    const makerShort = useLatestEvent<MakerOffer>(source, daemon_short_offer, intoMakerOffer);
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
 
@@ -194,8 +229,9 @@ export const App = () => {
 
     const pathname = location.pathname;
     useEffect(() => {
-        if (pathname !== "/long" && pathname !== "/short" && pathname !== "/wallet") {
-            navigate("/long");
+        let btcusd: string = Symbol.BtcUsd;
+        if (!pathname.includes("long") && !pathname.includes("short") && !pathname.includes("wallet")) {
+            navigate(btcusd + "/long");
         }
     }, [navigate, pathname]);
 
@@ -235,7 +271,7 @@ export const App = () => {
                     }
                 >
                     <Route
-                        path="long"
+                        path=":symbol/long"
                         element={
                             <Trade
                                 offer={longOffer}
@@ -246,7 +282,7 @@ export const App = () => {
                         }
                     />
                     <Route
-                        path="short"
+                        path=":symbol/short"
                         element={
                             <Trade
                                 offer={shortOffer}
