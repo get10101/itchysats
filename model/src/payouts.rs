@@ -17,6 +17,7 @@ mod payout_curve;
 
 /// Payout combinations associated with the oracle events that may
 /// trigger them.
+#[derive(Debug)]
 pub struct OraclePayouts(HashMap<Announcement, Vec<Payout>>);
 
 impl OraclePayouts {
@@ -24,21 +25,18 @@ impl OraclePayouts {
         let announcements = Announcements::new(announcements)?;
 
         let settlement = (announcements.settlement, payouts.settlement);
-        let long_liquidations = announcements
-            .liquidation
-            .clone()
-            .into_iter()
-            .map(|announcement| (announcement, vec![payouts.long_liquidation.clone()]));
-        let short_liquidations = announcements
-            .liquidation
-            .into_iter()
-            .map(|announcement| (announcement, vec![payouts.short_liquidation.clone()]));
+        let liquidations = announcements.liquidation.into_iter().map(|announcement| {
+            (
+                announcement,
+                vec![
+                    payouts.long_liquidation.clone(),
+                    payouts.short_liquidation.clone(),
+                ],
+            )
+        });
 
         Ok(Self(HashMap::from_iter(
-            [settlement]
-                .into_iter()
-                .chain(long_liquidations)
-                .chain(short_liquidations),
+            [settlement].into_iter().chain(liquidations),
         )))
     }
 }

@@ -1,12 +1,11 @@
 use daemon::bdk::bitcoin::Amount;
 use daemon::projection::CfdOffer;
 use daemon::projection::MakerOffers;
-use daemon_tests::dummy_offer_params;
 use daemon_tests::flow::is_next_offers_none;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::start_both;
+use daemon_tests::OfferParamsBuilder;
 use model::Leverage;
-use model::Position;
 use otel_tests::otel_test;
 
 #[otel_test]
@@ -16,7 +15,7 @@ async fn taker_receives_offer_from_maker_on_publication() {
     assert!(is_next_offers_none(taker.offers_feed()).await.unwrap());
 
     maker
-        .set_offer_params(dummy_offer_params(Position::Short))
+        .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
     let (published, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())

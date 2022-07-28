@@ -237,11 +237,12 @@ macro_rules! wait_next_state_multi_cfd {
 pub struct OpenCfdArgs {
     pub oracle_data: OliviaData,
     pub position_maker: Position,
+    pub initial_price: Price,
 }
 
 impl OpenCfdArgs {
     fn offer_params(&self) -> OfferParams {
-        dummy_offer_params(self.position_maker)
+        OfferParamsBuilder::new().price(self.initial_price).build()
     }
 }
 
@@ -252,6 +253,7 @@ impl Default for OpenCfdArgs {
         Self {
             oracle_data: OliviaData::example_0(),
             position_maker,
+            initial_price: Price::new(dummy_price()).unwrap(),
         }
     }
 }
@@ -273,6 +275,7 @@ pub async fn open_cfd(
     let OpenCfdArgs {
         oracle_data,
         position_maker,
+        ..
     } = args;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
@@ -935,24 +938,41 @@ pub fn dummy_quote() -> Quote {
     }
 }
 
-// Offer params allowing a single position, either short or long
-pub fn dummy_offer_params(position_maker: Position) -> OfferParams {
-    let (price_long, price_short) = match position_maker {
-        Position::Long => (Some(Price::new(dummy_price()).unwrap()), None),
-        Position::Short => (None, Some(Price::new(dummy_price()).unwrap())),
-    };
+pub struct OfferParamsBuilder(OfferParams);
 
-    OfferParams {
-        price_long,
-        price_short,
-        min_quantity: Usd::new(dec!(100)),
-        max_quantity: Usd::new(dec!(1000)),
-        tx_fee_rate: TxFeeRate::default(),
-        // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
-        funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
-        funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
-        opening_fee: OpeningFee::new(Amount::from_sat(2)),
-        leverage_choices: vec![Leverage::TWO],
+impl OfferParamsBuilder {
+    pub fn new() -> OfferParamsBuilder {
+        let dummy_price = Price::new(dummy_price()).unwrap();
+
+        OfferParamsBuilder(OfferParams {
+            price_long: Some(dummy_price),
+            price_short: Some(dummy_price),
+            min_quantity: Usd::new(dec!(100)),
+            max_quantity: Usd::new(dec!(1000)),
+            tx_fee_rate: TxFeeRate::default(),
+            // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
+            funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
+            funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
+            opening_fee: OpeningFee::new(Amount::from_sat(2)),
+            leverage_choices: vec![Leverage::TWO],
+        })
+    }
+
+    pub fn price(mut self, price: Price) -> Self {
+        self.0.price_long = Some(price);
+        self.0.price_short = Some(price);
+
+        self
+    }
+
+    pub fn build(self) -> OfferParams {
+        self.0
+    }
+}
+
+impl Default for OfferParamsBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

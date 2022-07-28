@@ -1,7 +1,6 @@
 use daemon::bdk::bitcoin::SignedAmount;
 use daemon::bdk::bitcoin::Txid;
 use daemon::projection::CfdState;
-use daemon_tests::dummy_offer_params;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::maia::OliviaData;
@@ -11,6 +10,7 @@ use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::FeeCalculator;
 use daemon_tests::Maker;
+use daemon_tests::OfferParamsBuilder;
 use daemon_tests::OpenCfdArgs;
 use daemon_tests::Taker;
 use model::olivia::BitMexPriceEventId;
@@ -327,13 +327,14 @@ async fn prepare_rollover(
         OpenCfdArgs {
             position_maker,
             oracle_data,
+            ..Default::default()
         },
     )
     .await;
 
     // Maker needs to have an active offer in order to accept rollover
     maker
-        .set_offer_params(dummy_offer_params(position_maker))
+        .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
     let maker_cfd = maker.first_cfd();
@@ -347,7 +348,7 @@ async fn prepare_rollover(
     (maker, taker, order_id, fee_calculator)
 }
 
-async fn rollover(
+pub async fn rollover(
     maker: &mut Maker,
     taker: &mut Taker,
     order_id: OrderId,

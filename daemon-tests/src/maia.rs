@@ -96,6 +96,20 @@ impl OliviaData {
         self.attestations().last().unwrap().clone()
     }
 
+    pub fn attested_price(&self) -> u64 {
+        self.price
+    }
+
+    pub fn attestation_for_event(
+        &self,
+        event_id: BitMexPriceEventId,
+    ) -> Option<oracle::Attestation> {
+        self.attestations()
+            .iter()
+            .find(|attestation| attestation.id() == event_id)
+            .cloned()
+    }
+
     const OLIVIA_PK: &'static str =
         "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7";
 
