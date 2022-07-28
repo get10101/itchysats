@@ -87,7 +87,7 @@ async fn double_rollover_an_open_cfd() {
 #[otel_test]
 async fn maker_rejects_rollover_of_open_cfd() {
     let (mut maker, mut taker) = start_both().await;
-    let (order_id, _) = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
+    let order_id = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
 
     let is_accepting_rollovers = false;
     maker
@@ -321,16 +321,15 @@ async fn prepare_rollover(
     oracle_data: OliviaData,
 ) -> (Maker, Taker, OrderId, FeeCalculator) {
     let (mut maker, mut taker) = start_both().await;
-    let (order_id, fee_calculator) = open_cfd(
-        &mut taker,
-        &mut maker,
-        OpenCfdArgs {
-            position_maker,
-            oracle_data,
-            ..Default::default()
-        },
-    )
-    .await;
+
+    let open_cfd_args = OpenCfdArgs {
+        position_maker,
+        oracle_data,
+        ..Default::default()
+    };
+    let fee_calculator = open_cfd_args.fee_calculator();
+
+    let order_id = open_cfd(&mut taker, &mut maker, open_cfd_args).await;
 
     // Maker needs to have an active offer in order to accept rollover
     maker

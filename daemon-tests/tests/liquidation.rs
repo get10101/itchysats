@@ -28,7 +28,7 @@ async fn given_open_cfd_when_oracle_attests_long_liquidation_price_can_liquidate
     let initial_price =
         Price::new(Decimal::from(future_attestation_price * 8)).expect("positive price");
 
-    let (order_id, _) = open_cfd(
+    let order_id = open_cfd(
         &mut taker,
         &mut maker,
         OpenCfdArgs {
@@ -77,7 +77,7 @@ async fn given_rollover_when_oracle_attests_long_liquidation_price_can_liquidate
     let initial_price =
         Price::new(Decimal::from(future_attestation_price * 8)).expect("positive price");
 
-    let (order_id, _) = open_cfd(
+    let order_id = open_cfd(
         &mut taker,
         &mut maker,
         OpenCfdArgs {

@@ -14,7 +14,7 @@ use tokio_extras::time::sleep;
 #[otel_test]
 async fn open_cfd_is_refunded() {
     let (mut maker, mut taker) = start_both().await;
-    let (order_id, _) = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
+    let order_id = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
     confirm!(commit transaction, order_id, maker, taker);
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition

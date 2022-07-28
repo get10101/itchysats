@@ -235,25 +235,41 @@ macro_rules! wait_next_state_multi_cfd {
 /// Arguments that need to be supplied to the `open_cfd` test helper.
 #[derive(Clone)]
 pub struct OpenCfdArgs {
-    pub oracle_data: OliviaData,
     pub position_maker: Position,
     pub initial_price: Price,
+    pub quantity: Usd,
+    pub taker_leverage: Leverage,
+    pub oracle_data: OliviaData,
 }
 
 impl OpenCfdArgs {
     fn offer_params(&self) -> OfferParams {
         OfferParamsBuilder::new().price(self.initial_price).build()
     }
+
+    pub fn fee_calculator(&self) -> FeeCalculator {
+        debug_assert!(self
+            .offer_params()
+            .leverage_choices
+            .contains(&self.taker_leverage));
+
+        FeeCalculator::new(
+            self.offer_params(),
+            self.quantity,
+            self.taker_leverage,
+            self.position_maker,
+        )
+    }
 }
 
 impl Default for OpenCfdArgs {
     fn default() -> Self {
-        let position_maker = Position::Short;
-
         Self {
-            oracle_data: OliviaData::example_0(),
-            position_maker,
+            position_maker: Position::Short,
             initial_price: Price::new(dummy_price()).unwrap(),
+            quantity: Usd::new(dec!(100)),
+            taker_leverage: Leverage::TWO,
+            oracle_data: OliviaData::example_0(),
         }
     }
 }
@@ -261,34 +277,17 @@ impl Default for OpenCfdArgs {
 /// Open a CFD between `taker` and `maker`.
 ///
 /// This allows callers to use it as a starting point for their test.
-///
-/// # Returns
-///
-/// * `OrderId` - The order ID of the created CFD.
-/// * `FeeCalculator` - Used to compute expected fees.
-pub async fn open_cfd(
-    taker: &mut Taker,
-    maker: &mut Maker,
-    args: OpenCfdArgs,
-) -> (OrderId, FeeCalculator) {
+pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -> OrderId {
     let offer_params = args.offer_params();
     let OpenCfdArgs {
         oracle_data,
         position_maker,
+        quantity,
+        taker_leverage,
         ..
     } = args;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
-
-    let quantity = Usd::new(dec!(100));
-    let taker_leverage = Leverage::TWO;
-
-    let fee_calculator = FeeCalculator::new(
-        offer_params.clone(),
-        quantity,
-        taker_leverage,
-        position_maker,
-    );
 
     maker.set_offer_params(offer_params).await;
 
@@ -309,7 +308,7 @@ pub async fn open_cfd(
 
     let order_id = taker
         .system
-        .place_order(offer_id, quantity, Leverage::TWO)
+        .place_order(offer_id, quantity, taker_leverage)
         .await
         .unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
@@ -329,7 +328,7 @@ pub async fn open_cfd(
     confirm!(lock transaction, order_id, maker, taker);
     wait_next_state!(order_id, maker, taker, CfdState::Open);
 
-    (order_id, fee_calculator)
+    order_id
 }
 pub struct FeeCalculator {
     /// Opening fee charged by the maker
@@ -961,6 +960,12 @@ impl OfferParamsBuilder {
     pub fn price(mut self, price: Price) -> Self {
         self.0.price_long = Some(price);
         self.0.price_short = Some(price);
+
+        self
+    }
+
+    pub fn leverage_choices(mut self, choices: Vec<Leverage>) -> Self {
+        self.0.leverage_choices = choices;
 
         self
     }

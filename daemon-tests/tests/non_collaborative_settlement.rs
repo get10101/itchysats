@@ -32,7 +32,7 @@ async fn force_close_open_cfd(position_maker: Position) {
         ..Default::default()
     };
 
-    let (order_id, _) = open_cfd(&mut taker, &mut maker, open_cfd_args.clone()).await;
+    let order_id = open_cfd(&mut taker, &mut maker, open_cfd_args.clone()).await;
     // Taker initiates force-closing
     taker.system.commit(order_id).await.unwrap();
 
