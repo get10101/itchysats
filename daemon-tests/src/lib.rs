@@ -26,6 +26,7 @@ use daemon::seed::Seed;
 use daemon::Environment;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use maia::OliviaData;
 use maker::cfd::OfferParams;
 use model::libp2p::PeerId;
 use model::olivia::Announcement;
@@ -231,26 +232,50 @@ macro_rules! wait_next_state_multi_cfd {
     };
 }
 
-/// Hide the implementation detail of arriving at the Cfd open state.
-/// Useful when reading tests that should start at this point.
-/// For convenience, returns also OrderId of the opened Cfd.
-/// `announcement` is used during Cfd's creation.
-pub async fn start_from_open_cfd_state(
-    announcements: Vec<Announcement>,
-    position_maker: Position,
-) -> (Maker, Taker, OrderId, FeeCalculator) {
-    let mut maker = Maker::start(&MakerConfig::default()).await;
-    let mut taker = Taker::start(
-        &TakerConfig::default(),
-        maker.listen_addr,
-        maker.identity,
-        maker.connect_addr.clone(),
-    )
-    .await;
+/// Arguments that need to be supplied to the `open_cfd` test helper.
+#[derive(Clone)]
+pub struct OpenCfdArgs {
+    pub oracle_data: OliviaData,
+    pub position_maker: Position,
+}
+
+impl OpenCfdArgs {
+    fn offer_params(&self) -> OfferParams {
+        dummy_offer_params(self.position_maker)
+    }
+}
+
+impl Default for OpenCfdArgs {
+    fn default() -> Self {
+        let position_maker = Position::Short;
+
+        Self {
+            oracle_data: OliviaData::example_0(),
+            position_maker,
+        }
+    }
+}
+
+/// Open a CFD between `taker` and `maker`.
+///
+/// This allows callers to use it as a starting point for their test.
+///
+/// # Returns
+///
+/// * `OrderId` - The order ID of the created CFD.
+/// * `FeeCalculator` - Used to compute expected fees.
+pub async fn open_cfd(
+    taker: &mut Taker,
+    maker: &mut Maker,
+    args: OpenCfdArgs,
+) -> (OrderId, FeeCalculator) {
+    let offer_params = args.offer_params();
+    let OpenCfdArgs {
+        oracle_data,
+        position_maker,
+    } = args;
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
-
-    let offer_params = dummy_offer_params(position_maker);
 
     let quantity = Usd::new(dec!(100));
     let taker_leverage = Leverage::TWO;
@@ -268,7 +293,7 @@ pub async fn start_from_open_cfd_state(
         .await
         .unwrap();
 
-    mock_oracle_announcements(&mut maker, &mut taker, announcements).await;
+    mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
 
     let offer_to_take = match position_maker {
         Position::Short => received.short,
@@ -301,7 +326,7 @@ pub async fn start_from_open_cfd_state(
     confirm!(lock transaction, order_id, maker, taker);
     wait_next_state!(order_id, maker, taker, CfdState::Open);
 
-    (maker, taker, order_id, fee_calculator)
+    (order_id, fee_calculator)
 }
 pub struct FeeCalculator {
     /// Opening fee charged by the maker

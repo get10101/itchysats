@@ -6,10 +6,12 @@ use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::mock_oracle_announcements;
-use daemon_tests::start_from_open_cfd_state;
+use daemon_tests::open_cfd;
+use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::FeeCalculator;
 use daemon_tests::Maker;
+use daemon_tests::OpenCfdArgs;
 use daemon_tests::Taker;
 use model::olivia::BitMexPriceEventId;
 use model::OrderId;
@@ -84,9 +86,8 @@ async fn double_rollover_an_open_cfd() {
 
 #[otel_test]
 async fn maker_rejects_rollover_of_open_cfd() {
-    let oracle_data = OliviaData::example_0();
-    let (mut maker, mut taker, order_id, _) =
-        start_from_open_cfd_state(oracle_data.announcements(), Position::Short).await;
+    let (mut maker, mut taker) = start_both().await;
+    let (order_id, _) = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
 
     let is_accepting_rollovers = false;
     maker
@@ -316,15 +317,23 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
 /// up-to-date fee calculation.
 /// Asserts that initially both parties don't have funding costs.
 async fn prepare_rollover(
-    maker_position: Position,
+    position_maker: Position,
     oracle_data: OliviaData,
 ) -> (Maker, Taker, OrderId, FeeCalculator) {
-    let (mut maker, mut taker, order_id, fee_calculator) =
-        start_from_open_cfd_state(oracle_data.announcements(), maker_position).await;
+    let (mut maker, mut taker) = start_both().await;
+    let (order_id, fee_calculator) = open_cfd(
+        &mut taker,
+        &mut maker,
+        OpenCfdArgs {
+            position_maker,
+            oracle_data,
+        },
+    )
+    .await;
 
     // Maker needs to have an active offer in order to accept rollover
     maker
-        .set_offer_params(dummy_offer_params(maker_position))
+        .set_offer_params(dummy_offer_params(position_maker))
         .await;
 
     let maker_cfd = maker.first_cfd();
