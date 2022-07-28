@@ -338,6 +338,7 @@ impl Cfd {
             role,
             opening_fee,
             initial_funding_rate,
+            trading_pair,
             ..
         }: sqlite_db::Cfd,
         network: Network,
@@ -385,7 +386,7 @@ impl Cfd {
             initial_price,
             accumulated_fees: fee_account.balance(),
             leverage_taker: taker_leverage,
-            trading_pair: TradingPair::BtcUsd,
+            trading_pair,
             position,
             liquidation_price,
             quantity_usd,
@@ -887,6 +888,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             lock,
             settlement,
             creation_timestamp,
+            trading_pair,
             ..
         } = closed_cfd;
 
@@ -988,7 +990,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
-            trading_pair: TradingPair::BtcUsd,
+            trading_pair,
             position,
             liquidation_price,
             quantity_usd,
@@ -1027,6 +1029,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             fees,
             kind,
             creation_timestamp,
+            trading_pair,
             ..
         } = failed_cfd;
 
@@ -1065,7 +1068,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
-            trading_pair: TradingPair::BtcUsd,
+            trading_pair,
             position,
             liquidation_price,
             quantity_usd,
@@ -1674,6 +1677,7 @@ mod tests {
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
+            TradingPair::BtcUsd,
         )
     }
 
@@ -1714,6 +1718,7 @@ mod tests {
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),
+            TradingPair::BtcUsd,
         );
 
         let contract_setup_completed =

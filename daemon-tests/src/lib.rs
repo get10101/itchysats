@@ -44,6 +44,7 @@ use model::OrderId;
 use model::Position;
 use model::Price;
 use model::Role;
+use model::TradingPair;
 use model::TxFeeRate;
 use model::Usd;
 use model::SETTLEMENT_INTERVAL;
@@ -654,6 +655,7 @@ impl Maker {
             funding_rate_short,
             opening_fee,
             leverage_choices,
+            trading_pair,
         } = offer_params;
         self.system
             .set_offer_params(
@@ -666,6 +668,7 @@ impl Maker {
                 funding_rate_short,
                 opening_fee,
                 leverage_choices,
+                trading_pair,
             )
             .await
             .unwrap();
@@ -928,6 +931,7 @@ pub fn dummy_offer_params(position_maker: Position) -> OfferParams {
         funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
         opening_fee: OpeningFee::new(Amount::from_sat(2)),
         leverage_choices: vec![Leverage::TWO],
+        trading_pair: TradingPair::BtcUsd,
     }
 }
 

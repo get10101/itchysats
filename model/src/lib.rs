@@ -1071,6 +1071,7 @@ pub struct FailedCfd {
     pub fees: Fees,
     pub kind: FailedKind,
     pub creation_timestamp: Timestamp,
+    pub trading_pair: TradingPair,
 }
 
 /// The type of failed CFD.
@@ -1125,6 +1126,7 @@ pub struct ClosedCfd {
     pub lock: Lock,
     pub settlement: Settlement,
     pub creation_timestamp: Timestamp,
+    pub trading_pair: TradingPair,
 }
 
 /// Data loaded from the database about the lock transaction of a

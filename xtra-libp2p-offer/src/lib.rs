@@ -20,6 +20,7 @@ mod tests {
     use model::Origin;
     use model::Position;
     use model::Price;
+    use model::TradingPair;
     use model::TxFeeRate;
     use model::Usd;
     use rust_decimal::Decimal;
@@ -220,6 +221,7 @@ mod tests {
             FundingRate::default(),
             OpeningFee::default(),
             vec![Leverage::TWO],
+            TradingPair::BtcUsd,
         )
     }
 }

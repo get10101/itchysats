@@ -15,6 +15,7 @@ use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
+use model::TradingPair;
 use model::TxFeeRate;
 use model::Usd;
 use model::WalletInfo;
@@ -137,6 +138,7 @@ pub async fn put_offer_params(
             offer_params.daily_funding_rate_short,
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
+            TradingPair::BtcUsd, // TODO: Allow choosing different TradingPairs
         )
         .await
         .map_err(|e| {

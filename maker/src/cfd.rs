@@ -39,6 +39,7 @@ use model::Role;
 use model::RolloverVersion;
 use model::SettlementProposal;
 use model::Timestamp;
+use model::TradingPair;
 use model::TxFeeRate;
 use model::Usd;
 use sqlite_db;
@@ -114,6 +115,7 @@ pub struct OfferParams {
     pub funding_rate_short: FundingRate,
     pub opening_fee: OpeningFee,
     pub leverage_choices: Vec<Leverage>,
+    pub trading_pair: TradingPair,
 }
 
 impl OfferParams {
@@ -135,6 +137,7 @@ impl OfferParams {
                 self.funding_rate_long,
                 self.opening_fee,
                 self.leverage_choices.clone(),
+                self.trading_pair,
             )
         })
     }
@@ -153,6 +156,7 @@ impl OfferParams {
                 self.funding_rate_short,
                 self.opening_fee,
                 self.leverage_choices.clone(),
+                self.trading_pair,
             )
         })
     }

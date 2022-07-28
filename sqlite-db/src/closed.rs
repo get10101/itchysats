@@ -129,7 +129,8 @@ impl Connection {
                 fees as "fees: models::Fees",
                 expiry_timestamp,
                 lock_txid as "lock_txid: models::Txid",
-                lock_dlc_vout as "lock_dlc_vout: models::Vout"
+                lock_dlc_vout as "lock_dlc_vout: models::Vout",
+                trading_pair as "trading_pair: models::TradingPair"
             FROM
                 closed_cfds
             WHERE
@@ -180,6 +181,7 @@ impl Connection {
             },
             settlement,
             creation_timestamp,
+            trading_pair: cfd.trading_pair.into(),
         };
 
         Ok(C::new_closed(args, cfd))
@@ -1002,6 +1004,7 @@ mod tests {
     use model::Payout;
     use model::Price;
     use model::Timestamp;
+    use model::TradingPair;
     use model::TxFeeRate;
     use model::Usd;
     use model::Vout;
@@ -1336,6 +1339,7 @@ mod tests {
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),
+            TradingPair::BtcUsd,
         );
 
         let contract_setup_completed =

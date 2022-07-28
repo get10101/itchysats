@@ -104,7 +104,8 @@ impl Connection {
                 counterparty_peer_id as "counterparty_peer_id: models::PeerId",
                 role as "role: models::Role",
                 fees as "fees: models::Fees",
-                kind as "kind: models::FailedKind"
+                kind as "kind: models::FailedKind",
+                trading_pair as "trading_pair: models::TradingPair"
             FROM
                 failed_cfds
             WHERE
@@ -130,6 +131,7 @@ impl Connection {
             fees: cfd.fees.into(),
             kind: cfd.kind.into(),
             creation_timestamp,
+            trading_pair: cfd.trading_pair.into(),
         };
 
         Ok(C::new_failed(args, cfd))

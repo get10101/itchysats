@@ -954,6 +954,28 @@ pub fn into_complete_fee_and_flow(
     }
 }
 
+/// Trading pair of the Cfd
+#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
+pub enum TradingPair {
+    BtcUsd,
+}
+
+impl From<model::TradingPair> for TradingPair {
+    fn from(trading_pair: model::TradingPair) -> Self {
+        match trading_pair {
+            model::TradingPair::BtcUsd => TradingPair::BtcUsd,
+        }
+    }
+}
+
+impl From<TradingPair> for model::TradingPair {
+    fn from(trading_pair: TradingPair) -> Self {
+        match trading_pair {
+            TradingPair::BtcUsd => model::TradingPair::BtcUsd,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

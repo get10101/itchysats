@@ -19,6 +19,7 @@ impl crate::CfdAggregate for model::Cfd {
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
+            trading_pair,
         }: crate::Cfd,
     ) -> Self {
         model::Cfd::new(
@@ -35,6 +36,7 @@ impl crate::CfdAggregate for model::Cfd {
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
+            trading_pair,
         )
     }
 

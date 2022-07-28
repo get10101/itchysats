@@ -29,6 +29,7 @@ use model::OpeningFee;
 use model::OrderId;
 use model::Price;
 use model::Role;
+use model::TradingPair;
 use model::TxFeeRate;
 use model::Usd;
 use std::net::SocketAddr;
@@ -329,6 +330,7 @@ where
         funding_rate_short: FundingRate,
         opening_fee: OpeningFee,
         leverage_choices: Vec<Leverage>,
+        trading_pair: TradingPair,
     ) -> Result<()> {
         self.cfd_actor
             .send(cfd::OfferParams {
@@ -341,6 +343,7 @@ where
                 funding_rate_short,
                 opening_fee,
                 leverage_choices,
+                trading_pair,
             })
             .await??;
 

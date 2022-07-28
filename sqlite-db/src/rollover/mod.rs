@@ -27,6 +27,7 @@ mod tests {
     use model::Price;
     use model::Role;
     use model::Timestamp;
+    use model::TradingPair;
     use model::TxFeeRate;
     use model::Usd;
     use rust_decimal_macros::dec;
@@ -54,6 +55,7 @@ mod tests {
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
+            TradingPair::BtcUsd,
         )
     }
 
@@ -253,13 +255,13 @@ mod tests {
     async fn count_table_entries(mut connection: PoolConnection<Sqlite>) -> (i32, i32, i32) {
         let row = sqlx::query!(
             r#"
-            SELECT 
-                COUNT(DISTINCT rollover_completed_event_data.id) as rollovers, 
-                COUNT(DISTINCT revoked_commit_transactions.id) as revokes, 
+            SELECT
+                COUNT(DISTINCT rollover_completed_event_data.id) as rollovers,
+                COUNT(DISTINCT revoked_commit_transactions.id) as revokes,
                 COUNT(DISTINCT open_cets.id) as cets
-            FROM 
-                rollover_completed_event_data, 
-                revoked_commit_transactions, 
+            FROM
+                rollover_completed_event_data,
+                revoked_commit_transactions,
                 open_cets;
             "#
         )
