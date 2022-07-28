@@ -890,7 +890,7 @@ mod tests {
 
     prop_compose! {
         fn arb_contracts(min: u64, max: u64)(contracts in min..max) -> Usd {
-            let contracts = Decimal::from_u64(contracts).unwrap();
+            let contracts = Decimal::from(contracts);
 
             Usd::new(contracts)
         }
