@@ -245,13 +245,6 @@ const MakerOnlineStatus = ({ connectedToMaker }: MakerOnlineStatusProps) => {
     );
 };
 
-interface MobileProps extends FlexProps {
-    connectedToMaker: ConnectionStatus;
-    nextFundingEvent: string | null;
-    referencePrice: number | undefined;
-    onOpen: () => void;
-}
-
 interface SymbolSelectorProps {
     current: Symbol;
     onChange: (val: string) => void;
@@ -274,7 +267,14 @@ const SymbolSelector = ({ current, onChange }: SymbolSelectorProps) => {
     );
 };
 
-const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ...rest }: MobileProps) => {
+interface TopBarProps extends FlexProps {
+    connectedToMaker: ConnectionStatus;
+    nextFundingEvent: string | null;
+    referencePrice: number | undefined;
+    onOpen: () => void;
+}
+
+const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ...rest }: TopBarProps) => {
     const { toggleColorMode } = useColorMode();
 
     const toggleIcon = useColorModeValue(
@@ -283,94 +283,91 @@ const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ..
     );
 
     return (
-        <Flex
-            position="fixed"
-            top="0rem"
-            align="center"
-            // The 85% is a hack, I did not know how to prevent overflow outside of viewport
-            w={{ base: "100%", md: "85%" }}
-            ml={{ base: 0, md: 60 }}
-            mr={{ base: 0, md: 60 }}
-            px={{ base: 4, md: 4 }}
-            height={`${HEADER_HEIGHT}px`}
-            alignItems="center"
-            bg={useColorModeValue("white", "gray.900")}
-            borderBottomWidth="1px"
-            borderBottomColor={useColorModeValue("gray.200", "gray.700")}
-            justifyContent={{ base: "space-between", md: "flex" }}
-            zIndex={102}
-            {...rest}
-        >
-            <IconButton
-                display={{ base: "flex", md: "none" }}
-                onClick={onOpen}
-                variant="outline"
-                aria-label="open menu"
-                icon={<FiMenu />}
-            />
+        <Box w="100%" position={"fixed"} height={`${HEADER_HEIGHT}px`} top="0" p={0} zIndex={102}>
+            <Flex
+                ml={{ base: 0, md: 60 }}
+                px={{ base: 4, md: 4 }}
+                alignItems="center"
+                height={`${HEADER_HEIGHT}px`}
+                bg={useColorModeValue("white", "gray.900")}
+                borderBottomWidth="1px"
+                borderBottomColor={useColorModeValue("gray.200", "gray.700")}
+                justifyContent={{ base: "space-between", md: "flex-end" }}
+                {...rest}
+            >
+                <IconButton
+                    display={{ base: "flex", md: "none" }}
+                    onClick={onOpen}
+                    variant="outline"
+                    aria-label="open menu"
+                    icon={<FiMenu />}
+                />
 
-            <Spacer />
-            <Box>
-                <HStack>
-                    <Text fontSize={{ md: "sm", base: "xs" }}>{"Funding "}</Text>
-                    <Skeleton
-                        isLoaded={nextFundingEvent != null}
-                        // height={"20px"}
-                        display={"flex"}
-                        alignItems={"center"}
-                    >
-                        <Tooltip
-                            label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
-                            hasArrow
+                <Spacer />
+                <Box>
+                    <HStack>
+                        <Text fontSize={{ md: "sm", base: "xs" }}>{"Funding "}</Text>
+                        <Skeleton
+                            isLoaded={nextFundingEvent != null}
+                            // height={"20px"}
+                            display={"flex"}
+                            alignItems={"center"}
                         >
-                            <HStack>
-                                <Text
-                                    as={"b"}
-                                    fontSize={{ md: "sm", base: "xs" }}
-                                    textOverflow={"ellipsis"}
-                                    overflow={"hidden"}
-                                    whiteSpace={"nowrap"}
-                                >
-                                    {nextFundingEvent}
-                                </Text>
-                            </HStack>
-                        </Tooltip>
-                    </Skeleton>
-                    <TextDivider />
-                    <Text display={["inherit", "inherit", "none"]} fontSize={{ md: "sm", base: "xs" }}>Ref. Price</Text>
-                    <Text display={["none", "none", "inherit"]} fontSize={{ md: "sm", base: "xs" }}>
-                        Reference Price
-                    </Text>
-                    <Skeleton
-                        isLoaded={referencePrice !== undefined}
-                        display={"flex"}
-                        alignItems={"center"}
-                    >
-                        <Tooltip
-                            label={"The price the Oracle attests to, the BitMEX BXBT index price"}
-                            hasArrow
+                            <Tooltip
+                                label={"The next time your CFDs will be extended and the funding fee will be collected based on the hourly rate."}
+                                hasArrow
+                            >
+                                <HStack>
+                                    <Text
+                                        as={"b"}
+                                        fontSize={{ md: "sm", base: "xs" }}
+                                        textOverflow={"ellipsis"}
+                                        overflow={"hidden"}
+                                        whiteSpace={"nowrap"}
+                                    >
+                                        {nextFundingEvent}
+                                    </Text>
+                                </HStack>
+                            </Tooltip>
+                        </Skeleton>
+                        <TextDivider />
+                        <Text display={["inherit", "inherit", "none"]} fontSize={{ md: "sm", base: "xs" }}>
+                            Index Price
+                        </Text>
+                        <Text display={["none", "none", "inherit"]} fontSize={{ md: "sm", base: "xs" }}>
+                            Index Price
+                        </Text>
+                        <Skeleton
+                            isLoaded={referencePrice !== undefined}
+                            display={"flex"}
+                            alignItems={"center"}
                         >
-                            <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
-                                <Text as={"b"} fontSize={{ md: "sm", base: "xs" }}>
-                                    <DollarAmount amount={referencePrice || 0} />
-                                </Text>
-                            </Link>
-                        </Tooltip>
-                    </Skeleton>
+                            <Tooltip
+                                label={"The price the Oracle attests to, the BitMEX BXBT index price"}
+                                hasArrow
+                            >
+                                <Link href={"https://outcome.observer/h00.ooo/x/BitMEX/BXBT"} target={"_blank"}>
+                                    <Text as={"b"} fontSize={{ md: "sm", base: "xs" }}>
+                                        <DollarAmount amount={referencePrice || 0} />
+                                    </Text>
+                                </Link>
+                            </Tooltip>
+                        </Skeleton>
+                    </HStack>
+                </Box>
+                <Spacer />
+
+                <Box display={{ base: "flex", md: "none" }}>
+                    <LogoWithoutText />
+                </Box>
+
+                <HStack spacing={{ base: "0", md: "0" }} display={{ base: "none", md: "flex" }}>
+                    <Button onClick={toggleColorMode} variant={"unstyled"}>
+                        {toggleIcon}
+                    </Button>
                 </HStack>
-            </Box>
-            <Spacer />
-
-            <Box display={{ base: "flex", md: "none" }}>
-                <LogoWithoutText />
-            </Box>
-
-            <HStack spacing={{ base: "0", md: "-20" }} display={{ base: "none", md: "flex" }}>
-                <Button onClick={toggleColorMode} variant={"unstyled"}>
-                    {toggleIcon}
-                </Button>
-            </HStack>
-        </Flex>
+            </Flex>
+        </Box>
     );
 };
 
