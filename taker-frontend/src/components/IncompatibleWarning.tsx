@@ -7,7 +7,7 @@ type IncompatibleWarningProps = {
 
 export default function IncompatibleWarning({ onClose }: IncompatibleWarningProps) {
     return (
-        <Alert status="warning" position={"sticky"} top={0} zIndex={100}>
+        <Alert status="warning">
             <AlertIcon />
             <AlertTitle>Your version is incompatible with the connected maker</AlertTitle>
             <AlertDescription>

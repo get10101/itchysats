@@ -5,9 +5,7 @@ import { SemVer } from "semver";
 import { BG_DARK, BG_LIGHT, FOOTER_HEIGHT, HEADER_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_WIDTH_PX } from "../App";
 import { ConnectionStatus, IdentityInfo } from "../types";
 import Footer from "./Footer";
-import IncompatibleWarning from "./IncompatibleWarning";
 import Nav from "./NavBar";
-import OutdatedWarning from "./OutdatedWarning";
 
 type MainPageProps = {
     outdatedWarningIsVisible: boolean;
@@ -42,22 +40,16 @@ export function MainPageLayout(
 ) {
     return (
         <>
-            {outdatedWarningIsVisible
-                && (
-                    <OutdatedWarning
-                        githubVersion={githubVersion}
-                        daemonVersion={daemonVersion}
-                        onClose={onCloseOutdatedWarning}
-                    />
-                )}
-
-            {incompatibleWarningIsVisible
-                && <IncompatibleWarning onClose={onCloseIncompatibleWarning} />}
-
             <Nav
                 connectedToMaker={connectedToMaker}
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
+                daemonVersion={daemonVersion}
+                githubVersion={githubVersion}
+                onCloseOutdatedWarning={onCloseOutdatedWarning}
+                outdatedWarningIsVisible={outdatedWarningIsVisible}
+                incompatibleWarningIsVisible={incompatibleWarningIsVisible}
+                onCloseIncompatibleWarning={onCloseIncompatibleWarning}
             >
                 <Center>
                     <Box

@@ -221,15 +221,8 @@ export const App = () => {
 
     const {
         isOpen: incompatibleWarningIsVisible,
-        onOpen: onOpenIncompatibilityWarning,
         onClose: onCloseIncompatibleWarning,
-    } = useDisclosure();
-
-    useEffect(() => {
-        if (incompatible) {
-            onOpenIncompatibilityWarning();
-        }
-    }, [incompatible, onOpenIncompatibilityWarning]);
+    } = useDisclosure({ defaultIsOpen: incompatible });
 
     const pathname = location.pathname;
     useEffect(() => {
@@ -251,7 +244,6 @@ export const App = () => {
                         daemonVersion={daemonVersion}
                         onCloseOutdatedWarning={onCloseOutdatedWarning}
                         onCloseIncompatibleWarning={onCloseIncompatibleWarning}
-                        walletInfo={walletInfo}
                         connectedToMaker={connectedToMaker}
                         nextFundingEvent={nextFundingEvent}
                         referencePrice={referencePrice}
