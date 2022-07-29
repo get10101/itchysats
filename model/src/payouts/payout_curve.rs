@@ -884,6 +884,35 @@ mod tests {
         }
     }
 
+    proptest! {
+        #[test]
+        fn payout_intervals_have_no_gaps(
+            price in arb_price(1.0, 340_000.0),
+            n_contracts in arb_contracts(1, 10_000_000),
+            long_leverage in arb_leverage(1, 200),
+            short_leverage in arb_leverage(1, 200),
+            n_payouts in 10usize..2000,
+            fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
+        ) {
+            let payouts = calculate_payout_parameters(
+                price,
+                n_contracts,
+                long_leverage,
+                short_leverage,
+                n_payouts,
+                fee_flow,
+            )
+            .unwrap();
+
+            let are_payout_intervals_gap_free = payouts
+                .iter()
+                .zip(payouts.iter().skip(1))
+                .all(|(a, b)| a.right_bound + 1 == b.left_bound);
+
+            prop_assert!(are_payout_intervals_gap_free)
+        }
+    }
+
     fn payout(range: RangeInclusive<u64>, short: u64, long: u64) -> PayoutParameter {
         PayoutParameter {
             left_bound: *range.start(),
