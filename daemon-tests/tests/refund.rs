@@ -8,8 +8,6 @@ use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::OpenCfdArgs;
 use otel_tests::otel_test;
-use std::time::Duration;
-use tokio_extras::time::sleep;
 
 #[otel_test]
 async fn open_cfd_is_refunded() {
@@ -17,14 +15,11 @@ async fn open_cfd_is_refunded() {
     let order_id = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
     confirm!(commit transaction, order_id, maker, taker);
 
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     expire!(refund timelock, order_id, maker, taker);
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingRefund);
 
     confirm!(refund transaction, order_id, maker, taker);
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::Refunded);
 }

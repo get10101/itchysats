@@ -16,8 +16,6 @@ use model::OrderId;
 use model::Usd;
 use otel_tests::otel_test;
 use rust_decimal_macros::dec;
-use std::time::Duration;
-use tokio_extras::time::sleep;
 
 #[otel_test]
 async fn taker_places_order_and_maker_rejects() {
@@ -192,7 +190,6 @@ async fn first_contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: Or
     maker.system.accept_order(order_id).await.unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
 
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingOpen);
 
     confirm!(lock transaction, order_id, maker, taker);
@@ -214,7 +211,6 @@ async fn additional_contract_setup(maker: &mut Maker, taker: &mut Taker, order_i
     maker.system.accept_order(order_id).await.unwrap();
     wait_next_state_multi_cfd!(order_id, maker, taker, CfdState::ContractSetup);
 
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state_multi_cfd!(order_id, maker, taker, CfdState::PendingOpen);
 
     confirm!(lock transaction, order_id, maker, taker);
