@@ -25,8 +25,9 @@ import {
 } from "@chakra-ui/react";
 import React, { ReactNode } from "react";
 import { IconType } from "react-icons";
+import { SiBitcoin } from "react-icons/all";
 import { FaWallet } from "react-icons/fa";
-import { FiHome, FiMenu } from "react-icons/fi";
+import { FiMenu } from "react-icons/fi";
 import { Link as ReachLink, useNavigate, useParams } from "react-router-dom";
 import { HEADER_HEIGHT, Symbol } from "../App";
 import logoIcon from "../images/logo.svg";
@@ -41,7 +42,7 @@ interface LinkItemProps {
     target: string;
 }
 const LinkItems: Array<LinkItemProps> = [
-    { name: "Home", icon: FiHome, target: "/" },
+    { name: "Trade", icon: SiBitcoin, target: "/" },
     { name: "Wallet", icon: FaWallet, target: "/wallet" },
 ];
 
