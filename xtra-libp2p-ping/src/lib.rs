@@ -5,7 +5,7 @@ mod protocol;
 /// The name of the official ipfs/libp2p ping protocol.
 ///
 /// Using this indicates that we are wire-compatible with other libp2p/ipfs nodes.
-pub const PROTOCOL_NAME: &str = "/ipfs/ping/1.0.0";
+pub const PROTOCOL: &str = "/ipfs/ping/1.0.0";
 
 #[cfg(test)]
 mod tests {
@@ -93,7 +93,7 @@ mod tests {
             Box::new(MemoryTransport::default),
             id.clone(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, pong_address.into())],
+            [(PROTOCOL, pong_address.into())],
             Subscribers::new(
                 vec![ping_address.clone().into()],
                 vec![ping_address.clone().into()],

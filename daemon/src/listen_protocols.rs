@@ -10,25 +10,25 @@ use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p_ping::pong;
 
 pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::new(
-    xtra_libp2p_ping::PROTOCOL_NAME,
+    xtra_libp2p_ping::PROTOCOL,
     identify::PROTOCOL,
-    order::PROTOCOL_NAME,
+    order::PROTOCOL,
     rollover::v_1_0_0::PROTOCOL,
     rollover::v_2_0_0::PROTOCOL,
     collab_settlement::PROTOCOL,
 );
 
 pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols = TakerListenProtocols::new(
-    xtra_libp2p_ping::PROTOCOL_NAME,
+    xtra_libp2p_ping::PROTOCOL,
     identify::PROTOCOL,
-    xtra_libp2p_offer::PROTOCOL_NAME,
+    xtra_libp2p_offer::PROTOCOL,
 );
 
 pub const REQUIRED_MAKER_LISTEN_PROTOCOLS: RequiredMakerListenProtocols =
     RequiredMakerListenProtocols::new(
-        xtra_libp2p_ping::PROTOCOL_NAME,
+        xtra_libp2p_ping::PROTOCOL,
         identify::PROTOCOL,
-        order::PROTOCOL_NAME,
+        order::PROTOCOL,
         rollover::v_2_0_0::PROTOCOL,
         collab_settlement::PROTOCOL,
     );
@@ -286,7 +286,7 @@ mod tests {
     fn given_maker_maker_does_not_support_required_protocol_then_error_with_protocol_diff() {
         let mut maker_protocols_as_hashset: HashSet<String> = MAKER_LISTEN_PROTOCOLS.into();
         // remove the ping protocol, we assume that it always is in there
-        maker_protocols_as_hashset.remove(xtra_libp2p_ping::PROTOCOL_NAME);
+        maker_protocols_as_hashset.remove(xtra_libp2p_ping::PROTOCOL);
 
         let err = does_maker_satisfy_taker_needs(
             &maker_protocols_as_hashset,
@@ -294,10 +294,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(
-            err,
-            HashSet::from([xtra_libp2p_ping::PROTOCOL_NAME.to_string()])
-        )
+        assert_eq!(err, HashSet::from([xtra_libp2p_ping::PROTOCOL.to_string()]))
     }
 
     #[test]

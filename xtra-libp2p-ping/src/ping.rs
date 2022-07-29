@@ -1,5 +1,5 @@
 use crate::protocol;
-use crate::PROTOCOL_NAME;
+use crate::PROTOCOL;
 use conquer_once::Lazy;
 use prometheus::register_histogram;
 use prometheus::Histogram;
@@ -116,7 +116,7 @@ impl Actor {
 
                 async move {
                     let stream = endpoint
-                        .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
+                        .send(OpenSubstream::single_protocol(peer, PROTOCOL))
                         .await??
                         .await?;
                     let latency = protocol::send(stream).await?;
