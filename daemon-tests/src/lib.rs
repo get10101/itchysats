@@ -3,6 +3,7 @@ use crate::flow::next_maker_offers;
 use crate::flow::next_with;
 use crate::flow::one_cfd_with_state;
 use crate::mocks::monitor::MonitorActor;
+use crate::mocks::oracle::dummy_wrong_attestation;
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
@@ -16,6 +17,7 @@ use daemon::connection::connect;
 use daemon::libp2p_utils::create_connect_multiaddr;
 use daemon::maia_core::secp256k1_zkp::XOnlyPublicKey;
 use daemon::online_status::ConnectionStatus;
+use daemon::oracle::Attestation;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
@@ -330,6 +332,46 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
 
     order_id
 }
+
+/// Settle a CFD non collaboratively.
+///
+/// It publishes the commit transaction; expires of the CET timelock on it; and simulates the
+/// attestation of the oracle based on the `attestation` argument passed in, causing the publication
+/// of the corresponding CET.
+///
+/// After every step, we check that the CFD goes through the correct state based on
+/// `daemon::projection`. Furthermore, we check that making the oracle generate an attestation for a
+/// different event has no effect on the CFD.
+pub async fn settle_non_collaboratively(
+    taker: &mut Taker,
+    maker: &mut Maker,
+    order_id: OrderId,
+    attestation: &Attestation,
+) {
+    confirm!(commit transaction, order_id, maker, taker);
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+
+    // After CetTimelockExpired, we're only waiting for attestation
+    expire!(cet timelock, order_id, maker, taker);
+
+    // Delivering the wrong attestation does not move state to `PendingCet`
+    simulate_attestation!(taker, maker, order_id, &dummy_wrong_attestation());
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+
+    // Delivering correct attestation moves the state `PendingCet`
+    simulate_attestation!(taker, maker, order_id, attestation);
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
+
+    confirm!(cet, order_id, maker, taker);
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::Closed);
+}
+
 pub struct FeeCalculator {
     /// Opening fee charged by the maker
     opening_fee: OpeningFee,

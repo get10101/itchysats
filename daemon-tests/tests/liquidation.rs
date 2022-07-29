@@ -1,14 +1,8 @@
-use daemon::projection::CfdState;
-use daemon_tests::confirm;
-use daemon_tests::expire;
-use daemon_tests::flow::next_with;
-use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::mock_oracle_announcements;
 use daemon_tests::open_cfd;
-use daemon_tests::simulate_attestation;
+use daemon_tests::settle_non_collaboratively;
 use daemon_tests::start_both;
-use daemon_tests::wait_next_state;
 use daemon_tests::OpenCfdArgs;
 use model::Dlc;
 use model::Price;
@@ -46,22 +40,12 @@ async fn given_open_cfd_when_oracle_attests_long_liquidation_price_can_liquidate
         )
     );
 
-    taker.system.commit(order_id).await.unwrap();
-    confirm!(commit transaction, order_id, maker, taker);
-    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
-
-    expire!(cet timelock, order_id, maker, taker);
-
     let first_liquidation_event = taker.latest_dlc().liquidation_event_ids()[0];
     let attestation = oracle_data
         .attestation_for_event(first_liquidation_event)
         .unwrap();
 
-    simulate_attestation!(taker, maker, order_id, &attestation);
-    wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
-
-    confirm!(cet, order_id, maker, taker);
-    wait_next_state!(order_id, maker, taker, CfdState::Closed);
+    settle_non_collaboratively(&mut taker, &mut maker, order_id, &attestation).await;
 }
 
 #[otel_test]
@@ -102,22 +86,12 @@ async fn given_rollover_when_oracle_attests_long_liquidation_price_can_liquidate
         .trigger_rollover_with_latest_dlc_params(order_id)
         .await;
 
-    taker.system.commit(order_id).await.unwrap();
-    confirm!(commit transaction, order_id, maker, taker);
-    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
-
-    expire!(cet timelock, order_id, maker, taker);
-
     let first_liquidation_event = taker.latest_dlc().liquidation_event_ids()[0];
     let attestation = oracle_data_rollover
         .attestation_for_event(first_liquidation_event)
         .unwrap();
 
-    simulate_attestation!(taker, maker, order_id, &attestation);
-    wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
-
-    confirm!(cet, order_id, maker, taker);
-    wait_next_state!(order_id, maker, taker, CfdState::Closed);
+    settle_non_collaboratively(&mut taker, &mut maker, order_id, &attestation).await;
 }
 
 /// Verify that the mocked attestation price plays nicely with the mocked initial price of the CFD.
