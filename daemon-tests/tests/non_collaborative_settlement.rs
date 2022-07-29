@@ -44,7 +44,7 @@ async fn force_close_open_cfd(position_maker: Position) {
     expire!(cet timelock, order_id, maker, taker);
 
     // Delivering the wrong attestation does not move state to `PendingCet`
-    simulate_attestation!(taker, maker, order_id, dummy_wrong_attestation());
+    simulate_attestation!(taker, maker, order_id, &dummy_wrong_attestation());
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
@@ -54,7 +54,7 @@ async fn force_close_open_cfd(position_maker: Position) {
         taker,
         maker,
         order_id,
-        open_cfd_args.oracle_data.settlement_attestation()
+        &open_cfd_args.oracle_data.settlement_attestation()
     );
 
     sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition

@@ -57,7 +57,7 @@ async fn given_open_cfd_when_oracle_attests_long_liquidation_price_can_liquidate
         .attestation_for_event(first_liquidation_event)
         .unwrap();
 
-    simulate_attestation!(taker, maker, order_id, attestation.clone());
+    simulate_attestation!(taker, maker, order_id, &attestation);
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
 
     confirm!(cet, order_id, maker, taker);
@@ -113,7 +113,7 @@ async fn given_rollover_when_oracle_attests_long_liquidation_price_can_liquidate
         .attestation_for_event(first_liquidation_event)
         .unwrap();
 
-    simulate_attestation!(taker, maker, order_id, attestation.clone());
+    simulate_attestation!(taker, maker, order_id, &attestation);
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
 
     confirm!(cet, order_id, maker, taker);
