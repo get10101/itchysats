@@ -14,7 +14,6 @@ import {
     IconButton,
     Image,
     Link,
-    Select,
     Skeleton,
     Spacer,
     Text,
@@ -23,6 +22,7 @@ import {
     useColorModeValue,
     useDisclosure,
 } from "@chakra-ui/react";
+import { OnChangeValue, Select } from "chakra-react-select";
 import React, { ReactNode } from "react";
 import { IconType } from "react-icons";
 import { SiBitcoin } from "react-icons/all";
@@ -251,20 +251,40 @@ interface SymbolSelectorProps {
     onChange: (val: string) => void;
 }
 
+interface SelectOption {
+    value: String;
+    label: String;
+}
+
 const SymbolSelector = ({ current, onChange }: SymbolSelectorProps) => {
     let btcUsd = Symbol.btcusd;
     let ethUsd = Symbol.ethusd;
 
+    const onChangeInner = (value: OnChangeValue<SelectOption, boolean>) => {
+        if (value) {
+            // @ts-ignore: the field `value` exists but the linter complains
+            onChange(value.value);
+        }
+    };
+    const options = [
+        { value: btcUsd, label: btcUsd.toUpperCase() },
+        { value: ethUsd, label: ethUsd.toUpperCase() },
+    ];
+
     return (
-        <Select
-            w={"100%"}
-            placeholder="Select option"
-            defaultValue={current}
-            onChange={(value) => onChange(value.target.value)}
-        >
-            <option value={btcUsd}>BTCUSD</option>
-            <option value={ethUsd}>ETHUSD</option>
-        </Select>
+        <Box w={"100%"}>
+            <Select
+                defaultValue={options[0]}
+                value={{
+                    value: current,
+                    label: current.toUpperCase(),
+                }}
+                selectedOptionColor="orange"
+                selectedOptionStyle="color"
+                options={options}
+                onChange={(item) => onChangeInner(item)}
+            />
+        </Box>
     );
 };
 
