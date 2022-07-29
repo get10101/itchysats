@@ -913,6 +913,36 @@ mod tests {
         }
     }
 
+    proptest! {
+        #[test]
+        #[ignore = "Payout intervals are _not_ always monotonically increasing"]
+        fn payout_intervals_are_monotonically_increasing(
+            price in arb_price(500.0, 340_000.0),
+            n_contracts in arb_contracts(100, 10_000_000),
+            long_leverage in arb_leverage(1, 200),
+            short_leverage in arb_leverage(1, 200),
+            n_payouts in 10usize..2000,
+            fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
+        ) {
+            let payouts = calculate_payout_parameters(
+                price,
+                n_contracts,
+                long_leverage,
+                short_leverage,
+                n_payouts,
+                fee_flow,
+            )
+                .unwrap();
+
+
+            let are_payout_intervals_monotonically_increasing = payouts
+                .iter()
+                .all(|a| a.left_bound <= a.right_bound);
+
+            prop_assert!(are_payout_intervals_monotonically_increasing)
+        }
+    }
+
     fn payout(range: RangeInclusive<u64>, short: u64, long: u64) -> PayoutParameter {
         PayoutParameter {
             left_bound: *range.start(),
