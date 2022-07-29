@@ -22,7 +22,6 @@ import {
     useColorModeValue,
     useDisclosure,
 } from "@chakra-ui/react";
-import { OnChangeValue, Select } from "chakra-react-select";
 import React, { ReactNode } from "react";
 import { IconType } from "react-icons";
 import { SiBitcoin } from "react-icons/all";
@@ -93,7 +92,7 @@ function TextDivider() {
     return <Divider orientation={"vertical"} borderColor={useColorModeValue("black", "white")} height={"20px"} />;
 }
 
-interface SidebarProps extends BoxProps {
+export interface SidebarProps extends BoxProps {
     connectedToMaker: ConnectionStatus;
     onClose: () => void;
 }
@@ -110,15 +109,6 @@ const LogoWithoutText = () => {
 };
 
 const SidebarContent = ({ connectedToMaker, onClose, ...rest }: SidebarProps) => {
-    const navigate = useNavigate();
-    const { symbol: symbolString } = useParams();
-    let currentSymbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
-
-    const onSymbolChange = (symbol: string) => {
-        onClose();
-        navigate(`/trade/${symbol}/long`);
-    };
-
     return (
         <Box
             transition="3s ease"
@@ -134,20 +124,6 @@ const SidebarContent = ({ connectedToMaker, onClose, ...rest }: SidebarProps) =>
                 <LogoWithText />
                 <CloseButton display={{ base: "flex", md: "none" }} onClick={onClose} />
             </Flex>
-
-            <Flex
-                align="center"
-                // p="4"
-                // mx="4"
-                mt={"4"}
-                // mb={"4"}
-                borderRadius="lg"
-                role="group"
-                w={"100%"}
-            >
-                <SymbolSelector current={currentSymbol} onChange={onSymbolChange} />
-            </Flex>
-            <Divider />
 
             {LinkItems.map((link) => (
                 <NavItem key={link.name} icon={link.icon} target={link.target} onClick={onClose}>
@@ -243,48 +219,6 @@ const MakerOnlineStatus = ({ connectedToMaker }: MakerOnlineStatusProps) => {
                 <Text>{"Maker"}</Text>
             </HStack>
         </Tooltip>
-    );
-};
-
-interface SymbolSelectorProps {
-    current: Symbol;
-    onChange: (val: string) => void;
-}
-
-interface SelectOption {
-    value: String;
-    label: String;
-}
-
-const SymbolSelector = ({ current, onChange }: SymbolSelectorProps) => {
-    let btcUsd = Symbol.btcusd;
-    let ethUsd = Symbol.ethusd;
-
-    const onChangeInner = (value: OnChangeValue<SelectOption, boolean>) => {
-        if (value) {
-            // @ts-ignore: the field `value` exists but the linter complains
-            onChange(value.value);
-        }
-    };
-    const options = [
-        { value: btcUsd, label: btcUsd.toUpperCase() },
-        { value: ethUsd, label: ethUsd.toUpperCase() },
-    ];
-
-    return (
-        <Box w={"100%"}>
-            <Select
-                defaultValue={options[0]}
-                value={{
-                    value: current,
-                    label: current.toUpperCase(),
-                }}
-                selectedOptionColor="orange"
-                selectedOptionStyle="color"
-                options={options}
-                onChange={(item) => onChangeInner(item)}
-            />
-        </Box>
     );
 };
 

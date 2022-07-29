@@ -11,13 +11,15 @@ import {
     HStack,
     Text,
     useColorModeValue,
+    useDisclosure,
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Link as ReachLink, Outlet, useLocation, useParams } from "react-router-dom";
+import { Link as ReachLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Symbol, VIEWPORT_WIDTH_PX } from "../App";
 import { Cfd, ConnectionStatus, isClosed } from "../types";
 import History from "./History";
+import { SymbolSelector } from "./SymbolSelector";
 
 interface TradePageLayoutProps {
     cfds: Cfd[];
@@ -82,6 +84,7 @@ function HistoryLayout({ cfds, connectedToMaker, showExtraInfo }: HistoryLayoutP
 function NavigationButtons() {
     const location = useLocation();
     let { symbol: symbolString } = useParams();
+    const navigate = useNavigate();
     let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
 
     const isLongSelected = location.pathname.includes("long");
@@ -92,27 +95,19 @@ function NavigationButtons() {
     const buttonBorder = useColorModeValue("grey.400", "black.400");
     const buttonText = useColorModeValue("black", "white");
 
-    let buttonLabel;
-    switch (symbol) {
-        case Symbol.btcusd: {
-            buttonLabel = "BTC";
-            break;
-        }
-        case Symbol.ethusd: {
-            buttonLabel = "ETH";
-            break;
-        }
-        default: {
-            buttonLabel = "BTC";
-        }
-    }
+    let currentSymbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
+    const { onClose } = useDisclosure();
+    const onSymbolChange = (symbol: string) => {
+        onClose();
+        navigate(`/trade/${symbol}/long`);
+    };
 
     return (
         <HStack>
             <Center>
                 <ButtonGroup
                     padding="3"
-                    spacing="6"
+                    spacing={{ base: "3", md: "6" }}
                     id={"longShortButtonSwitch"}
                 >
                     <Button
@@ -121,25 +116,30 @@ function NavigationButtons() {
                         color={isLongSelected ? selectedButton : unSelectedButton}
                         bg={isLongSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
+                        borderWidth={isLongSelected ? "0px" : "2px"}
                         isActive={isLongSelected}
                         size="lg"
                         h={10}
-                        w={"40"}
+                        w={{ base: "30", md: "40" }}
                     >
-                        <Text fontSize={"md"} color={buttonText}>Long {buttonLabel}</Text>
+                        <Text fontSize={"md"} color={buttonText}>Long</Text>
                     </Button>
+                    <Box minWidth={{ base: "150", md: "170" }}>
+                        <SymbolSelector current={currentSymbol} onChange={onSymbolChange} />
+                    </Box>
                     <Button
                         as={ReachLink}
                         to={"/trade/" + symbolString + "/short/"}
                         color={isShortSelected ? selectedButton : unSelectedButton}
                         bg={isShortSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
+                        borderWidth={isShortSelected ? "0px" : "2px"}
                         isActive={isShortSelected}
                         size="lg"
                         h={10}
-                        w={"40"}
+                        w={{ base: "30", md: "40" }}
                     >
-                        <Text fontSize={"md"} color={buttonText}>Short {buttonLabel}</Text>
+                        <Text fontSize={"md"} color={buttonText}>Short</Text>
                     </Button>
                 </ButtonGroup>
             </Center>
