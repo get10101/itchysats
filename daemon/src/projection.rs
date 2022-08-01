@@ -23,6 +23,7 @@ use model::long_and_short_leverage;
 use model::market_closing_price;
 use model::CfdEvent;
 use model::ClosedCfd;
+use model::ContractSymbol;
 use model::Dlc;
 use model::EventKind;
 use model::FailedCfd;
@@ -39,7 +40,6 @@ use model::Price;
 use model::Role;
 use model::Settlement;
 use model::Timestamp;
-use model::TradingPair;
 use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use parse_display::Display;
@@ -140,7 +140,7 @@ pub struct Cfd {
     /// The taker leverage
     #[serde(rename = "leverage")]
     pub leverage_taker: Leverage,
-    pub trading_pair: TradingPair,
+    pub contract_symbol: ContractSymbol,
     pub position: Position,
     #[serde(with = "round_to_two_dp")]
     pub liquidation_price: Price,
@@ -384,7 +384,7 @@ impl Cfd {
             initial_price,
             accumulated_fees: fee_account.balance(),
             leverage_taker: taker_leverage,
-            trading_pair: TradingPair::BtcUsd,
+            contract_symbol: ContractSymbol::BtcUsd,
             position,
             liquidation_price,
             quantity_usd,
@@ -987,7 +987,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
-            trading_pair: TradingPair::BtcUsd,
+            contract_symbol: ContractSymbol::BtcUsd,
             position,
             liquidation_price,
             quantity_usd,
@@ -1063,7 +1063,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
-            trading_pair: TradingPair::BtcUsd,
+            contract_symbol: ContractSymbol::BtcUsd,
             position,
             liquidation_price,
             quantity_usd,
@@ -1254,7 +1254,7 @@ pub struct MakerOffers {
 pub struct CfdOffer {
     pub id: OfferId,
 
-    pub trading_pair: TradingPair,
+    pub contract_symbol: ContractSymbol,
 
     #[serde(rename = "position")]
     pub position_maker: Position,
@@ -1375,7 +1375,7 @@ impl TryFrom<Offer> for CfdOffer {
 
         Ok(Self {
             id: offer.id,
-            trading_pair: offer.trading_pair,
+            contract_symbol: offer.contract_symbol,
             position_maker: offer.position_maker,
             price: offer.price,
             min_quantity: offer.min_quantity,

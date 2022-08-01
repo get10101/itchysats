@@ -17,6 +17,7 @@ use maia_core::CfdTransactions;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
 use model::libp2p::PeerId;
+use model::ContractSymbol;
 use model::FundingRate;
 use model::Leverage;
 use model::MakerOffers;
@@ -26,7 +27,6 @@ use model::Origin;
 use model::Position;
 use model::Price;
 use model::Timestamp;
-use model::TradingPair;
 use model::TxFeeRate;
 use model::Usd;
 use serde::de::DeserializeOwned;
@@ -266,7 +266,8 @@ impl From<CompleteFee> for model::CompleteFee {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DeprecatedOrder047 {
     pub id: OrderId,
-    pub trading_pair: TradingPair,
+    #[serde(rename = "trading_pair")]
+    pub contract_symbol: ContractSymbol,
     #[serde(rename = "position")]
     pub position_maker: Position,
     pub price: Price,
