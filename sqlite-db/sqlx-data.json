@@ -52,6 +52,16 @@
     },
     "query": "\n            select\n                id as cfd_id,\n                order_id as \"order_id: models::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2\n                )\n            )\n            "
   },
+  "0859464e9b1d6758efeced4abf74ad440a3128611856a72ba22c0234fca37e81": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 14
+      }
+    },
+    "query": "\n        INSERT INTO closed_cfds\n        (\n            order_id,\n            offer_id,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            expiry_timestamp,\n            lock_txid,\n            lock_dlc_vout,\n            contract_symbol\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)\n        "
+  },
   "138cd0bf1974ccc90c52024796a8e81e5d61413261d4bba6073504379e67cdeb": {
     "describe": {
       "columns": [
@@ -244,36 +254,6 @@
     },
     "query": "\n        INSERT INTO closed_cets\n        (\n            cfd_id,\n            txid,\n            vout,\n            payout,\n            price\n        )\n        VALUES\n        (\n            (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),\n            $2, $3, $4, $5\n        )\n        "
   },
-  "375bcb24b5a899520f76cd2f07ed5f14d4e862ef76a680de4d43350866260baa": {
-    "describe": {
-      "columns": [
-        {
-          "name": "rollovers",
-          "ordinal": 0,
-          "type_info": "Int"
-        },
-        {
-          "name": "revokes",
-          "ordinal": 1,
-          "type_info": "Int"
-        },
-        {
-          "name": "cets",
-          "ordinal": 2,
-          "type_info": "Int"
-        }
-      ],
-      "nullable": [
-        false,
-        null,
-        null
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "\n            SELECT \n                COUNT(DISTINCT rollover_completed_event_data.id) as rollovers, \n                COUNT(DISTINCT revoked_commit_transactions.id) as revokes, \n                COUNT(DISTINCT open_cets.id) as cets\n            FROM \n                rollover_completed_event_data, \n                revoked_commit_transactions, \n                open_cets;\n            "
-  },
   "496c2ab5814811e176bff90b7129179c7946d106d47bebf6baa78ee3b35268a7": {
     "describe": {
       "columns": [
@@ -308,6 +288,16 @@
     },
     "query": "\n            delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.order_id = $1)\n        "
   },
+  "4b94879e91cdbbb2614c1f71119fb653d345cabe3b5f3b703960770c9b896659": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 12
+      }
+    },
+    "query": "\n        INSERT INTO failed_cfds\n        (\n            order_id,\n            offer_id,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            kind,\n            contract_symbol\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n        "
+  },
   "4cd8f8d0b36f353b61783243db9f888bf1ba698c1d2a1c53aeeb573ce7b1eab8": {
     "describe": {
       "columns": [],
@@ -328,16 +318,6 @@
     },
     "query": "\n            INSERT INTO event_log_failed (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM failed_cfds WHERE failed_cfds.order_id = $1),\n                $2, $3\n            )\n            "
   },
-  "54a137ff1c5d3b785023c9382662730fbc161ee4290777e9754a8313887f8ca1": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 11
-      }
-    },
-    "query": "\n        INSERT INTO failed_cfds\n        (\n            order_id,\n            offer_id,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            kind\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        "
-  },
   "56e8ce89f0072ac7c451c2a6314f4c22664ccd48e345255ca61319a8040f7626": {
     "describe": {
       "columns": [
@@ -355,102 +335,6 @@
       }
     },
     "query": "select id from cfds where order_id = $1"
-  },
-  "702549323c4c22903b4e030456ce5214611521dbf7560e0900fda9a06ca554a4": {
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "order_id: models::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "offer_id: models::OfferId",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "position: models::Position",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "initial_price: models::Price",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "leverage: models::Leverage",
-          "ordinal": 5,
-          "type_info": "Int64"
-        },
-        {
-          "name": "settlement_time_interval_hours",
-          "ordinal": 6,
-          "type_info": "Int64"
-        },
-        {
-          "name": "quantity_usd: models::Usd",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_network_identity: models::Identity",
-          "ordinal": 8,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_peer_id: models::PeerId",
-          "ordinal": 9,
-          "type_info": "Text"
-        },
-        {
-          "name": "role: models::Role",
-          "ordinal": 10,
-          "type_info": "Text"
-        },
-        {
-          "name": "opening_fee: models::OpeningFee",
-          "ordinal": 11,
-          "type_info": "Null"
-        },
-        {
-          "name": "initial_funding_rate: models::FundingRate",
-          "ordinal": 12,
-          "type_info": "Null"
-        },
-        {
-          "name": "initial_tx_fee_rate: models::TxFeeRate",
-          "ordinal": 13,
-          "type_info": "Null"
-        }
-      ],
-      "nullable": [
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            select\n                id as cfd_id,\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: models::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: models::TxFeeRate\"\n            from\n                cfds\n            where\n                cfds.order_id = $1\n            "
   },
   "76e71ec93cb68fc2a917844dd8ea20d307326f215d0a4b0356393b0d2f5067bc": {
     "describe": {
@@ -488,17 +372,91 @@
     },
     "query": "\n        SELECT\n            closed_commit_txs.txid as \"commit_txid!: models::Txid\",\n            closed_refund_txs.txid as \"txid: models::Txid\",\n            closed_refund_txs.vout as \"vout: models::Vout\",\n            closed_refund_txs.payout as \"payout: models::Payout\"\n        FROM\n            closed_refund_txs\n        JOIN\n            closed_commit_txs on closed_commit_txs.cfd_id = closed_refund_txs.cfd_id\n        JOIN\n            closed_cfds on closed_cfds.id = closed_refund_txs.cfd_id\n        WHERE\n            closed_cfds.order_id = $1\n        "
   },
-  "779a2aa25040b646788075c279cb97e26f3eb233f25f426642ed32d423008f96": {
+  "7c46e2a000874491ba1731cca17b2ccaffa214a311af65384fbbd546d79fecc3": {
     "describe": {
-      "columns": [],
-      "nullable": [],
+      "columns": [
+        {
+          "name": "order_id: models::OrderId",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "offer_id: models::OfferId",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "position: models::Position",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price: models::Price",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "taker_leverage: models::Leverage",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "n_contracts: models::Contracts",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "counterparty_network_identity: models::Identity",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_peer_id: models::PeerId",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "role: models::Role",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "fees: models::Fees",
+          "ordinal": 9,
+          "type_info": "Int64"
+        },
+        {
+          "name": "kind: models::FailedKind",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "contract_symbol: models::ContractSymbol",
+          "ordinal": 11,
+          "type_info": "Null"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
       "parameters": {
-        "Right": 13
+        "Right": 1
       }
     },
-    "query": "\n        INSERT INTO closed_cfds\n        (\n            order_id,\n            offer_id,\n            position,\n            initial_price,\n            taker_leverage,\n            n_contracts,\n            counterparty_network_identity,\n            counterparty_peer_id,\n            role,\n            fees,\n            expiry_timestamp,\n            lock_txid,\n            lock_dlc_vout\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)\n        "
+    "query": "\n            SELECT\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                taker_leverage as \"taker_leverage: models::Leverage\",\n                n_contracts as \"n_contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                fees as \"fees: models::Fees\",\n                kind as \"kind: models::FailedKind\",\n                contract_symbol as \"contract_symbol: models::ContractSymbol\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.order_id = $1\n            "
   },
-  "83e000677e6f83472de94228165ca54819d4c55bd16d89e9efa270b3f24b8ac6": {
+  "7d0a9f52e72ce425da0f86af11b98bee0d9166cec723f4bab8881477f75e6206": {
     "describe": {
       "columns": [
         {
@@ -565,9 +523,15 @@
           "name": "lock_dlc_vout: models::Vout",
           "ordinal": 12,
           "type_info": "Int64"
+        },
+        {
+          "name": "contract_symbol: models::ContractSymbol",
+          "ordinal": 13,
+          "type_info": "Null"
         }
       ],
       "nullable": [
+        false,
         false,
         false,
         false,
@@ -586,7 +550,7 @@
         "Right": 1
       }
     },
-    "query": "\n            SELECT\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                taker_leverage as \"taker_leverage: models::Leverage\",\n                n_contracts as \"n_contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                fees as \"fees: models::Fees\",\n                expiry_timestamp,\n                lock_txid as \"lock_txid: models::Txid\",\n                lock_dlc_vout as \"lock_dlc_vout: models::Vout\"\n            FROM\n                closed_cfds\n            WHERE\n                closed_cfds.order_id = $1\n            "
+    "query": "\n            SELECT\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                taker_leverage as \"taker_leverage: models::Leverage\",\n                n_contracts as \"n_contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                fees as \"fees: models::Fees\",\n                expiry_timestamp,\n                lock_txid as \"lock_txid: models::Txid\",\n                lock_dlc_vout as \"lock_dlc_vout: models::Vout\",\n                contract_symbol as \"contract_symbol: models::ContractSymbol\"\n            FROM\n                closed_cfds\n            WHERE\n                closed_cfds.order_id = $1\n            "
   },
   "89c4ffc05a97ee61f28ecb36e6e488991e24f72f58b161f624a2da08f9399c0a": {
     "describe": {
@@ -714,6 +678,36 @@
     },
     "query": "\n            delete from revoked_commit_transactions where cfd_id = (select id from cfds where cfds.order_id = $1)\n        "
   },
+  "9df788a4d4fdbb7dd146af6e13a7aa36e7c5b13e57b972a9148370bbe3118587": {
+    "describe": {
+      "columns": [
+        {
+          "name": "rollovers",
+          "ordinal": 0,
+          "type_info": "Int"
+        },
+        {
+          "name": "revokes",
+          "ordinal": 1,
+          "type_info": "Int"
+        },
+        {
+          "name": "cets",
+          "ordinal": 2,
+          "type_info": "Int"
+        }
+      ],
+      "nullable": [
+        false,
+        null,
+        null
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "\n            SELECT\n                COUNT(DISTINCT rollover_completed_event_data.id) as rollovers,\n                COUNT(DISTINCT revoked_commit_transactions.id) as revokes,\n                COUNT(DISTINCT open_cets.id) as cets\n            FROM\n                rollover_completed_event_data,\n                revoked_commit_transactions,\n                open_cets;\n            "
+  },
   "9ee7e0229619689eed2c5f2e834d9449a732824bbeffed628d01abc1d1839319": {
     "describe": {
       "columns": [
@@ -762,6 +756,108 @@
     },
     "query": "\n            INSERT INTO event_log (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),\n                $2, $3\n            )\n            "
   },
+  "cae8bdf8fa73fa170608b6608b335ada2d9ce6c95aeb0ea1293cb7970243f23a": {
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "order_id: models::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "offer_id: models::OfferId",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "position: models::Position",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price: models::Price",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage: models::Leverage",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "settlement_time_interval_hours",
+          "ordinal": 6,
+          "type_info": "Int64"
+        },
+        {
+          "name": "quantity_usd: models::Usd",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_network_identity: models::Identity",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_peer_id: models::PeerId",
+          "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "role: models::Role",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "opening_fee: models::OpeningFee",
+          "ordinal": 11,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_funding_rate: models::FundingRate",
+          "ordinal": 12,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_tx_fee_rate: models::TxFeeRate",
+          "ordinal": 13,
+          "type_info": "Null"
+        },
+        {
+          "name": "contract_symbol: models::ContractSymbol",
+          "ordinal": 14,
+          "type_info": "Null"
+        }
+      ],
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "\n            select\n                id as cfd_id,\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: models::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: models::TxFeeRate\",\n                contract_symbol as \"contract_symbol: models::ContractSymbol\"\n            from\n                cfds\n            where\n                cfds.order_id = $1\n            "
+  },
   "d2574386cb16c2ee01fded3c8d025e46a034efa3d5878e03879dc911bf61b749": {
     "describe": {
       "columns": [],
@@ -781,84 +877,6 @@
       }
     },
     "query": "\n            INSERT OR IGNORE INTO time_to_first_position\n            (\n                taker_id,\n                first_seen_timestamp\n            )\n            VALUES ($1, $2)\n            "
-  },
-  "df128e7111bba8e0bdefc5b921da4cba171a0426ed121f30c1ec6b1084017226": {
-    "describe": {
-      "columns": [
-        {
-          "name": "order_id: models::OrderId",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "offer_id: models::OfferId",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "position: models::Position",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "initial_price: models::Price",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "taker_leverage: models::Leverage",
-          "ordinal": 4,
-          "type_info": "Int64"
-        },
-        {
-          "name": "n_contracts: models::Contracts",
-          "ordinal": 5,
-          "type_info": "Int64"
-        },
-        {
-          "name": "counterparty_network_identity: models::Identity",
-          "ordinal": 6,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_peer_id: models::PeerId",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "role: models::Role",
-          "ordinal": 8,
-          "type_info": "Text"
-        },
-        {
-          "name": "fees: models::Fees",
-          "ordinal": 9,
-          "type_info": "Int64"
-        },
-        {
-          "name": "kind: models::FailedKind",
-          "ordinal": 10,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            SELECT\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                taker_leverage as \"taker_leverage: models::Leverage\",\n                n_contracts as \"n_contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                fees as \"fees: models::Fees\",\n                kind as \"kind: models::FailedKind\"\n            FROM\n                failed_cfds\n            WHERE\n                failed_cfds.order_id = $1\n            "
   },
   "e6fc0695967aae232e12dd135f89e021ccd46a79ab4d99265992ce8eddcc0d89": {
     "describe": {

@@ -167,7 +167,7 @@ impl Connection {
                             let leverage = Leverage::TWO;
                             wire::DeprecatedOrder047 {
                                 id: order.id,
-                                trading_pair: order.trading_pair,
+                                contract_symbol: order.contract_symbol,
                                 position_maker: order.position_maker,
                                 price: order.price,
                                 min_quantity: order.min_quantity,

@@ -18,7 +18,7 @@ export function unixTimestampToDate(unixTimestamp: number): Date {
 
 export interface MakerOffer {
     id: string;
-    trading_pair: string;
+    contract_symbol: string;
     // this is the maker's position
     position: Position;
     price: number;
@@ -63,7 +63,7 @@ export interface Cfd {
     initial_price: number;
 
     leverage: number;
-    trading_pair: string;
+    contract_symbol: string;
     position: Position;
     liquidation_price: number;
 

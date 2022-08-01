@@ -455,7 +455,7 @@ impl From<Decimal> for Percent {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum TradingPair {
+pub enum ContractSymbol {
     BtcUsd,
 }
 
@@ -1071,6 +1071,7 @@ pub struct FailedCfd {
     pub fees: Fees,
     pub kind: FailedKind,
     pub creation_timestamp: Timestamp,
+    pub contract_symbol: ContractSymbol,
 }
 
 /// The type of failed CFD.
@@ -1125,6 +1126,7 @@ pub struct ClosedCfd {
     pub lock: Lock,
     pub settlement: Settlement,
     pub creation_timestamp: Timestamp,
+    pub contract_symbol: ContractSymbol,
 }
 
 /// Data loaded from the database about the lock transaction of a

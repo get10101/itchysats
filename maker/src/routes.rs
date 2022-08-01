@@ -10,6 +10,7 @@ use daemon::projection::Feeds;
 use daemon::wallet;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::ContractSymbol;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -137,6 +138,7 @@ pub async fn put_offer_params(
             offer_params.daily_funding_rate_short,
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
+            ContractSymbol::BtcUsd, // TODO: Allow choosing different TradingPairs
         )
         .await
         .map_err(|e| {

@@ -104,7 +104,8 @@ impl Connection {
                 counterparty_peer_id as "counterparty_peer_id: models::PeerId",
                 role as "role: models::Role",
                 fees as "fees: models::Fees",
-                kind as "kind: models::FailedKind"
+                kind as "kind: models::FailedKind",
+                contract_symbol as "contract_symbol: models::ContractSymbol"
             FROM
                 failed_cfds
             WHERE
@@ -130,6 +131,7 @@ impl Connection {
             fees: cfd.fees.into(),
             kind: cfd.kind.into(),
             creation_timestamp,
+            contract_symbol: cfd.contract_symbol.into(),
         };
 
         Ok(C::new_failed(args, cfd))
@@ -210,6 +212,7 @@ async fn insert_failed_cfd(
     let position = models::Position::from(cfd.position);
     let counterparty_network_identity = models::Identity::from(cfd.counterparty_network_identity);
     let counterparty_peer_id = models::PeerId::from(counterparty_peer_id);
+    let contract_symbol = models::ContractSymbol::from(cfd.contract_symbol);
 
     let query_result = sqlx::query!(
         r#"
@@ -225,9 +228,10 @@ async fn insert_failed_cfd(
             counterparty_peer_id,
             role,
             fees,
-            kind
+            kind,
+            contract_symbol
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
         id,
         offer_id,
@@ -240,6 +244,7 @@ async fn insert_failed_cfd(
         role,
         fees,
         kind,
+        contract_symbol,
     )
     .execute(&mut *conn)
     .await?;

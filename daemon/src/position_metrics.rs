@@ -74,7 +74,7 @@ impl Actor {
         self.state.cfds = Some(cfds);
         metrics::update_position_metrics(
             self.state.cfds.clone().expect("We've initialized it above"),
-            // TODO: once we have multiple trading pairs, this needs to come from the positions
+            // TODO: once we have multiple contract symbols, this needs to come from the positions
             BTCUSD_LABEL,
         );
     }
@@ -90,7 +90,7 @@ impl Actor {
                 .cfds
                 .clone()
                 .expect("updating metrics failed. Internal list has not been initialized yet"),
-            // TODO: once we have multiple trading pairs, this needs to come from the positions
+            // TODO: once we have multiple contract symbols, this needs to come from the positions
             BTCUSD_LABEL,
         );
     }

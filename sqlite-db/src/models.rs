@@ -954,6 +954,28 @@ pub fn into_complete_fee_and_flow(
     }
 }
 
+/// Trading pair of the Cfd
+#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
+pub enum ContractSymbol {
+    BtcUsd,
+}
+
+impl From<model::ContractSymbol> for ContractSymbol {
+    fn from(contract_symbol: model::ContractSymbol) -> Self {
+        match contract_symbol {
+            model::ContractSymbol::BtcUsd => ContractSymbol::BtcUsd,
+        }
+    }
+}
+
+impl From<ContractSymbol> for model::ContractSymbol {
+    fn from(contract_symbol: ContractSymbol) -> Self {
+        match contract_symbol {
+            ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

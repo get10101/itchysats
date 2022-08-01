@@ -25,6 +25,7 @@ use model::olivia;
 use model::olivia::Announcement;
 use model::olivia::BitMexPriceEventId;
 use model::Cfd;
+use model::ContractSymbol;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
@@ -114,6 +115,7 @@ pub struct OfferParams {
     pub funding_rate_short: FundingRate,
     pub opening_fee: OpeningFee,
     pub leverage_choices: Vec<Leverage>,
+    pub contract_symbol: ContractSymbol,
 }
 
 impl OfferParams {
@@ -135,6 +137,7 @@ impl OfferParams {
                 self.funding_rate_long,
                 self.opening_fee,
                 self.leverage_choices.clone(),
+                self.contract_symbol,
             )
         })
     }
@@ -153,6 +156,7 @@ impl OfferParams {
                 self.funding_rate_short,
                 self.opening_fee,
                 self.leverage_choices.clone(),
+                self.contract_symbol,
             )
         })
     }
