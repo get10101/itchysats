@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace intermediate confirmation step in rollover protocol for the maker with a configurable flag which can be updated during runtime using the new `POST /rollover/config` endpoint.
   On startup, rollovers are configured to be accepted by default.
+- Introduce the `/itchysats/order/1.0.0` protocol, running over libp2p.
+  It is used to place an order and immediately set up the CFD on chain.
+  It replaces the previous mechanism, which ran over a bespoke network stack.
+- Introduce the `/itchysats/identify/0.3.0` protocol, running over libp2p.
+  It allows a peer to share their contact details with others on request.
+  It replaces a previous similar mechanism, which ran over a bespoke network stack.
 
 ## [0.5.2] - 2022-07-26
 
