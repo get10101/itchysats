@@ -30,7 +30,6 @@ where
     S: AsyncWriteExt + Unpin,
 {
     let mut framed = FramedWrite::new(sink, JsonCodec::<Option<MakerOffers>, ()>::new());
-
     framed.send(offers).await?;
     MESSAGES_SENT.inc();
 

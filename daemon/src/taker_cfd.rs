@@ -7,7 +7,9 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use model::libp2p::PeerId;
+use model::market_closing_price;
 use model::Cfd;
+use model::ContractSymbol;
 use model::Identity;
 use model::Leverage;
 use model::MakerOffers;
@@ -17,7 +19,6 @@ use model::Origin;
 use model::Price;
 use model::Role;
 use model::Usd;
-use model::{market_closing_price, ContractSymbol};
 use sqlite_db;
 use time::OffsetDateTime;
 use xtra_productivity::xtra_productivity;
@@ -86,20 +87,25 @@ impl Actor {
                 short
             });
 
-            (
-                maybe_contract_symbol.unwrap_or(ContractSymbol::BtcUsd),
-                maker_offers,
-            )
+            maker_offers
         });
 
         self.current_maker_offers = takers_perspective_of_maker_offers.clone();
         tracing::trace!("new maker offers {:?}", takers_perspective_of_maker_offers);
 
+        // If there's no offer, it might as well be hard-coded to BTC
+        let symbol = self
+            .current_maker_offers
+            .clone()
+            .and_then(|offer| offer.long.map(|offer| offer.contract_symbol))
+            .unwrap_or(ContractSymbol::BtcUsd);
+
         if let Err(e) = self
             .projection_actor
-            .send(projection::Update(
+            .send(projection::Update((
+                symbol,
                 takers_perspective_of_maker_offers.clone(),
-            ))
+            )))
             .await
         {
             tracing::warn!("Failed to send current offers to projection actor: {e:#}");
