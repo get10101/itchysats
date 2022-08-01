@@ -1,5 +1,5 @@
 use crate::protocol;
-use crate::PROTOCOL_NAME;
+use crate::PROTOCOL;
 use async_trait::async_trait;
 use model::MakerOffers;
 use std::collections::HashSet;
@@ -35,7 +35,7 @@ impl Actor {
         let span = tracing::debug_span!("Send offers", %peer).or_current();
         let task = async move {
             let stream = endpoint
-                .send(OpenSubstream::single_protocol(peer, PROTOCOL_NAME))
+                .send(OpenSubstream::single_protocol(peer, PROTOCOL))
                 .await??
                 .await?;
 

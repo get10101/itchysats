@@ -2,7 +2,7 @@ pub mod maker;
 mod protocol;
 pub mod taker;
 
-pub const PROTOCOL_NAME: &str = "/itchysats/offer/1.0.0";
+pub const PROTOCOL: &str = "/itchysats/offer/1.0.0";
 
 #[cfg(test)]
 mod tests {
@@ -140,7 +140,7 @@ mod tests {
             Box::new(MemoryTransport::default),
             Keypair::generate_ed25519(),
             Duration::from_secs(10),
-            [(PROTOCOL_NAME, offer_taker_addr.into())],
+            [(PROTOCOL, offer_taker_addr.into())],
             Subscribers::default(),
         )
         .create(None)

@@ -4,7 +4,7 @@ use crate::oracle::NoAnnouncement;
 use crate::order::protocol::Decision;
 use crate::order::protocol::MakerMessage;
 use crate::order::protocol::TakerMessage;
-use crate::order::PROTOCOL_NAME;
+use crate::order::PROTOCOL;
 use crate::process_manager;
 use crate::projection;
 use crate::setup_contract;
@@ -127,7 +127,7 @@ impl Actor {
                 projection.send(projection::CfdChanged(cfd.id())).await?;
 
                 let stream = endpoint
-                    .send(OpenSubstream::single_protocol(maker_peer_id, PROTOCOL_NAME))
+                    .send(OpenSubstream::single_protocol(maker_peer_id, PROTOCOL))
                     .await
                     .context("Endpoint is disconnected")?
                     .context("No connection to peer")?
