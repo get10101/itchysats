@@ -255,6 +255,7 @@ impl Offer {
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
         leverage_choices: Vec<Leverage>,
+        contract_symbol: ContractSymbol,
     ) -> Self {
         // allowing deprecated use of field `leverage_taker` here for backwards compatibility.
         #[allow(deprecated)]
@@ -265,7 +266,7 @@ impl Offer {
             max_quantity,
             leverage_taker: Leverage::TWO,
             leverage_choices,
-            contract_symbol: ContractSymbol::BtcUsd,
+            contract_symbol,
             position_maker,
             creation_timestamp_maker: Timestamp::now(),
             settlement_interval,
@@ -291,6 +292,7 @@ impl Offer {
             self.funding_rate,
             self.opening_fee,
             self.leverage_choices.clone(),
+            self.contract_symbol,
         )
     }
 
@@ -573,6 +575,7 @@ pub struct Cfd {
     role: Role,
     opening_fee: OpeningFee,
     initial_tx_fee_rate: TxFeeRate,
+    contract_symbol: ContractSymbol,
     // dynamic (based on events)
     fee_account: FeeAccount,
 
@@ -627,6 +630,7 @@ impl Cfd {
         opening_fee: OpeningFee,
         initial_funding_rate: FundingRate,
         initial_tx_fee_rate: TxFeeRate,
+        contract_symbol: ContractSymbol,
     ) -> Self {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(taker_leverage, role, position);
@@ -657,6 +661,7 @@ impl Cfd {
             initial_funding_rate,
             opening_fee,
             initial_tx_fee_rate,
+            contract_symbol,
             dlc: None,
             cet: None,
             commit_tx: None,
@@ -707,6 +712,7 @@ impl Cfd {
             offer.opening_fee,
             offer.funding_rate,
             offer.tx_fee_rate,
+            offer.contract_symbol,
         )
     }
 
@@ -1530,6 +1536,10 @@ impl Cfd {
 
     pub fn initial_tx_fee_rate(&self) -> TxFeeRate {
         self.initial_tx_fee_rate
+    }
+
+    pub fn contract_symbol(&self) -> ContractSymbol {
+        self.contract_symbol
     }
 
     pub fn opening_fee(&self) -> OpeningFee {
@@ -4359,6 +4369,7 @@ mod tests {
                 FundingRate::default(),
                 OpeningFee::default(),
                 vec![Leverage::TWO],
+                ContractSymbol::BtcUsd,
             )
         }
 

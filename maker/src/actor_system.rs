@@ -26,6 +26,7 @@ use libp2p_tcp::TokioTcpConfig;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::PartyParams;
 use model::olivia::Announcement;
+use model::ContractSymbol;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -353,6 +354,7 @@ where
         funding_rate_short: FundingRate,
         opening_fee: OpeningFee,
         leverage_choices: Vec<Leverage>,
+        contract_symbol: ContractSymbol,
     ) -> Result<()> {
         self.cfd_actor
             .send(cfd::OfferParams {
@@ -365,6 +367,7 @@ where
                 funding_rate_short,
                 opening_fee,
                 leverage_choices,
+                contract_symbol,
             })
             .await??;
 
