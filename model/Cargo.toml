@@ -17,7 +17,7 @@ maia = "0.2.0"
 maia-core = "0.1.1"
 maia-deprecated = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia" } # includes subtract-fee bug, needed for protocols over legacy networking
 nalgebra = { version = "0.31", default-features = false, features = ["std"] }
-ndarray = "0.15.4"
+ndarray = "0.15.6"
 ndarray_einsum_beta = "0.7.0"
 num = "0.4.0"
 rand = "0.6"
