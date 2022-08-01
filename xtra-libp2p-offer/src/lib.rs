@@ -12,6 +12,7 @@ mod tests {
     use futures::Future;
     use futures::FutureExt;
     use model::olivia::BitMexPriceEventId;
+    use model::ContractSymbol;
     use model::FundingRate;
     use model::Leverage;
     use model::MakerOffers;
@@ -220,6 +221,7 @@ mod tests {
             FundingRate::default(),
             OpeningFee::default(),
             vec![Leverage::TWO],
+            ContractSymbol::BtcUsd,
         )
     }
 }

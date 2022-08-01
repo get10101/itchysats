@@ -35,6 +35,7 @@ use model::olivia::Announcement;
 use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;
 use model::CompleteFee;
+use model::ContractSymbol;
 use model::Dlc;
 use model::EventKind;
 use model::FeeAccount;
@@ -723,6 +724,7 @@ impl Maker {
             funding_rate_short,
             opening_fee,
             leverage_choices,
+            contract_symbol,
         } = offer_params;
         self.system
             .set_offer_params(
@@ -735,6 +737,7 @@ impl Maker {
                 funding_rate_short,
                 opening_fee,
                 leverage_choices,
+                contract_symbol,
             )
             .await
             .unwrap();
@@ -996,6 +999,7 @@ impl OfferParamsBuilder {
             funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
             opening_fee: OpeningFee::new(Amount::from_sat(2)),
             leverage_choices: vec![Leverage::TWO],
+            contract_symbol: ContractSymbol::BtcUsd,
         })
     }
 

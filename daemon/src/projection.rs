@@ -337,6 +337,7 @@ impl Cfd {
             role,
             opening_fee,
             initial_funding_rate,
+            contract_symbol,
             ..
         }: sqlite_db::Cfd,
         network: Network,
@@ -384,7 +385,7 @@ impl Cfd {
             initial_price,
             accumulated_fees: fee_account.balance(),
             leverage_taker: taker_leverage,
-            contract_symbol: ContractSymbol::BtcUsd,
+            contract_symbol,
             position,
             liquidation_price,
             quantity_usd,
@@ -886,6 +887,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             lock,
             settlement,
             creation_timestamp,
+            contract_symbol,
             ..
         } = closed_cfd;
 
@@ -987,7 +989,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
-            contract_symbol: ContractSymbol::BtcUsd,
+            contract_symbol,
             position,
             liquidation_price,
             quantity_usd,
@@ -1026,6 +1028,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             fees,
             kind,
             creation_timestamp,
+            contract_symbol,
             ..
         } = failed_cfd;
 
@@ -1063,7 +1066,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             initial_price,
             accumulated_fees: fees.into(),
             leverage_taker: taker_leverage,
-            contract_symbol: ContractSymbol::BtcUsd,
+            contract_symbol,
             position,
             liquidation_price,
             quantity_usd,
@@ -1672,6 +1675,7 @@ mod tests {
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
+            ContractSymbol::BtcUsd,
         )
     }
 
@@ -1712,6 +1716,7 @@ mod tests {
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),
+            ContractSymbol::BtcUsd,
         );
 
         let contract_setup_completed =

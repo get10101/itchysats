@@ -31,6 +31,7 @@ use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::CfdEvent;
 use model::ClosedCfd;
+use model::ContractSymbol;
 use model::Contracts;
 use model::Dlc;
 use model::FeeAccount;
@@ -129,7 +130,8 @@ impl Connection {
                 fees as "fees: models::Fees",
                 expiry_timestamp,
                 lock_txid as "lock_txid: models::Txid",
-                lock_dlc_vout as "lock_dlc_vout: models::Vout"
+                lock_dlc_vout as "lock_dlc_vout: models::Vout",
+                contract_symbol as "contract_symbol: models::ContractSymbol"
             FROM
                 closed_cfds
             WHERE
@@ -180,6 +182,7 @@ impl Connection {
             },
             settlement,
             creation_timestamp,
+            contract_symbol: cfd.contract_symbol.into(),
         };
 
         Ok(C::new_closed(args, cfd))
@@ -230,6 +233,7 @@ struct ClosedCfdInputAggregate {
     cet_confirmed: bool,
     collaborative_settlement_confirmed: bool,
     refund_confirmed: bool,
+    contract_symbol: ContractSymbol,
 }
 
 impl ClosedCfdInputAggregate {
@@ -247,6 +251,7 @@ impl ClosedCfdInputAggregate {
             role,
             opening_fee,
             initial_funding_rate,
+            contract_symbol,
             ..
         } = cfd;
         let n_contracts = quantity_usd
@@ -287,6 +292,7 @@ impl ClosedCfdInputAggregate {
             cet_confirmed: false,
             collaborative_settlement_confirmed: false,
             refund_confirmed: false,
+            contract_symbol,
         }
     }
 
@@ -482,6 +488,7 @@ impl ClosedCfdInputAggregate {
             counterparty_peer_id,
             role,
             fee_account,
+            contract_symbol,
             ..
         } = self;
 
@@ -518,6 +525,7 @@ impl ClosedCfdInputAggregate {
             expiry_timestamp: dlc.settlement_event_id.timestamp(),
             lock,
             settlement,
+            contract_symbol,
         })
     }
 }
@@ -539,6 +547,7 @@ struct ClosedCfdInput {
     expiry_timestamp: OffsetDateTime,
     lock: Lock,
     settlement: Settlement,
+    contract_symbol: ContractSymbol,
 }
 
 async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInput) -> Result<()> {
@@ -560,6 +569,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
     let counterparty_peer_id = models::PeerId::from(counterparty_peer_id);
     let lock_txid = models::Txid::from(cfd.lock.txid);
     let dlc_vout = models::Vout::from(cfd.lock.dlc_vout);
+    let contract_symbol = models::ContractSymbol::from(cfd.contract_symbol);
 
     let query_result = sqlx::query!(
         r#"
@@ -577,9 +587,10 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
             fees,
             expiry_timestamp,
             lock_txid,
-            lock_dlc_vout
+            lock_dlc_vout,
+            contract_symbol
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
         id,
         offer_id,
@@ -594,6 +605,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
         expiry_timestamp,
         lock_txid,
         dlc_vout,
+        contract_symbol,
     )
     .execute(&mut *conn)
     .await?;
@@ -995,6 +1007,7 @@ mod tests {
     use bdk::bitcoin::SignedAmount;
     use model::libp2p::PeerId;
     use model::Cfd;
+    use model::ContractSymbol;
     use model::EventKind;
     use model::FundingRate;
     use model::OfferId;
@@ -1308,6 +1321,7 @@ mod tests {
                 payout: Payout::new(Amount::ONE_BTC),
                 price: Price::new(Decimal::ONE_HUNDRED).expect("To be valid price"),
             },
+            contract_symbol: ContractSymbol::BtcUsd,
         };
 
         insert_closed_cfd(conn, cfd).await?;
@@ -1336,6 +1350,7 @@ mod tests {
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),
+            ContractSymbol::BtcUsd,
         );
 
         let contract_setup_completed =

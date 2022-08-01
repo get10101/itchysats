@@ -10,6 +10,7 @@ use futures::Stream;
 use futures::StreamExt;
 use model::libp2p::PeerId;
 use model::CfdEvent;
+use model::ContractSymbol;
 use model::EventKind;
 use model::FundingRate;
 use model::Identity;
@@ -167,6 +168,7 @@ impl Connection {
         let opening_fee = models::OpeningFee::from(cfd.opening_fee());
         let tx_fee_rate = models::TxFeeRate::from(cfd.initial_tx_fee_rate());
         let counterparty_peer_id = cfd.counterparty_peer_id().map(models::PeerId::from);
+        let contract_symbol = models::ContractSymbol::from(cfd.contract_symbol());
 
         let query_result = sqlx::query(
             r#"
@@ -183,8 +185,9 @@ impl Connection {
             role,
             opening_fee,
             initial_funding_rate,
-            initial_tx_fee_rate
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)"#,
+            initial_tx_fee_rate,
+            contract_symbol
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#,
         )
         .bind(&order_id)
         .bind(&offer_id)
@@ -206,6 +209,7 @@ impl Connection {
         .bind(&opening_fee)
         .bind(&initial_funding_rate)
         .bind(&tx_fee_rate)
+        .bind(&contract_symbol)
         .execute(&mut conn)
         .await?;
 
@@ -497,6 +501,7 @@ pub struct Cfd {
     pub opening_fee: OpeningFee,
     pub initial_funding_rate: FundingRate,
     pub initial_tx_fee_rate: TxFeeRate,
+    pub contract_symbol: ContractSymbol,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -553,7 +558,8 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
                 role as "role: models::Role",
                 opening_fee as "opening_fee: models::OpeningFee",
                 initial_funding_rate as "initial_funding_rate: models::FundingRate",
-                initial_tx_fee_rate as "initial_tx_fee_rate: models::TxFeeRate"
+                initial_tx_fee_rate as "initial_tx_fee_rate: models::TxFeeRate",
+                contract_symbol as "contract_symbol: models::ContractSymbol"
             from
                 cfds
             where
@@ -589,6 +595,7 @@ async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result
         opening_fee: cfd_row.opening_fee.into(),
         initial_funding_rate: cfd_row.initial_funding_rate.into(),
         initial_tx_fee_rate: cfd_row.initial_tx_fee_rate.into(),
+        contract_symbol: cfd_row.contract_symbol.into(),
     })
 }
 
@@ -774,6 +781,7 @@ mod tests {
             opening_fee,
             initial_funding_rate,
             initial_tx_fee_rate,
+            contract_symbol,
         } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
 
         db_tx.commit().await.unwrap();
@@ -794,6 +802,7 @@ mod tests {
         assert_eq!(cfd.opening_fee(), opening_fee);
         assert_eq!(cfd.initial_funding_rate(), initial_funding_rate);
         assert_eq!(cfd.initial_tx_fee_rate(), initial_tx_fee_rate);
+        assert_eq!(cfd.contract_symbol(), contract_symbol);
     }
 
     #[tokio::test]
@@ -944,6 +953,7 @@ mod tests {
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
+            ContractSymbol::BtcUsd,
         )
     }
 
@@ -962,6 +972,7 @@ mod tests {
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
+            ContractSymbol::BtcUsd,
         )
     }
 
