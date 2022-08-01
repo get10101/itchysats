@@ -29,12 +29,15 @@ import { SiBitcoin } from "react-icons/all";
 import { FaWallet } from "react-icons/fa";
 import { FiMenu } from "react-icons/fi";
 import { Link as ReachLink, useNavigate, useParams } from "react-router-dom";
+import { SemVer } from "semver";
 import { HEADER_HEIGHT, Symbol } from "../App";
 import logoIcon from "../images/logo.svg";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
 import { ConnectionStatus } from "../types";
 import DollarAmount from "./DollarAmount";
+import IncompatibleWarning from "./IncompatibleWarning";
+import OutdatedWarning from "./OutdatedWarning";
 
 interface LinkItemProps {
     name: string;
@@ -51,9 +54,28 @@ interface NavBarProps {
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
     children: ReactNode;
+    githubVersion: SemVer | null | undefined;
+    daemonVersion: SemVer | null | undefined;
+    onCloseOutdatedWarning: () => void;
+    outdatedWarningIsVisible: boolean;
+    onCloseIncompatibleWarning: () => void;
+    incompatibleWarningIsVisible: boolean;
 }
 
-export default function Nav({ connectedToMaker, nextFundingEvent, referencePrice, children }: NavBarProps) {
+export default function Nav(
+    {
+        connectedToMaker,
+        nextFundingEvent,
+        referencePrice,
+        githubVersion,
+        daemonVersion,
+        onCloseOutdatedWarning,
+        outdatedWarningIsVisible,
+        onCloseIncompatibleWarning,
+        incompatibleWarningIsVisible,
+        children,
+    }: NavBarProps,
+) {
     const { isOpen, onOpen, onClose } = useDisclosure();
     return (
         <Box minH="100vh" bg={useColorModeValue("gray.100", "gray.900")}>
@@ -81,6 +103,12 @@ export default function Nav({ connectedToMaker, nextFundingEvent, referencePrice
                 onOpen={onOpen}
                 nextFundingEvent={nextFundingEvent}
                 referencePrice={referencePrice}
+                githubVersion={githubVersion}
+                daemonVersion={daemonVersion}
+                outdatedWarningIsVisible={outdatedWarningIsVisible}
+                onCloseOutdatedWarning={onCloseOutdatedWarning}
+                onCloseIncompatibleWarning={onCloseIncompatibleWarning}
+                incompatibleWarningIsVisible={incompatibleWarningIsVisible}
             />
             <Box ml={{ base: 0, md: 60 }} p="4">
                 {children}
@@ -292,10 +320,30 @@ interface TopBarProps extends FlexProps {
     connectedToMaker: ConnectionStatus;
     nextFundingEvent: string | null;
     referencePrice: number | undefined;
+    githubVersion: SemVer | null | undefined;
+    daemonVersion: SemVer | null | undefined;
+    outdatedWarningIsVisible: boolean;
+    onCloseOutdatedWarning: () => void;
+    incompatibleWarningIsVisible: boolean;
+    onCloseIncompatibleWarning: () => void;
     onOpen: () => void;
 }
 
-const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ...rest }: TopBarProps) => {
+const TopBar = (
+    {
+        connectedToMaker,
+        nextFundingEvent,
+        referencePrice,
+        onOpen,
+        outdatedWarningIsVisible,
+        githubVersion,
+        daemonVersion,
+        onCloseOutdatedWarning,
+        incompatibleWarningIsVisible,
+        onCloseIncompatibleWarning,
+        ...rest
+    }: TopBarProps,
+) => {
     const { toggleColorMode } = useColorMode();
 
     const toggleIcon = useColorModeValue(
@@ -305,6 +353,26 @@ const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ..
 
     return (
         <Box w="100%" position={"fixed"} height={`${HEADER_HEIGHT}px`} top="0" p={0} zIndex={102}>
+            {outdatedWarningIsVisible
+                && (
+                    <Flex
+                        ml={{ base: 0, md: 60 }}
+                    >
+                        <OutdatedWarning
+                            githubVersion={githubVersion}
+                            daemonVersion={daemonVersion}
+                            onClose={onCloseOutdatedWarning}
+                        />
+                    </Flex>
+                )}
+            {incompatibleWarningIsVisible
+                && (
+                    <Flex
+                        ml={{ base: 0, md: 60 }}
+                    >
+                        <IncompatibleWarning onClose={onCloseIncompatibleWarning} />
+                    </Flex>
+                )}
             <Flex
                 ml={{ base: 0, md: 60 }}
                 px={{ base: 4, md: 4 }}
@@ -330,7 +398,6 @@ const TopBar = ({ connectedToMaker, nextFundingEvent, referencePrice, onOpen, ..
                         <Text fontSize={{ md: "sm", base: "xs" }}>{"Funding "}</Text>
                         <Skeleton
                             isLoaded={nextFundingEvent != null}
-                            // height={"20px"}
                             display={"flex"}
                             alignItems={"center"}
                         >
