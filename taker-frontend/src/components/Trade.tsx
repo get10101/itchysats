@@ -338,7 +338,7 @@ function Quantity({ min, max, onChange, quantity, lotSize, isLong }: QuantityPro
                     </NumberInputStepper>
                 </NumberInput>
             </InputGroup>
-            <FormHelperText>How much do you want to buy or sell?</FormHelperText>
+            <FormHelperText>How many contract should your position contain?</FormHelperText>
         </FormControl>
     );
 }
