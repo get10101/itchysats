@@ -17,6 +17,7 @@ mod payout_curve;
 
 /// Payout combinations associated with the oracle events that may
 /// trigger them.
+#[derive(Debug)]
 pub struct OraclePayouts(HashMap<Announcement, Vec<Payout>>);
 
 impl OraclePayouts {
@@ -24,21 +25,18 @@ impl OraclePayouts {
         let announcements = Announcements::new(announcements)?;
 
         let settlement = (announcements.settlement, payouts.settlement);
-        let long_liquidations = announcements
-            .liquidation
-            .clone()
-            .into_iter()
-            .map(|announcement| (announcement, vec![payouts.long_liquidation.clone()]));
-        let short_liquidations = announcements
-            .liquidation
-            .into_iter()
-            .map(|announcement| (announcement, vec![payouts.short_liquidation.clone()]));
+        let liquidations = announcements.liquidation.into_iter().map(|announcement| {
+            (
+                announcement,
+                vec![
+                    payouts.long_liquidation.clone(),
+                    payouts.short_liquidation.clone(),
+                ],
+            )
+        });
 
         Ok(Self(HashMap::from_iter(
-            [settlement]
-                .into_iter()
-                .chain(long_liquidations)
-                .chain(short_liquidations),
+            [settlement].into_iter().chain(liquidations),
         )))
     }
 }
@@ -148,5 +146,79 @@ impl Announcements {
             settlement,
             liquidation,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::olivia::Announcement;
+    use crate::olivia::BitMexPriceEventId;
+    use crate::payouts::payout_curve::prop_compose::arb_contracts;
+    use crate::payouts::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payouts::payout_curve::prop_compose::arb_leverage;
+    use crate::payouts::payout_curve::prop_compose::arb_price;
+    use proptest::prelude::*;
+    use std::ops::Add;
+    use time::ext::NumericalDuration;
+    use time::macros::datetime;
+
+    proptest! {
+        #[test]
+        fn given_generated_payouts_then_can_build_oracle_payouts(
+            position in prop_oneof![Just(Position::Long), Just(Position::Short)],
+            role in prop_oneof![Just(Role::Maker), Just(Role::Taker)],
+            price in arb_price(1000.0, 100_000.0),
+            n_contracts in arb_contracts(100, 10_000_000),
+            short_leverage in arb_leverage(1, 100),
+            fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
+        ) {
+            let payouts = Payouts::new(
+                position,
+                role,
+                price,
+                n_contracts,
+                Leverage::ONE,
+                short_leverage,
+                200,
+                fee_flow,
+            )
+                .unwrap();
+
+            let n_events = 24;
+            let announcements = (0..n_events)
+                .map(|i| {
+                    let timestamp = datetime!(2022-07-29 13:00:00).assume_utc().add(i.hours());
+
+                    Announcement {
+                        id: BitMexPriceEventId::new(timestamp, 1),
+                        expected_outcome_time: timestamp,
+                        nonce_pks: vec![
+                            "d02d163cf9623f567c4e3faf851a9266ac1ede13da4ca4141f3a7717fba9a739"
+                                .parse()
+                                .unwrap(),
+                        ],
+                    }
+                })
+                .collect_vec();
+
+            let mut oracle_payouts = OraclePayouts::new(payouts, announcements.clone()).unwrap();
+            assert_eq!(oracle_payouts.0.len() as i64, n_events);
+
+            {
+                let settlement_announcement = {
+                    let settlement_announcement = announcements.last().unwrap();
+                    maia_core::Announcement { id: settlement_announcement.id.to_string(), nonce_pks: settlement_announcement.nonce_pks.clone() }
+                };
+
+                oracle_payouts.0.remove(&settlement_announcement);
+            }
+
+            let has_long_and_short_liquidation_payouts = oracle_payouts
+                .0
+                .iter()
+                .all(|(_, payouts)| payouts.len() == 2);
+            assert!(has_long_and_short_liquidation_payouts)
+        }
     }
 }

@@ -3,6 +3,7 @@ use crate::flow::next_maker_offers;
 use crate::flow::next_with;
 use crate::flow::one_cfd_with_state;
 use crate::mocks::monitor::MonitorActor;
+use crate::mocks::oracle::dummy_wrong_attestation;
 use crate::mocks::oracle::OracleActor;
 use crate::mocks::price_feed::PriceFeedActor;
 use crate::mocks::wallet::WalletActor;
@@ -16,6 +17,7 @@ use daemon::connection::connect;
 use daemon::libp2p_utils::create_connect_multiaddr;
 use daemon::maia_core::secp256k1_zkp::XOnlyPublicKey;
 use daemon::online_status::ConnectionStatus;
+use daemon::oracle::Attestation;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
@@ -26,6 +28,7 @@ use daemon::seed::Seed;
 use daemon::Environment;
 use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
+use maia::OliviaData;
 use maker::cfd::OfferParams;
 use model::libp2p::PeerId;
 use model::olivia::Announcement;
@@ -231,36 +234,62 @@ macro_rules! wait_next_state_multi_cfd {
     };
 }
 
-/// Hide the implementation detail of arriving at the Cfd open state.
-/// Useful when reading tests that should start at this point.
-/// For convenience, returns also OrderId of the opened Cfd.
-/// `announcement` is used during Cfd's creation.
-pub async fn start_from_open_cfd_state(
-    announcements: Vec<Announcement>,
-    position_maker: Position,
-) -> (Maker, Taker, OrderId, FeeCalculator) {
-    let mut maker = Maker::start(&MakerConfig::default()).await;
-    let mut taker = Taker::start(
-        &TakerConfig::default(),
-        maker.listen_addr,
-        maker.identity,
-        maker.connect_addr.clone(),
-    )
-    .await;
+/// Arguments that need to be supplied to the `open_cfd` test helper.
+#[derive(Clone)]
+pub struct OpenCfdArgs {
+    pub position_maker: Position,
+    pub initial_price: Price,
+    pub quantity: Usd,
+    pub taker_leverage: Leverage,
+    pub oracle_data: OliviaData,
+}
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+impl OpenCfdArgs {
+    fn offer_params(&self) -> OfferParams {
+        OfferParamsBuilder::new().price(self.initial_price).build()
+    }
 
-    let offer_params = dummy_offer_params(position_maker);
+    pub fn fee_calculator(&self) -> FeeCalculator {
+        debug_assert!(self
+            .offer_params()
+            .leverage_choices
+            .contains(&self.taker_leverage));
 
-    let quantity = Usd::new(dec!(100));
-    let taker_leverage = Leverage::TWO;
+        FeeCalculator::new(
+            self.offer_params(),
+            self.quantity,
+            self.taker_leverage,
+            self.position_maker,
+        )
+    }
+}
 
-    let fee_calculator = FeeCalculator::new(
-        offer_params.clone(),
+impl Default for OpenCfdArgs {
+    fn default() -> Self {
+        Self {
+            position_maker: Position::Short,
+            initial_price: Price::new(dummy_price()).unwrap(),
+            quantity: Usd::new(dec!(100)),
+            taker_leverage: Leverage::TWO,
+            oracle_data: OliviaData::example_0(),
+        }
+    }
+}
+
+/// Open a CFD between `taker` and `maker`.
+///
+/// This allows callers to use it as a starting point for their test.
+pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -> OrderId {
+    let offer_params = args.offer_params();
+    let OpenCfdArgs {
+        oracle_data,
+        position_maker,
         quantity,
         taker_leverage,
-        position_maker,
-    );
+        ..
+    } = args;
+
+    is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker.set_offer_params(offer_params).await;
 
@@ -268,7 +297,7 @@ pub async fn start_from_open_cfd_state(
         .await
         .unwrap();
 
-    mock_oracle_announcements(&mut maker, &mut taker, announcements).await;
+    mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
 
     let offer_to_take = match position_maker {
         Position::Short => received.short,
@@ -281,7 +310,7 @@ pub async fn start_from_open_cfd_state(
 
     let order_id = taker
         .system
-        .place_order(offer_id, quantity, Leverage::TWO)
+        .place_order(offer_id, quantity, taker_leverage)
         .await
         .unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
@@ -301,8 +330,48 @@ pub async fn start_from_open_cfd_state(
     confirm!(lock transaction, order_id, maker, taker);
     wait_next_state!(order_id, maker, taker, CfdState::Open);
 
-    (maker, taker, order_id, fee_calculator)
+    order_id
 }
+
+/// Settle a CFD non collaboratively.
+///
+/// It publishes the commit transaction; expires of the CET timelock on it; and simulates the
+/// attestation of the oracle based on the `attestation` argument passed in, causing the publication
+/// of the corresponding CET.
+///
+/// After every step, we check that the CFD goes through the correct state based on
+/// `daemon::projection`. Furthermore, we check that making the oracle generate an attestation for a
+/// different event has no effect on the CFD.
+pub async fn settle_non_collaboratively(
+    taker: &mut Taker,
+    maker: &mut Maker,
+    order_id: OrderId,
+    attestation: &Attestation,
+) {
+    confirm!(commit transaction, order_id, maker, taker);
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+
+    // After CetTimelockExpired, we're only waiting for attestation
+    expire!(cet timelock, order_id, maker, taker);
+
+    // Delivering the wrong attestation does not move state to `PendingCet`
+    simulate_attestation!(taker, maker, order_id, &dummy_wrong_attestation());
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+
+    // Delivering correct attestation moves the state `PendingCet`
+    simulate_attestation!(taker, maker, order_id, attestation);
+
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
+
+    confirm!(cet, order_id, maker, taker);
+    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
+    wait_next_state!(order_id, maker, taker, CfdState::Closed);
+}
+
 pub struct FeeCalculator {
     /// Opening fee charged by the maker
     opening_fee: OpeningFee,
@@ -910,24 +979,47 @@ pub fn dummy_quote() -> Quote {
     }
 }
 
-// Offer params allowing a single position, either short or long
-pub fn dummy_offer_params(position_maker: Position) -> OfferParams {
-    let (price_long, price_short) = match position_maker {
-        Position::Long => (Some(Price::new(dummy_price()).unwrap()), None),
-        Position::Short => (None, Some(Price::new(dummy_price()).unwrap())),
-    };
+pub struct OfferParamsBuilder(OfferParams);
 
-    OfferParams {
-        price_long,
-        price_short,
-        min_quantity: Usd::new(dec!(100)),
-        max_quantity: Usd::new(dec!(1000)),
-        tx_fee_rate: TxFeeRate::default(),
-        // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
-        funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
-        funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
-        opening_fee: OpeningFee::new(Amount::from_sat(2)),
-        leverage_choices: vec![Leverage::TWO],
+impl OfferParamsBuilder {
+    pub fn new() -> OfferParamsBuilder {
+        let dummy_price = Price::new(dummy_price()).unwrap();
+
+        OfferParamsBuilder(OfferParams {
+            price_long: Some(dummy_price),
+            price_short: Some(dummy_price),
+            min_quantity: Usd::new(dec!(100)),
+            max_quantity: Usd::new(dec!(1000)),
+            tx_fee_rate: TxFeeRate::default(),
+            // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
+            funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
+            funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
+            opening_fee: OpeningFee::new(Amount::from_sat(2)),
+            leverage_choices: vec![Leverage::TWO],
+        })
+    }
+
+    pub fn price(mut self, price: Price) -> Self {
+        self.0.price_long = Some(price);
+        self.0.price_short = Some(price);
+
+        self
+    }
+
+    pub fn leverage_choices(mut self, choices: Vec<Leverage>) -> Self {
+        self.0.leverage_choices = choices;
+
+        self
+    }
+
+    pub fn build(self) -> OfferParams {
+        self.0
+    }
+}
+
+impl Default for OfferParamsBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

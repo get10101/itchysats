@@ -71,9 +71,9 @@ impl MockOracle {
         }
     }
 
-    pub async fn simulate_attestation(&mut self, id: OrderId, attestation: oracle::Attestation) {
+    pub async fn simulate_attestation(&mut self, id: OrderId, attestation: &oracle::Attestation) {
         self.executor
-            .execute(id, |cfd| cfd.decrypt_cet(&attestation.into_inner()))
+            .execute(id, |cfd| cfd.decrypt_cet(attestation.as_inner()))
             .await
             .unwrap();
     }

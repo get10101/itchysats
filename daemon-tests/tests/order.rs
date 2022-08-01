@@ -1,6 +1,5 @@
 use daemon::projection::CfdState;
 use daemon_tests::confirm;
-use daemon_tests::dummy_offer_params;
 use daemon_tests::flow::cfd_with_state;
 use daemon_tests::flow::is_next_offers_none;
 use daemon_tests::flow::next_maker_offers;
@@ -10,10 +9,10 @@ use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::wait_next_state_multi_cfd;
 use daemon_tests::Maker;
+use daemon_tests::OfferParamsBuilder;
 use daemon_tests::Taker;
 use model::Leverage;
 use model::OrderId;
-use model::Position;
 use model::Usd;
 use otel_tests::otel_test;
 use rust_decimal_macros::dec;
@@ -27,7 +26,7 @@ async fn taker_places_order_and_maker_rejects() {
     is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker
-        .set_offer_params(dummy_offer_params(Position::Short))
+        .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
@@ -58,7 +57,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup() {
     is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker
-        .set_offer_params(dummy_offer_params(Position::Short))
+        .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
@@ -86,7 +85,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     is_next_offers_none(taker.offers_feed()).await.unwrap();
 
     maker
-        .set_offer_params(dummy_offer_params(Position::Short))
+        .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())

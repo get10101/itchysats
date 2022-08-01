@@ -485,6 +485,10 @@ fn create_long_payout_function(
 
 #[cfg(test)]
 mod tests {
+    use super::prop_compose::arb_contracts;
+    use super::prop_compose::arb_fee_flow;
+    use super::prop_compose::arb_leverage;
+    use super::prop_compose::arb_price;
     use super::*;
     use bdk::bitcoin::Amount;
     use proptest::prelude::*;
@@ -880,44 +884,62 @@ mod tests {
         }
     }
 
-    prop_compose! {
-        fn arb_price(min: f64, max: f64)(price in min..max) -> Price {
-            let price = Decimal::from_f64(price).unwrap();
+    proptest! {
+        #[test]
+        fn payout_intervals_have_no_gaps(
+            price in arb_price(1.0, 340_000.0),
+            n_contracts in arb_contracts(1, 10_000_000),
+            long_leverage in arb_leverage(1, 200),
+            short_leverage in arb_leverage(1, 200),
+            n_payouts in 10usize..2000,
+            fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
+        ) {
+            let payouts = calculate_payout_parameters(
+                price,
+                n_contracts,
+                long_leverage,
+                short_leverage,
+                n_payouts,
+                fee_flow,
+            )
+            .unwrap();
 
-            Price::new(price).unwrap()
+            let are_payout_intervals_gap_free = payouts
+                .iter()
+                .zip(payouts.iter().skip(1))
+                .all(|(a, b)| a.right_bound + 1 == b.left_bound);
+
+            prop_assert!(are_payout_intervals_gap_free)
         }
     }
 
-    prop_compose! {
-        fn arb_contracts(min: u64, max: u64)(contracts in min..max) -> Usd {
-            let contracts = Decimal::from_u64(contracts).unwrap();
+    proptest! {
+        #[test]
+        #[ignore = "Payout intervals are _not_ always monotonically increasing"]
+        fn payout_intervals_are_monotonically_increasing(
+            price in arb_price(500.0, 340_000.0),
+            n_contracts in arb_contracts(100, 10_000_000),
+            long_leverage in arb_leverage(1, 200),
+            short_leverage in arb_leverage(1, 200),
+            n_payouts in 10usize..2000,
+            fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
+        ) {
+            let payouts = calculate_payout_parameters(
+                price,
+                n_contracts,
+                long_leverage,
+                short_leverage,
+                n_payouts,
+                fee_flow,
+            )
+                .unwrap();
 
-            Usd::new(contracts)
-        }
-    }
 
-    prop_compose! {
-        fn arb_leverage(min: u8, max: u8)(leverage in min..max) -> Leverage {
-            Leverage::new(leverage).unwrap()
-        }
-    }
+            let are_payout_intervals_monotonically_increasing = payouts
+                .iter()
+                .all(|a| a.left_bound <= a.right_bound);
 
-    prop_compose! {
-        /// Generate an arbitrary fee flow value, between the `lower`
-        /// and `upper` bounds.
-        ///
-        /// A positive value represents a fee flow from long to short.
-        /// Conversely, a negative valure represents a fee flow from
-        /// short to long.
-        fn arb_fee_flow(lower: i64, upper: i64)(fee in lower..upper) -> CompleteFee {
-            let fee_amount = Amount::from_sat(fee.abs().try_into().unwrap());
-            if fee.is_positive() {
-                CompleteFee::LongPaysShort(fee_amount)
-            } else if fee.is_negative() {
-                CompleteFee::ShortPaysLong(fee_amount)
-            } else {
-                CompleteFee::None
-            }
+            prop_assert!(are_payout_intervals_monotonically_increasing)
         }
     }
 
@@ -927,6 +949,62 @@ mod tests {
             right_bound: *range.end(),
             long_amount: long,
             short_amount: short,
+        }
+    }
+}
+
+#[cfg(test)]
+pub mod prop_compose {
+    use crate::CompleteFee;
+    use crate::Leverage;
+    use crate::Price;
+    use crate::Usd;
+    use bdk::bitcoin::Amount;
+    use num::FromPrimitive;
+    use proptest::prop_compose;
+    use rust_decimal::Decimal;
+
+    prop_compose! {
+        pub fn arb_price(min: f64, max: f64)(price in min..max) -> Price {
+            let price = Decimal::from_f64(price).unwrap();
+
+            Price::new(price).unwrap()
+        }
+    }
+
+    #[cfg(test)]
+    prop_compose! {
+        pub fn arb_contracts(min: u64, max: u64)(contracts in min..max) -> Usd {
+            let contracts = Decimal::from(contracts);
+
+            Usd::new(contracts)
+        }
+    }
+
+    #[cfg(test)]
+    prop_compose! {
+        pub fn arb_leverage(min: u8, max: u8)(leverage in min..max) -> Leverage {
+            Leverage::new(leverage).unwrap()
+        }
+    }
+
+    #[cfg(test)]
+    prop_compose! {
+        /// Generate an arbitrary fee flow value, between the `lower`
+        /// and `upper` bounds.
+        ///
+        /// A positive value represents a fee flow from long to short.
+        /// Conversely, a negative valure represents a fee flow from
+        /// short to long.
+        pub fn arb_fee_flow(lower: i64, upper: i64)(fee in lower..upper) -> CompleteFee {
+            let fee_amount = Amount::from_sat(fee.abs().try_into().unwrap());
+            if fee.is_positive() {
+                CompleteFee::LongPaysShort(fee_amount)
+            } else if fee.is_negative() {
+                CompleteFee::ShortPaysLong(fee_amount)
+            } else {
+                CompleteFee::None
+            }
         }
     }
 }
