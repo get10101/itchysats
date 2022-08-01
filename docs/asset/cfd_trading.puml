@@ -1,0 +1,50 @@
+@startuml
+
+participant TakerDaemon
+participant MakerDaemon
+participant MakerAutomation
+participant BitMex
+
+
+== Offer Protocol ==
+TakerDaemon->MakerDaemon: Connect
+|||
+loop heartbeat
+|||
+    MakerDaemon->BitMex: Check bid & ask prices
+    alt [ - Bitmex bid & ask prices changed > x% ]
+        MakerAutomation->MakerDaemon: Create or refresh offer
+        loop for each connected taker
+	        MakerDaemon->TakerDaemon: Send offer
+        end
+    end
+end
+
+== Order Protocol ==
+
+group Phase 1: Accept or reject order
+    TakerDaemon->MakerDaemon: Create order
+    note right: offer id, contract size,\nleverage
+    MakerDaemon->MakerAutomation: Order request
+    alt [ accept ]
+    MakerDaemon<--MakerAutomation: Accept order request
+    TakerDaemon<--MakerDaemon: Accept order
+    else [ reject ]
+    MakerDaemon<--MakerAutomation: Reject order request
+    TakerDaemon<--MakerDaemon: Reject order
+    end
+end
+
+group Phase 2: Create CFD contract
+
+MakerDaemon->MakerDaemon: Sign transaction
+TakerDaemon->TakerDaemon: Sign transaction
+
+end
+
+== Close Protocol ==
+
+
+
+
+@enduml
