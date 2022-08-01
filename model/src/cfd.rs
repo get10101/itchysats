@@ -8,6 +8,7 @@ use crate::rollover;
 use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;
 use crate::CompleteFee;
+use crate::ContractSymbol;
 use crate::FeeAccount;
 use crate::FundingFee;
 use crate::FundingRate;
@@ -19,7 +20,6 @@ use crate::Percent;
 use crate::Position;
 use crate::Price;
 use crate::Timestamp;
-use crate::TradingPair;
 use crate::TxFeeRate;
 use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
@@ -196,7 +196,8 @@ impl From<Origin> for Role {
 pub struct Offer {
     pub id: OfferId,
 
-    pub trading_pair: TradingPair,
+    #[serde(rename = "trading_pair")]
+    pub contract_symbol: ContractSymbol,
 
     /// The maker's position
     ///
@@ -264,7 +265,7 @@ impl Offer {
             max_quantity,
             leverage_taker: Leverage::TWO,
             leverage_choices,
-            trading_pair: TradingPair::BtcUsd,
+            contract_symbol: ContractSymbol::BtcUsd,
             position_maker,
             creation_timestamp_maker: Timestamp::now(),
             settlement_interval,

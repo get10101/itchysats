@@ -455,7 +455,7 @@ impl From<Decimal> for Percent {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum TradingPair {
+pub enum ContractSymbol {
     BtcUsd,
 }
 

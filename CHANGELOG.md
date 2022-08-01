@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace intermediate confirmation step in rollover protocol for the maker with a configurable flag which can be updated during runtime using the new `POST /rollover/config` endpoint.
   On startup, rollovers are configured to be accepted by default.
+- Breaking change: renamed `trading_pair` to `contract_symbol` in Http API.
 
 ## [0.5.2] - 2022-07-26
 

@@ -25,8 +25,8 @@ function OrderTile(
                     <Text width={labelWidth}>ID</Text>
                     <Text whiteSpace="nowrap">{maker_offer.id}</Text>
 
-                    <Text width={labelWidth}>Trading Pair</Text>
-                    <Text>{maker_offer.trading_pair}</Text>
+                    <Text width={labelWidth}>Symbol</Text>
+                    <Text>{maker_offer.contract_symbol}</Text>
 
                     <Text width={labelWidth}>Price</Text>
                     <Text>{maker_offer.price}</Text>
