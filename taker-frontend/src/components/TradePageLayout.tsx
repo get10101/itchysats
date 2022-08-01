@@ -14,8 +14,8 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Link as ReachLink, Outlet, useLocation } from "react-router-dom";
-import { VIEWPORT_WIDTH_PX } from "../App";
+import { Link as ReachLink, Outlet, useLocation, useParams } from "react-router-dom";
+import { Symbol, VIEWPORT_WIDTH_PX } from "../App";
 import { Cfd, ConnectionStatus, isClosed } from "../types";
 import History from "./History";
 
@@ -81,6 +81,9 @@ function HistoryLayout({ cfds, connectedToMaker, showExtraInfo }: HistoryLayoutP
 
 function NavigationButtons() {
     const location = useLocation();
+    let { symbol: symbolString } = useParams();
+    let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
+
     const isLongSelected = location.pathname.includes("long");
     const isShortSelected = !isLongSelected;
 
@@ -88,6 +91,21 @@ function NavigationButtons() {
     const selectedButton = useColorModeValue("grey.400", "black.400");
     const buttonBorder = useColorModeValue("grey.400", "black.400");
     const buttonText = useColorModeValue("black", "white");
+
+    let buttonLabel;
+    switch (symbol) {
+        case Symbol.btcusd: {
+            buttonLabel = "BTC";
+            break;
+        }
+        case Symbol.ethusd: {
+            buttonLabel = "ETH";
+            break;
+        }
+        default: {
+            buttonLabel = "BTC";
+        }
+    }
 
     return (
         <HStack>
@@ -99,7 +117,7 @@ function NavigationButtons() {
                 >
                     <Button
                         as={ReachLink}
-                        to="/long"
+                        to={"/trade/" + symbolString + "/long/"}
                         color={isLongSelected ? selectedButton : unSelectedButton}
                         bg={isLongSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
@@ -108,11 +126,11 @@ function NavigationButtons() {
                         h={10}
                         w={"40"}
                     >
-                        <Text fontSize={"md"} color={buttonText}>Long BTC</Text>
+                        <Text fontSize={"md"} color={buttonText}>Long {buttonLabel}</Text>
                     </Button>
                     <Button
                         as={ReachLink}
-                        to="/short"
+                        to={"/trade/" + symbolString + "/short/"}
                         color={isShortSelected ? selectedButton : unSelectedButton}
                         bg={isShortSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
@@ -121,7 +139,7 @@ function NavigationButtons() {
                         h={10}
                         w={"40"}
                     >
-                        <Text fontSize={"md"} color={buttonText}>Short BTC</Text>
+                        <Text fontSize={"md"} color={buttonText}>Short {buttonLabel}</Text>
                     </Button>
                 </ButtonGroup>
             </Center>

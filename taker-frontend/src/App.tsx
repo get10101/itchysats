@@ -44,16 +44,55 @@ export interface Offer {
 // TODO: Evaluate moving these globals into the theme to make them accessible through that
 export const VIEWPORT_WIDTH = 1000;
 export const FOOTER_HEIGHT = 50;
-export const HEADER_HEIGHT = 100;
+export const HEADER_HEIGHT = 50;
 export const VIEWPORT_WIDTH_PX = VIEWPORT_WIDTH + "px";
 export const BG_LIGHT = "gray.50";
 export const BG_DARK = "gray.800";
 export const FAQ_URL = "http://faq.itchysats.network";
 
+export enum Symbol {
+    // we use lower case variant names because of react-router using lower-case routes by default and it is easier to match
+    btcusd = "btcusd",
+    ethusd = "ethusd",
+}
+
+const parseSymbol = (symbol: Symbol) => {
+    switch (symbol) {
+        case undefined: {
+            // falling through to default
+        }
+        // eslint-disable-next-line no-fallthrough
+        case Symbol.ethusd: {
+            // TODO: falling through because unimplemented at the moment
+        }
+        // eslint-disable-next-line no-fallthrough
+        case Symbol.btcusd: {
+            // falling through to default
+        }
+        // eslint-disable-next-line no-fallthrough
+        default:
+            return {
+                bitmexStream: "wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT",
+                // TODO: make offer events symbol dependent becase we only want subscribe to those offers we are currently interested in.
+                daemon_long_offer: "long_offer",
+                daemon_short_offer: "short_offer",
+            };
+    }
+};
+
 export const App = () => {
     const toast = useToast();
     const navigate = useNavigate();
     const location = useLocation();
+
+    // ideally we could be using useParams() here but `App` is on the top level and is not aware of any params yet,
+    // hence we parse the location.
+    let symbol = Symbol.btcusd;
+    if (location.pathname.includes("ethusd")) {
+        symbol = Symbol.ethusd;
+    }
+
+    let { bitmexStream, daemon_long_offer, daemon_short_offer } = parseSymbol(symbol);
 
     let [referencePrice, setReferencePrice] = useState<number>();
     let [showExtraInfo, setExtraInfo] = useState(false);
@@ -65,7 +104,7 @@ export const App = () => {
         outdated = githubVersion > daemonVersion;
     }
 
-    useWebSocket("wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT", {
+    useWebSocket(bitmexStream, {
         shouldReconnect: () => true,
         onMessage: (message) => {
             const data: BXBTData[] = JSON.parse(message.data).data;
@@ -83,8 +122,8 @@ export const App = () => {
     const [source, isConnected] = useEventSource("/api/feed");
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
-    const makerLong = useLatestEvent<MakerOffer>(source, "long_offer", intoMakerOffer);
-    const makerShort = useLatestEvent<MakerOffer>(source, "short_offer", intoMakerOffer);
+    const makerLong = useLatestEvent<MakerOffer>(source, daemon_long_offer, intoMakerOffer);
+    const makerShort = useLatestEvent<MakerOffer>(source, daemon_short_offer, intoMakerOffer);
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
 
@@ -182,20 +221,14 @@ export const App = () => {
 
     const {
         isOpen: incompatibleWarningIsVisible,
-        onOpen: onOpenIncompatibilityWarning,
         onClose: onCloseIncompatibleWarning,
-    } = useDisclosure();
-
-    useEffect(() => {
-        if (incompatible) {
-            onOpenIncompatibilityWarning();
-        }
-    }, [incompatible, onOpenIncompatibilityWarning]);
+    } = useDisclosure({ defaultIsOpen: incompatible });
 
     const pathname = location.pathname;
     useEffect(() => {
-        if (pathname !== "/long" && pathname !== "/short" && pathname !== "/wallet") {
-            navigate("/long");
+        let btcusd = Symbol.btcusd;
+        if (!pathname.includes("trade") && !pathname.includes("wallet")) {
+            navigate(`/trade/${btcusd}/long`);
         }
     }, [navigate, pathname]);
 
@@ -211,7 +244,6 @@ export const App = () => {
                         daemonVersion={daemonVersion}
                         onCloseOutdatedWarning={onCloseOutdatedWarning}
                         onCloseIncompatibleWarning={onCloseIncompatibleWarning}
-                        walletInfo={walletInfo}
                         connectedToMaker={connectedToMaker}
                         nextFundingEvent={nextFundingEvent}
                         referencePrice={referencePrice}
@@ -235,7 +267,7 @@ export const App = () => {
                     }
                 >
                     <Route
-                        path="long"
+                        path="/trade/:symbol/long"
                         element={
                             <Trade
                                 offer={longOffer}
@@ -246,7 +278,7 @@ export const App = () => {
                         }
                     />
                     <Route
-                        path="short"
+                        path="/trade/:symbol/short/"
                         element={
                             <Trade
                                 offer={shortOffer}
