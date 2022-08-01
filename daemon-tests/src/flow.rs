@@ -3,18 +3,24 @@ use anyhow::Result;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
 use daemon::projection::MakerOffers;
+use model::ContractSymbol;
 use model::OrderId;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::watch;
 
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 90 } else { 30 });
 
-/// Wait and return next non-empty maker offers
+/// Wait and return next non-empty maker offers with `symbol`
 pub async fn next_maker_offers(
-    rx_a: &mut watch::Receiver<MakerOffers>,
-    rx_b: &mut watch::Receiver<MakerOffers>,
+    rx_a: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
+    rx_b: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
+    symbol: &ContractSymbol,
 ) -> Result<(MakerOffers, MakerOffers)> {
+    let mut rx_a = rx_a.get(symbol).unwrap().clone();
+    let mut rx_b = rx_b.get(symbol).unwrap().clone();
+
     let non_empty_offer = |offer: MakerOffers| {
         if offer != MakerOffers::default() {
             Some(offer)
@@ -23,16 +29,20 @@ pub async fn next_maker_offers(
         }
     };
 
-    let wait_until_a = next_with(rx_a, non_empty_offer);
-    let wait_until_b = next_with(rx_b, non_empty_offer);
+    let wait_until_a = next_with(&mut rx_a, non_empty_offer);
+    let wait_until_b = next_with(&mut rx_b, non_empty_offer);
 
     let (a, b) = tokio::join!(wait_until_a, wait_until_b);
 
     Ok((a?, b?))
 }
 
-pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Result<bool> {
-    let maker_offers = next(rx).await?;
+pub async fn is_next_offers_none(
+    rx: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
+    symbol: &ContractSymbol,
+) -> Result<bool> {
+    let mut rx = rx.get(symbol).cloned().unwrap();
+    let maker_offers = next(&mut rx).await?;
     Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
 }
 

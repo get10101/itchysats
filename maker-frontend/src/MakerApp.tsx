@@ -38,7 +38,8 @@ const SPREAD_BID = 0.99;
 export default function App() {
     document.title = "Hermes Maker";
 
-    let source = useEventSource({ source: "/api/feed", options: { withCredentials: true } });
+    // TODO: make this dynamic or subscribe to both
+    let source = useEventSource({ source: "/api/btcusd/feed", options: { withCredentials: true } });
 
     let [leverages, setLeverages] = useState(["1", "2", "3"]);
 

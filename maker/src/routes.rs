@@ -42,20 +42,38 @@ use uuid::Uuid;
 pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sled::Tree>>;
 
 #[allow(clippy::too_many_arguments)]
-#[rocket::get("/feed")]
-#[instrument(name = "GET /feed", skip_all)]
+#[rocket::get("/<symbol>/feed")]
+#[instrument(name = "GET /<symbol>/feed", skip_all)]
 pub async fn maker_feed(
+    symbol: ContractSymbol,
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let mut rx_offers = rx.offers.clone();
+    let rx_offers = rx.offers.get(&symbol.into()).cloned();
     let mut rx_wallet = rx_wallet.inner().clone();
-    let mut rx_quote = rx.quote.clone();
+    let rx_quote = rx.quote.get(&symbol.into()).cloned();
 
     EventStream! {
+        let mut rx_offers = match rx_offers {
+            None => {
+                // This should never happen as long as we instantiate `rx_offers` for each ContractSymbol variant
+                tracing::error!("No offer receiver for {symbol} found");
+                return ();
+            }
+            Some(rx_offers) => rx_offers.clone(),
+        };
+        let mut rx_quote = match rx_quote {
+            None => {
+                // This should never happen as long as we instantiate `rx_quote` for each ContractSymbol variant
+                tracing::error!("No quote receiver for {symbol} found");
+                return ();
+            }
+            Some(rx_quote) => rx_quote.clone(),
+        };
+
         let wallet_info = rx_wallet.borrow().clone();
         yield wallet_info.to_sse_event();
 
@@ -150,15 +168,17 @@ pub async fn put_offer_params(
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, strum_macros::Display)]
 pub enum ContractSymbol {
     BtcUsd,
+    EthUsd,
 }
 
 impl From<ContractSymbol> for model::ContractSymbol {
     fn from(symbol: ContractSymbol) -> Self {
         match symbol {
             ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
+            ContractSymbol::EthUsd => model::ContractSymbol::BtcUsd,
         }
     }
 }
@@ -169,6 +189,7 @@ impl<'r> FromParam<'r> for ContractSymbol {
     fn from_param(param: &'r str) -> Result<Self, Self::Error> {
         match param.to_lowercase().as_str() {
             "btcusd" => Ok(ContractSymbol::BtcUsd),
+            "ethusd" => Ok(ContractSymbol::EthUsd),
             _ => anyhow::bail!("Unknown contract symbol provided: {param}"),
         }
     }

@@ -11,6 +11,7 @@ use daemon_tests::wait_next_state_multi_cfd;
 use daemon_tests::Maker;
 use daemon_tests::OfferParamsBuilder;
 use daemon_tests::Taker;
+use model::ContractSymbol;
 use model::Leverage;
 use model::OrderId;
 use model::Usd;
@@ -21,15 +22,21 @@ use rust_decimal_macros::dec;
 async fn taker_places_order_and_maker_rejects() {
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed(), &ContractSymbol::BtcUsd)
+        .await
+        .unwrap();
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
-    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
-        .await
-        .unwrap();
+    let (_, received) = next_maker_offers(
+        maker.offers_feed(),
+        taker.offers_feed(),
+        &ContractSymbol::BtcUsd,
+    )
+    .await
+    .unwrap();
 
     let offer_id = received.short.unwrap().id;
 
@@ -52,15 +59,21 @@ async fn taker_places_order_and_maker_rejects() {
 async fn taker_places_order_and_maker_accepts_and_contract_setup() {
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed(), &ContractSymbol::BtcUsd)
+        .await
+        .unwrap();
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
-    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
-        .await
-        .unwrap();
+    let (_, received) = next_maker_offers(
+        maker.offers_feed(),
+        taker.offers_feed(),
+        &ContractSymbol::BtcUsd,
+    )
+    .await
+    .unwrap();
 
     let offer_id = received.short.unwrap().id;
 
@@ -80,15 +93,21 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup() {
 async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    is_next_offers_none(taker.offers_feed(), &ContractSymbol::BtcUsd)
+        .await
+        .unwrap();
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
-    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
-        .await
-        .unwrap();
+    let (_, received) = next_maker_offers(
+        maker.offers_feed(),
+        taker.offers_feed(),
+        &ContractSymbol::BtcUsd,
+    )
+    .await
+    .unwrap();
 
     let offer_id = received.short.unwrap().id;
 

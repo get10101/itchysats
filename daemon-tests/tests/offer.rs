@@ -5,6 +5,7 @@ use daemon_tests::flow::is_next_offers_none;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::start_both;
 use daemon_tests::OfferParamsBuilder;
+use model::ContractSymbol;
 use model::Leverage;
 use otel_tests::otel_test;
 
@@ -12,15 +13,23 @@ use otel_tests::otel_test;
 async fn taker_receives_offer_from_maker_on_publication() {
     let (mut maker, mut taker) = start_both().await;
 
-    assert!(is_next_offers_none(taker.offers_feed()).await.unwrap());
+    assert!(
+        is_next_offers_none(taker.offers_feed(), &ContractSymbol::BtcUsd)
+            .await
+            .unwrap()
+    );
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
-    let (published, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
-        .await
-        .unwrap();
+    let (published, received) = next_maker_offers(
+        maker.offers_feed(),
+        taker.offers_feed(),
+        &ContractSymbol::BtcUsd,
+    )
+    .await
+    .unwrap();
 
     assert_eq_offers(published, received);
 }
