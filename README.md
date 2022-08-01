@@ -1,6 +1,7 @@
 # Itchy Sats
 
 [![Bors enabled](https://bors.tech/images/badge_small.svg)](https://app.bors.tech/repositories/39253)
+![Build Status](https://github.com/itchysats/itchysats/actions/workflows/ci.yml/badge.svg)
 
 CFD trading on Bitcoin - non-custodial, peer-to-peer, Bitcoin only.
 
