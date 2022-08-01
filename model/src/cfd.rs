@@ -1765,6 +1765,14 @@ impl ExtractEventFromTuple for CfdEvent {
     }
 }
 
+impl<TOne> ExtractEventFromTuple for (Option<CfdEvent>, TOne) {
+    type Rest = TOne;
+
+    fn extract_event(self) -> (Option<CfdEvent>, Self::Rest) {
+        (self.0, self.1)
+    }
+}
+
 impl<TOne> ExtractEventFromTuple for (CfdEvent, TOne) {
     type Rest = TOne;
 
