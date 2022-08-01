@@ -174,6 +174,12 @@ where
             tracing::debug_span!("next rollover message")
         }
 
+        let contract_symbol = self
+            .executor
+            .execute(order_id, |cfd| Ok((None, cfd.contract_symbol())))
+            .await
+            .unwrap();
+
         let mut tasks = Tasks::default();
         tasks.add_fallible(
             {
@@ -188,7 +194,7 @@ where
                         funding_rate_short,
                         tx_fee_rate,
                     } = rates
-                        .get_rates()
+                        .get_rates(contract_symbol)
                         .await
                         .context("Failed to get rates")?;
 
