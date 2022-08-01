@@ -128,11 +128,16 @@ where
         } = msg;
         let order_id = propose.order_id;
 
-        let base_dlc_params = match self
+        let (base_dlc_params, contract_symbol) = match self
             .executor
             .execute(order_id, |cfd| {
                 cfd.verify_counterparty_peer_id(&peer_id.into())?;
-                cfd.start_rollover_maker(propose.from_commit_txid)
+
+                let (event, base_dlc_params) =
+                    cfd.start_rollover_maker(propose.from_commit_txid)?;
+                let contract_symbol = cfd.contract_symbol();
+
+                Ok((event, base_dlc_params, contract_symbol))
             })
             .await
             .context("Rollover failed after handling taker proposal")
@@ -186,7 +191,10 @@ where
                         funding_rate_long,
                         funding_rate_short,
                         tx_fee_rate,
-                    } = rates.get_rates().await.context("Failed to get rates")?;
+                    } = rates
+                        .get_rates(contract_symbol)
+                        .await
+                        .context("Failed to get rates")?;
 
                     let (rollover_params, dlc, position, oracle_event_ids, funding_rate) = executor
                         .execute(order_id, |cfd| {

@@ -18,7 +18,6 @@ use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::Cets;
 use maia_core::CfdTransactions;
 use maia_core::PartyParams;
-use model::olivia;
 use model::olivia::BitMexPriceEventId;
 use model::shared_protocol::verify_adaptor_signature;
 use model::shared_protocol::verify_cets;
@@ -38,6 +37,7 @@ use model::Timestamp;
 use model::TransactionExt;
 use model::TxFeeRate;
 use model::CET_TIMELOCK;
+use model::{olivia, ContractSymbol};
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -554,7 +554,7 @@ pub trait GetAnnouncements {
 
 #[async_trait]
 pub trait GetRates {
-    async fn get_rates(&self) -> Result<Rates>;
+    async fn get_rates(&self, contract_symbol: ContractSymbol) -> Result<Rates>;
 }
 
 /// Set of rates needed to accept rollover proposals.

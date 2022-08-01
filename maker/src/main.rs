@@ -177,6 +177,7 @@ async fn main() -> Result<()> {
             rocket::routes![
                 routes::maker_feed,
                 routes::put_offer_params,
+                routes::put_offer_params_for_symbol,
                 routes::post_cfd_action,
                 routes::get_health_check,
                 routes::get_cfds,

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add dynamic liquidation to the DLC, enabling the CFD to be unilaterally closed every hour by either party if the oracle attests to a price close to the ends of the payout curve's domain.
+- New dynamic route for maker `PUT /<contract_symbol>/offer/`. This allows the creation of offers with `<contract_symbol>`.
 
 ### Changed
 

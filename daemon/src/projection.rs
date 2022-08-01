@@ -83,7 +83,7 @@ pub struct Actor {
 
 pub struct Feeds {
     pub quote: watch::Receiver<Option<Quote>>,
-    pub offers: watch::Receiver<MakerOffers>,
+    pub offers: watch::Receiver<(ContractSymbol, MakerOffers)>,
     pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
 }
 
@@ -97,10 +97,14 @@ impl Actor {
         >,
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
-        let (tx_order, rx_order) = watch::channel(MakerOffers {
-            long: None,
-            short: None,
-        });
+        let (tx_order, rx_order) = watch::channel((
+            ContractSymbol::BtcUsd,
+            MakerOffers {
+                long: None,
+                short: None,
+            },
+        ));
+        // TODO: also make this symbol aware
         let (tx_quote, rx_quote) = watch::channel(None);
 
         let actor = Self {
@@ -783,7 +787,7 @@ impl Cfd {
 /// Internal struct to keep all the senders around in one place
 struct Tx {
     cfds: watch::Sender<Option<Vec<Cfd>>>,
-    pub order: watch::Sender<MakerOffers>,
+    pub order: watch::Sender<(ContractSymbol, MakerOffers)>,
     pub quote: watch::Sender<Option<Quote>>,
 }
 
@@ -811,7 +815,10 @@ impl Tx {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
-    fn send_order_update(&self, offers: Option<model::MakerOffers>) {
+    fn send_order_update(
+        &self,
+        (contract_symbol, offers): (ContractSymbol, Option<model::MakerOffers>),
+    ) {
         let (long, short) = match offers {
             None => (None, None),
             Some(offers) => {
@@ -843,7 +850,7 @@ impl Tx {
 
         let projection_offers = MakerOffers { long, short };
 
-        let _ = self.order.send(projection_offers);
+        let _ = self.order.send((contract_symbol, projection_offers));
     }
 }
 
@@ -1165,7 +1172,7 @@ impl Actor {
         );
     }
 
-    fn handle(&mut self, msg: Update<Option<model::MakerOffers>>) {
+    fn handle(&mut self, msg: Update<(ContractSymbol, Option<model::MakerOffers>)>) {
         self.tx.send_order_update(msg.0);
     }
 
