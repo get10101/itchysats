@@ -8,19 +8,11 @@ use otel_tests::otel_test;
 
 #[otel_test]
 async fn taker_notices_lack_of_maker() {
-    let maker_config = MakerConfig::default()
-        .with_dedicated_port(35123)
-        .with_dedicated_libp2p_port(35124); // set fixed ports so the taker can reconnect
+    let maker_config = MakerConfig::default().with_dedicated_libp2p_port(35124); // set fixed ports so the taker can reconnect
     let maker = Maker::start(&maker_config).await;
 
     let taker_config = TakerConfig::default();
-    let mut taker = Taker::start(
-        &taker_config,
-        maker.listen_addr,
-        maker.identity,
-        maker.connect_addr.clone(),
-    )
-    .await;
+    let mut taker = Taker::start(&taker_config, maker.identity, maker.connect_addr.clone()).await;
 
     wait_next_connection_status_to_maker(&mut taker, ConnectionStatus::Online).await;
 

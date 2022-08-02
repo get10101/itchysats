@@ -6,7 +6,6 @@ use anyhow::Result;
 use clap::Parser;
 use daemon::bdk::bitcoin;
 use daemon::bdk::FeeRate;
-use daemon::connection::connect;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
 use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
 use daemon::monitor;
@@ -347,13 +346,6 @@ async fn main() -> Result<()> {
         taker.price_feed_actor.clone().into(),
     );
     tasks.add(projection_context.run(proj_actor));
-
-    tasks.add(connect(
-        taker.maker_online_status_feed_receiver.clone(),
-        taker.connection_actor.clone(),
-        maker_identity,
-        possible_addresses,
-    ));
 
     let mission_success = rocket::custom(figment)
         .manage(projection_feeds)
