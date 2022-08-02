@@ -22,6 +22,7 @@ use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
+use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
@@ -56,9 +57,34 @@ pub struct IdentityInfo {
     pub(crate) taker_peer_id: String,
 }
 
-#[rocket::get("/feed")]
+#[derive(Debug, Copy, Clone)]
+pub enum ContractSymbol {
+    BtcUsd,
+}
+
+impl From<ContractSymbol> for model::ContractSymbol {
+    fn from(symbol: ContractSymbol) -> Self {
+        match symbol {
+            ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
+        }
+    }
+}
+
+impl<'r> FromParam<'r> for ContractSymbol {
+    type Error = anyhow::Error;
+
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        match param.to_lowercase().as_str() {
+            "btcusd" => Ok(ContractSymbol::BtcUsd),
+            _ => anyhow::bail!("Unknown contract symbol provided: {param}"),
+        }
+    }
+}
+
+#[rocket::get("/<contract_symbol>/feed")]
 #[instrument(name = "GET /feed", skip_all)]
 pub async fn feed(
+    contract_symbol: ContractSymbol,
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
@@ -68,8 +94,14 @@ pub async fn feed(
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let mut rx_offers = rx.offers.clone();
-    let mut rx_quote = rx.quote.clone();
+    let rx_offers = rx.offers.get(&contract_symbol.into());
+    // TODO: get rid of this unwrap: ideally we would fail the route if we don't have a receiver
+    let mut rx_offers = rx_offers.unwrap().clone();
+
+    // TODO: get rid of this unwrap: ideally we would fail the route if we don't have a receiver
+    let rx_quote = rx.quote.get(&contract_symbol.into());
+    let mut rx_quote = rx_quote.unwrap().clone();
+
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
     let mut rx_maker_identity = rx_maker_identity.inner().clone();

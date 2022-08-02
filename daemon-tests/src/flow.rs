@@ -3,7 +3,9 @@ use anyhow::Result;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
 use daemon::projection::MakerOffers;
+use model::ContractSymbol;
 use model::OrderId;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -11,19 +13,26 @@ use tokio::sync::watch;
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 90 } else { 30 });
 
 pub async fn next_maker_offers(
-    rx_a: &mut watch::Receiver<MakerOffers>,
-    rx_b: &mut watch::Receiver<MakerOffers>,
+    rx_a: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
+    rx_b: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
 ) -> Result<(MakerOffers, MakerOffers)> {
-    let wait_until_a = next(rx_a);
-    let wait_until_b = next(rx_b);
+    // TODO: don't hardcode this maybe?
+    let mut rx_a = rx_a.get(&ContractSymbol::BtcUsd).unwrap().clone();
+    let mut rx_b = rx_b.get(&ContractSymbol::BtcUsd).unwrap().clone();
+    let wait_until_a = next(&mut rx_a);
+    let wait_until_b = next(&mut rx_b);
 
     let (a, b) = tokio::join!(wait_until_a, wait_until_b);
 
     Ok((a?, b?))
 }
 
-pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Result<bool> {
-    let maker_offers = next(rx).await?;
+pub async fn is_next_offers_none(
+    rx: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
+) -> Result<bool> {
+    // TODO: don't hardcode this maybe?
+    let mut rx = rx.get(&ContractSymbol::BtcUsd).cloned().unwrap();
+    let maker_offers = next(&mut rx).await?;
     Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
 }
 

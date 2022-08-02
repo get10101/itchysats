@@ -53,6 +53,7 @@ use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -292,11 +293,14 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
 
     is_next_offers_none(taker.offers_feed()).await.unwrap();
 
+    tracing::debug!("Sending {offer_params:?}");
     maker.set_offer_params(offer_params).await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed())
         .await
         .unwrap();
+
+    tracing::debug!("Received from maker {received:?}");
 
     mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
 
@@ -620,7 +624,7 @@ impl Maker {
             .txid()
     }
 
-    pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
+    pub fn offers_feed(&mut self) -> &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>> {
         &mut self.feeds.offers
     }
 
@@ -816,11 +820,13 @@ impl Taker {
         self.first_cfd().aggregated().latest_fees()
     }
 
-    pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
+    pub fn offers_feed(&mut self) -> &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>> {
         &mut self.feeds.offers
     }
 
-    pub fn quote_feed(&mut self) -> &mut watch::Receiver<Option<projection::Quote>> {
+    pub fn quote_feed(
+        &mut self,
+    ) -> &mut HashMap<ContractSymbol, watch::Receiver<Option<projection::Quote>>> {
         &mut self.feeds.quote
     }
 

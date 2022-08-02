@@ -924,6 +924,7 @@ dependencies = [
  "sqlite-db",
  "sqlx",
  "statrs",
+ "strum",
  "test-case",
  "thiserror",
  "time",
@@ -2252,6 +2253,8 @@ dependencies = [
  "serde_json",
  "serde_test",
  "serde_with",
+ "strum",
+ "strum_macros",
  "thiserror",
  "time",
  "tracing",
@@ -4413,6 +4416,25 @@ checksum = "b73800bcca56045d5ab138a48cd28a96093335335deaa916f22b5749c4150c79"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn",
+]
+
+[[package]]
+name = "strum"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "063e6045c0e62079840579a7e47a355ae92f60eb74daaf156fb1e84ba164e63f"
+
+[[package]]
+name = "strum_macros"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4faebde00e8ff94316c01800f9054fd2ba77d30d9e922541913051d1d978918b"
+dependencies = [
+ "heck 0.4.0",
+ "proc-macro2",
+ "quote",
+ "rustversion",
  "syn",
 ]
 

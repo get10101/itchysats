@@ -24,6 +24,7 @@ use std::ops::Sub;
 use std::str;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use strum_macros::EnumIter;
 use time::OffsetDateTime;
 
 mod cfd;
@@ -454,7 +455,7 @@ impl From<Decimal> for Percent {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, EnumIter)]
 pub enum ContractSymbol {
     BtcUsd,
 }

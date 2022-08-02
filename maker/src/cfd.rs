@@ -105,7 +105,7 @@ pub struct TakerDisconnected {
 #[derive(Clone, Copy)]
 pub struct GetOffers;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OfferParams {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
@@ -759,6 +759,7 @@ where
             )))
             .await?;
 
+        tracing::info!("Sending offers {maker_offers:?}");
         // 3. Inform connected takers
         if let Err(e) = self
             .takers

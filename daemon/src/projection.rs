@@ -53,6 +53,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::time::Duration;
+use strum::IntoEnumIterator;
 use time::OffsetDateTime;
 use tokio::sync::watch;
 use tracing::info_span;
@@ -82,8 +83,8 @@ pub struct Actor {
 }
 
 pub struct Feeds {
-    pub quote: watch::Receiver<Option<Quote>>,
-    pub offers: watch::Receiver<MakerOffers>,
+    pub quote: HashMap<ContractSymbol, watch::Receiver<Option<Quote>>>,
+    pub offers: HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
     pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
 }
 
@@ -97,28 +98,36 @@ impl Actor {
         >,
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
-        // TODO: Expose a hashmap
-        let (tx_order, rx_order) = watch::channel(MakerOffers {
-            long: None,
-            short: None,
-        });
-        // TODO: also make this symbol aware
-        let (tx_quote, rx_quote) = watch::channel(None);
+        let mut tx_orders = HashMap::new();
+        let mut rx_orders = HashMap::new();
+        let mut tx_quotes = HashMap::new();
+        let mut rx_quotes = HashMap::new();
+        for symbol in ContractSymbol::iter() {
+            let (tx_order, rx_order) = watch::channel(MakerOffers {
+                long: None,
+                short: None,
+            });
+            tx_orders.insert(symbol, tx_order);
+            rx_orders.insert(symbol, rx_order);
+            let (tx_quote, rx_quote) = watch::channel(None);
+            tx_quotes.insert(symbol, tx_quote);
+            rx_quotes.insert(symbol, rx_quote);
+        }
 
         let actor = Self {
             db,
             tx: Tx {
                 cfds: tx_cfds,
-                order: tx_order,
-                quote: tx_quote,
+                order: tx_orders,
+                quote: tx_quotes,
             },
             state: State::new(network),
             price_feed,
         };
         let feeds = Feeds {
             cfds: rx_cfds,
-            offers: rx_order,
-            quote: rx_quote,
+            offers: rx_orders,
+            quote: rx_quotes,
         };
 
         (actor, feeds)
@@ -785,8 +794,8 @@ impl Cfd {
 /// Internal struct to keep all the senders around in one place
 struct Tx {
     cfds: watch::Sender<Option<Vec<Cfd>>>,
-    pub order: watch::Sender<MakerOffers>,
-    pub quote: watch::Sender<Option<Quote>>,
+    pub order: HashMap<ContractSymbol, watch::Sender<MakerOffers>>,
+    pub quote: HashMap<ContractSymbol, watch::Sender<Option<Quote>>>,
 }
 
 impl Tx {
@@ -810,18 +819,32 @@ impl Tx {
     }
 
     fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
-        let _ = self.quote.send(quote.map(|q| q.into()));
+        // TODO: make xtra_bitmex_price_feed::Quote symbol dependent
+        match self.quote.get(&ContractSymbol::BtcUsd) {
+            None => {
+                tracing::warn!("No quote feed for quote found")
+            }
+            Some(sender) => {
+                let _ = sender.send(quote.map(|q| q.into()));
+            }
+        }
     }
 
+    // TODO: ideally this would take a `MakerOffers` and not a hashmap
     fn send_order_update(&self, offers: HashMap<ContractSymbol, MakerOffers>) {
-        // TODO: Send hashmap when UI can support it
-        // Or: Split into different feeds, one per ContractSymbol
-        let _ = self.order.send(
-            offers
-                .get(&ContractSymbol::BtcUsd)
-                .cloned()
-                .unwrap_or_default(),
-        );
+        for symbol in ContractSymbol::iter() {
+            match (self.order.get(&symbol), offers.get(&symbol)) {
+                (None, Some(symbol)) => {
+                    tracing::warn!("No feed registered for {symbol:?}")
+                }
+                (Some(sender), Some(symbol)) => {
+                    sender.send(symbol.clone()).unwrap_or_default();
+                }
+                _ => {
+                    // all good
+                }
+            }
+        }
     }
 }
 

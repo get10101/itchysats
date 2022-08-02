@@ -42,18 +42,24 @@ use uuid::Uuid;
 pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sled::Tree>>;
 
 #[allow(clippy::too_many_arguments)]
-#[rocket::get("/feed")]
-#[instrument(name = "GET /feed", skip_all)]
+#[rocket::get("/<contract_symbol>/feed")]
+#[instrument(name = "GET /<contract_symbol>/feed", skip_all)]
 pub async fn maker_feed(
+    contract_symbol: ContractSymbol,
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let mut rx_offers = rx.offers.clone();
+    let rx_offers = rx.offers.get(&contract_symbol.into());
+    // TODO: get rid of this unwrap: ideally we would fail the route if we don't have a receiver
+    let mut rx_offers = rx_offers.unwrap().clone();
     let mut rx_wallet = rx_wallet.inner().clone();
-    let mut rx_quote = rx.quote.clone();
+
+    // TODO: get rid of this unwrap: ideally we would fail the route if we don't have a receiver
+    let rx_quote = rx.quote.get(&contract_symbol.into());
+    let mut rx_quote = rx_quote.unwrap().clone();
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();

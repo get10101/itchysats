@@ -7,7 +7,7 @@ use daemon_tests::open_cfd;
 use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
 use daemon_tests::OpenCfdArgs;
-use model::Position;
+use model::{ContractSymbol, Position};
 use otel_tests::otel_test;
 use std::time::Duration;
 use tokio_extras::time::sleep;
@@ -29,7 +29,12 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+    let mut quote_receiver = taker
+        .quote_feed()
+        .get(&ContractSymbol::BtcUsd)
+        .unwrap()
+        .clone();
+    next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
     taker.system.propose_settlement(order_id).await.unwrap();
 
@@ -56,7 +61,12 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+    let mut quote_receiver = taker
+        .quote_feed()
+        .get(&ContractSymbol::BtcUsd)
+        .unwrap()
+        .clone();
+    next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
     taker.system.propose_settlement(order_id).await.unwrap();
 
@@ -89,7 +99,13 @@ async fn collaboratively_close_an_open_cfd(position_maker: Position) {
     .await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    next_with(taker.quote_feed(), |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+    // TODO: maybe not hardcode here?
+    let mut quote_receiver = taker
+        .quote_feed()
+        .get(&ContractSymbol::BtcUsd)
+        .unwrap()
+        .clone();
+    next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
     taker.system.propose_settlement(order_id).await.unwrap();
 
