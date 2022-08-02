@@ -12,6 +12,7 @@ use tokio::sync::watch;
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 90 } else { 30 });
 
+/// Wait and return next non-empty maker offers
 pub async fn next_maker_offers(
     rx_a: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
     rx_b: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
@@ -19,8 +20,17 @@ pub async fn next_maker_offers(
     // TODO: don't hardcode this maybe?
     let mut rx_a = rx_a.get(&ContractSymbol::BtcUsd).unwrap().clone();
     let mut rx_b = rx_b.get(&ContractSymbol::BtcUsd).unwrap().clone();
-    let wait_until_a = next(&mut rx_a);
-    let wait_until_b = next(&mut rx_b);
+
+    let non_empty_offer = |offer: MakerOffers| {
+        if offer != MakerOffers::default() {
+            Some(offer)
+        } else {
+            None
+        }
+    };
+
+    let wait_until_a = next_with(&mut rx_a, non_empty_offer);
+    let wait_until_b = next_with(&mut rx_b, non_empty_offer);
 
     let (a, b) = tokio::join!(wait_until_a, wait_until_b);
 
