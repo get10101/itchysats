@@ -174,7 +174,7 @@ impl<'r> FromParam<'r> for ContractSymbol {
     }
 }
 
-#[rocket::put("/offer/<symbol>", data = "<offer_params>")]
+#[rocket::put("<symbol>/offer/", data = "<offer_params>")]
 #[instrument(name = "PUT /offer", skip(maker, _auth), err)]
 pub async fn put_offer_params_for_symbol(
     symbol: Result<ContractSymbol>,
