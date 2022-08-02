@@ -1,6 +1,6 @@
 use daemon_tests::maia::OliviaData;
-use daemon_tests::mock_oracle_announcements;
 use daemon_tests::open_cfd;
+use daemon_tests::rollover::rollover;
 use daemon_tests::settle_non_collaboratively;
 use daemon_tests::start_both;
 use daemon_tests::OpenCfdArgs;
@@ -80,11 +80,13 @@ async fn given_rollover_when_oracle_attests_long_liquidation_price_can_liquidate
     );
 
     let oracle_data_rollover = OliviaData::example_1();
-    mock_oracle_announcements(&mut maker, &mut taker, oracle_data_rollover.announcements()).await;
-
-    taker
-        .trigger_rollover_with_latest_dlc_params(order_id)
-        .await;
+    rollover(
+        &mut maker,
+        &mut taker,
+        order_id,
+        oracle_data_rollover.clone(),
+    )
+    .await;
 
     let first_liquidation_event = taker.latest_dlc().liquidation_event_ids()[0];
     let attestation = oracle_data_rollover
