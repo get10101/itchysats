@@ -61,7 +61,6 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio_extras::time::sleep;
 use tokio_extras::Tasks;
 use tracing::instrument;
 use xtra::Actor;
@@ -325,7 +324,6 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
     maker.system.accept_order(order_id).await.unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
 
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingOpen);
 
     confirm!(lock transaction, order_id, maker, taker);
@@ -350,7 +348,6 @@ pub async fn settle_non_collaboratively(
     attestation: &Attestation,
 ) {
     confirm!(commit transaction, order_id, maker, taker);
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // After CetTimelockExpired, we're only waiting for attestation
@@ -358,18 +355,13 @@ pub async fn settle_non_collaboratively(
 
     // Delivering the wrong attestation does not move state to `PendingCet`
     simulate_attestation!(taker, maker, order_id, &dummy_wrong_attestation());
-
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 
     // Delivering correct attestation moves the state `PendingCet`
     simulate_attestation!(taker, maker, order_id, attestation);
-
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::PendingCet);
 
     confirm!(cet, order_id, maker, taker);
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
     wait_next_state!(order_id, maker, taker, CfdState::Closed);
 }
 

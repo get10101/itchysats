@@ -9,8 +9,6 @@ use daemon_tests::wait_next_state;
 use daemon_tests::OpenCfdArgs;
 use model::Position;
 use otel_tests::otel_test;
-use std::time::Duration;
-use tokio_extras::time::sleep;
 
 #[otel_test]
 async fn collaboratively_close_an_open_cfd_maker_going_short() {
@@ -44,8 +42,6 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
     confirm!(commit transaction, order_id, maker, taker);
 
     maker.system.reject_settlement(order_id).await.unwrap();
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 }
 
@@ -71,8 +67,6 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
     confirm!(commit transaction, order_id, maker, taker);
 
     maker.system.accept_settlement(order_id).await.unwrap();
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
 }
 
@@ -102,12 +96,8 @@ async fn collaboratively_close_an_open_cfd(position_maker: Position) {
     );
 
     maker.system.accept_settlement(order_id).await.unwrap();
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-
     wait_next_state!(order_id, maker, taker, CfdState::PendingClose);
+
     confirm!(close transaction, order_id, maker, taker);
-
-    sleep(Duration::from_secs(5)).await; // need to wait a bit until both transition
-
     wait_next_state!(order_id, maker, taker, CfdState::Closed);
 }
