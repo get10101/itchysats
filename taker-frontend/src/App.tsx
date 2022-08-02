@@ -164,7 +164,8 @@ export const App = () => {
 
     let incompatible = false;
     if (makerCompatibilityOrUndefined) {
-        incompatible = makerCompatibilityOrUndefined.unsupported_protocols !== undefined
+        incompatible = makerCompatibilityOrUndefined.unsupported_protocols !== null
+            && makerCompatibilityOrUndefined.unsupported_protocols !== undefined
             && makerCompatibilityOrUndefined.unsupported_protocols.length > 0;
     }
 
