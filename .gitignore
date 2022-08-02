@@ -24,7 +24,3 @@
 /testnet
 !/testnet/maker_seed
 !/testnet/taker_seed
-
-
-# Clion IDE
-.idea
