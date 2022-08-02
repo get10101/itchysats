@@ -10,12 +10,21 @@ use tokio::sync::watch;
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 120 } else { 30 });
 
+/// Wait and return next non-empty maker offers
 pub async fn next_maker_offers(
     rx_a: &mut watch::Receiver<MakerOffers>,
     rx_b: &mut watch::Receiver<MakerOffers>,
 ) -> Result<(MakerOffers, MakerOffers)> {
-    let wait_until_a = next(rx_a);
-    let wait_until_b = next(rx_b);
+    let non_empty_offer = |offer: MakerOffers| {
+        if offer.long.is_some() && offer.short.is_some() {
+            Some(offer)
+        } else {
+            None
+        }
+    };
+
+    let wait_until_a = next_with(rx_a, non_empty_offer);
+    let wait_until_b = next_with(rx_b, non_empty_offer);
 
     let (a, b) = tokio::join!(wait_until_a, wait_until_b);
 
