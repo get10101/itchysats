@@ -4,7 +4,6 @@ use daemon::projection::CfdState;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::maia::OliviaData;
-use daemon_tests::mock_oracle_announcements;
 use daemon_tests::open_cfd;
 use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
@@ -30,7 +29,6 @@ async fn rollover_an_open_cfd_maker_going_short() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -48,7 +46,6 @@ async fn rollover_an_open_cfd_maker_going_long() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -68,7 +65,6 @@ async fn double_rollover_an_open_cfd() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -78,7 +74,6 @@ async fn double_rollover_an_open_cfd() {
         &mut taker,
         order_id,
         OliviaData::example_0(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
     .await;
@@ -114,7 +109,6 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -122,14 +116,13 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
     let taker_commit_txid_after_first_rollover = taker.latest_commit_txid();
     let taker_settlement_event_id_after_first_rollover = taker.latest_settlement_event_id();
     let taker_dlc_after_first_rollover = taker.latest_dlc();
-    let taker_complete_fee_after_first_rollover = taker.latest_fees();
+    let taker_complete_fee_after_first_rollover = taker.latest_complete_fee();
 
     rollover(
         &mut maker,
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         // The second rollover increases the complete fees to 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
@@ -146,7 +139,7 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         .await;
 
     // 2. Retry the rollover from the first rollover DLC
-    rollover(
+    rollover_from_commit_tx(
         &mut maker,
         &mut taker,
         order_id,
@@ -167,7 +160,6 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         // Additional rollover increases the complete fees to 72h
         fee_calculator.complete_fee_for_rollover_hours(72),
     )
@@ -182,7 +174,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
     let taker_commit_txid_after_contract_setup = taker.latest_commit_txid();
     let taker_settlement_event_id_after_contract_setup = taker.latest_settlement_event_id();
     let taker_dlc_after_contract_setup = taker.latest_dlc();
-    let taker_complete_fee_after_contract_setup = taker.latest_fees();
+    let taker_complete_fee_after_contract_setup = taker.latest_complete_fee();
 
     // 1. Do a rollover
     // For the first rollover we expect to be charged 24h
@@ -191,7 +183,6 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -209,7 +200,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
 
     // When retrying the rollover we expect to be charged the same amount (i.e. 24h, no fee
     // increase)
-    rollover(
+    rollover_from_commit_tx(
         &mut maker,
         &mut taker,
         order_id,
@@ -232,7 +223,6 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
     .await;
@@ -246,7 +236,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
     let taker_commit_txid_after_contract_setup = taker.latest_commit_txid();
     let taker_settlement_event_id_after_contract_setup = taker.latest_settlement_event_id();
     let taker_dlc_after_contract_setup = taker.latest_dlc();
-    let taker_complete_fee_after_contract_setup = taker.latest_fees();
+    let taker_complete_fee_after_contract_setup = taker.latest_complete_fee();
 
     // 1. Do two rollovers
     rollover(
@@ -254,7 +244,6 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -264,7 +253,6 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         // The second rollover increases the complete fees to 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
@@ -281,7 +269,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         )
         .await;
 
-    rollover(
+    rollover_from_commit_tx(
         &mut maker,
         &mut taker,
         order_id,
@@ -303,7 +291,6 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut taker,
         order_id,
         OliviaData::example_1(),
-        None,
         // After another rollover we expect to be charged for 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
@@ -352,87 +339,27 @@ pub async fn rollover(
     taker: &mut Taker,
     order_id: OrderId,
     oracle_data: OliviaData,
-    from_params_taker: Option<(Txid, BitMexPriceEventId)>,
-    (expected_fees_after_rollover_maker, expected_fees_after_rollover_taker): (
-        SignedAmount,
-        SignedAmount,
-    ),
+    expected_fees: (SignedAmount, SignedAmount),
 ) {
-    // make sure the expected oracle data is mocked
-    mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
+    daemon_tests::rollover::rollover(maker, taker, order_id, oracle_data).await;
+    daemon_tests::rollover::assert_rollover_fees(maker, taker, expected_fees);
+}
 
-    let commit_tx_id_before_rollover_maker = maker.latest_commit_txid();
-    let commit_tx_id_before_rollover_taker = taker.latest_commit_txid();
-
-    match from_params_taker {
-        None => {
-            taker
-                .trigger_rollover_with_latest_dlc_params(order_id)
-                .await;
-        }
-        Some((from_commit_txid, from_settlement_event_id)) => {
-            taker
-                .trigger_rollover_with_specific_params(
-                    order_id,
-                    from_commit_txid,
-                    from_settlement_event_id,
-                )
-                .await;
-        }
-    }
-
-    wait_next_state!(order_id, maker, taker, CfdState::RolloverSetup);
-    wait_next_state!(order_id, maker, taker, CfdState::Open);
-
-    let maker_cfd = maker.first_cfd();
-    let taker_cfd = taker.first_cfd();
-
-    assert_eq!(
-        expected_fees_after_rollover_maker, maker_cfd.accumulated_fees,
-        "Maker's fees don't match predicted fees after rollover"
-    );
-    assert_eq!(
-        expected_fees_after_rollover_taker, taker_cfd.accumulated_fees,
-        "Taker's fees don't match predicted fees after rollover"
-    );
-
-    // Ensure that the event ID of the latest dlc is the event ID used for rollover
-    assert_eq!(
-        oracle_data.settlement_announcement().id,
-        maker_cfd
-            .aggregated()
-            .latest_dlc()
-            .as_ref()
-            .unwrap()
-            .settlement_event_id,
-        "Taker's latest event-id does not match given event-id after rollover"
-    );
-    assert_eq!(
-        oracle_data.settlement_announcement().id,
-        taker_cfd
-            .aggregated()
-            .latest_dlc()
-            .as_ref()
-            .unwrap()
-            .settlement_event_id,
-        "Taker's latest event-id does not match given event-id after rollover"
-    );
-
-    assert_ne!(
-        commit_tx_id_before_rollover_maker,
-        maker.latest_commit_txid(),
-        "The commit_txid of the taker should have changed after the rollover"
-    );
-
-    assert_ne!(
-        commit_tx_id_before_rollover_taker,
-        taker.latest_commit_txid(),
-        "The commit_txid of the maker should have changed after the rollover"
-    );
-
-    assert_eq!(
-        taker.latest_commit_txid(),
-        maker.latest_commit_txid(),
-        "The maker and taker should have the same commit_txid after the rollover"
-    );
+pub async fn rollover_from_commit_tx(
+    maker: &mut Maker,
+    taker: &mut Taker,
+    order_id: OrderId,
+    oracle_data: OliviaData,
+    from_params_taker: Option<(Txid, BitMexPriceEventId)>,
+    expected_fees: (SignedAmount, SignedAmount),
+) {
+    daemon_tests::rollover::rollover_from_commit_tx(
+        maker,
+        taker,
+        order_id,
+        oracle_data,
+        from_params_taker,
+    )
+    .await;
+    daemon_tests::rollover::assert_rollover_fees(maker, taker, expected_fees);
 }

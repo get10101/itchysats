@@ -71,6 +71,7 @@ use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 pub mod flow;
 pub mod maia;
 pub mod mocks;
+pub mod rollover;
 
 #[macro_export]
 macro_rules! confirm {
@@ -612,6 +613,19 @@ impl Maker {
             .txid()
     }
 
+    pub fn latest_settlement_event_id(&mut self) -> BitMexPriceEventId {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .settlement_event_id
+    }
+
+    pub fn latest_accumulated_fees(&mut self) -> SignedAmount {
+        self.first_cfd().accumulated_fees
+    }
+
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
         &mut self.feeds.offers
     }
@@ -804,8 +818,14 @@ impl Taker {
             .clone()
     }
 
-    pub fn latest_fees(&mut self) -> CompleteFee {
+    /// Exposes the `CompleteFee` as stored in the aggregate
+    pub fn latest_complete_fee(&mut self) -> CompleteFee {
         self.first_cfd().aggregated().latest_fees()
+    }
+
+    /// Exposes the accumulated fees as exposed on the projection API
+    pub fn latest_accumulated_fees(&mut self) -> SignedAmount {
+        self.first_cfd().accumulated_fees
     }
 
     pub fn offers_feed(&mut self) -> &mut watch::Receiver<MakerOffers> {
