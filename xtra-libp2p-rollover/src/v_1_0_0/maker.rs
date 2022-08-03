@@ -341,8 +341,11 @@ where
                                 revocation_sk: base_dlc_params.revocation_sk_ours(),
                             },
                         ))))
-                        .await {
-                        tracing::warn!(%order_id, "Failed to last rollover message to taker, this rollover will likely be retried by the taker: {e:#}");
+                        .await
+                    {
+                        // If the taker tries to rollover again, they will do so from a previous
+                        // commit TXID compared to the maker's.
+                        tracing::warn!(%order_id, "Failed to send revocation keys to taker: {e:#}");
                     }
 
                     let revocation_sk_theirs = msg2.revocation_sk;
