@@ -206,7 +206,7 @@ pub async fn put_offer_params_for_symbol(
     // if we use `ContractSymbol` as arg directly the error gets lost. So we need to do this:
     let symbol = symbol.map_err(|e| {
         HttpApiProblem::new(StatusCode::BAD_REQUEST)
-            .title("Posting offer failed")
+            .title("Unknown ContractSymbol provided")
             .detail(format!("{e:#}"))
     })?;
     maker
