@@ -293,8 +293,6 @@ pub(crate) async fn emit_failed<E>(order_id: OrderId, e: anyhow::Error, executor
 where
     E: ExecuteOnCfd,
 {
-    tracing::error!(%order_id, "Rollover failed: {e:#}");
-
     if let Err(e) = executor
         .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
         .await
