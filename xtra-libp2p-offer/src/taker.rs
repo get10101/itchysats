@@ -36,7 +36,7 @@ impl Actor {
         };
 
         let err_handler =
-            move |e| async move { tracing::debug!(%peer, "Failed to process maker offers: {e:#}") };
+            move |e| async move { tracing::warn!(%peer, "Failed to process maker offers: {e:#}") };
 
         tokio_extras::spawn_fallible(&this, task, err_handler);
     }
