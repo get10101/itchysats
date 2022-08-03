@@ -200,16 +200,13 @@ impl Actor {
                 let executor = self.executor.clone();
                 move |failed| async move {
                     match failed {
-                        Failed::BeforeReceiving { source } => {
-                            emit_failed(order_id, source, &executor).await;
+                        e @ Failed::BeforeReceiving { .. } => {
+                            emit_failed(order_id, anyhow!(e), &executor).await;
                         }
-                        Failed::AfterReceiving { source, settlement } => {
-                            // TODO: proceed with the transaction when taker will be able to handle that case.
-                            tracing::trace!(
-                        ?settlement,
-                        "Failed after receiving. Ideally, we should be able to act upon this settlement"
-                    );
-                            emit_failed(order_id, source, &executor).await;
+                        e @ Failed::AfterReceiving { .. } => {
+                            // TODO: proceed with the transaction when taker will be able to handle
+                            // that case.
+                            emit_failed(order_id, anyhow!(e), &executor).await;
                         }
                     }
                 }

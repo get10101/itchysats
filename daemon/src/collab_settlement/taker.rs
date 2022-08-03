@@ -1,5 +1,6 @@
 use crate::collab_settlement::protocol::*;
 use crate::command;
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -79,17 +80,13 @@ impl Actor {
                 let executor = self.executor.clone();
                 move |e| async move {
                     match e {
-                        DialerFailed::AfterSendingSignature {
-                            unsigned_tx: _tx,
-                            error,
-                        } => {
+                        e @ DialerFailed::AfterSendingSignature { .. } => {
                             // TODO: We should start monitoring whether other party published the
                             // transaction
-                            emit_failed(order_id, error, &executor).await;
+                            emit_failed(order_id, anyhow!(e), &executor).await;
                         }
-                        DialerFailed::BeforeSendingSignature { source } => {
-                            tracing::debug!("failed before sending signature");
-                            emit_failed(order_id, source, &executor).await;
+                        e @ DialerFailed::BeforeSendingSignature { .. } => {
+                            emit_failed(order_id, anyhow!(e), &executor).await;
                         }
                         DialerFailed::Rejected => {
                             emit_rejected(order_id, &executor).await;
