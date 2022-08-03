@@ -135,11 +135,10 @@ where
                 cfd.start_rollover_maker(propose.from_commit_txid)
             })
             .await
+            .context("Rollover failed after handling taker proposal")
         {
             Ok(base_dlc_params) => base_dlc_params,
             Err(e) => {
-                tracing::warn!(%order_id, "Rollover failed after handling taker proposal: {e:#}");
-
                 // We have to append failed to ensure that we can rollover in the future
                 // The cfd logic might otherwise prevent us from starting a rollover if there is
                 // still one ongoing that was not properly ended.
