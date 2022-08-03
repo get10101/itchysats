@@ -63,7 +63,6 @@ export default function App() {
     const [symbol, setSymbol] = useState("btcusd");
     let symbolDefaults = Defaults[symbol];
 
-    // TODO: make this dynamic or subscribe to both
     let source = useEventSource({ source: `/api/${symbol}/feed`, options: { withCredentials: true } });
 
     let [leverages, setLeverages] = useState(["1", "2", "3"]);
