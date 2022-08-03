@@ -178,7 +178,7 @@ impl From<ContractSymbol> for model::ContractSymbol {
     fn from(symbol: ContractSymbol) -> Self {
         match symbol {
             ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
-            ContractSymbol::EthUsd => model::ContractSymbol::BtcUsd,
+            ContractSymbol::EthUsd => model::ContractSymbol::EthUsd,
         }
     }
 }
