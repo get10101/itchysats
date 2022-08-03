@@ -767,6 +767,25 @@ pub enum CompleteFee {
     None,
 }
 
+impl CompleteFee {
+    fn as_signed_amount(&self, position: Position) -> SignedAmount {
+        let abs_fee = match self {
+            CompleteFee::LongPaysShort(fee) | CompleteFee::ShortPaysLong(fee) => {
+                fee.to_signed().unwrap()
+            }
+            CompleteFee::None => SignedAmount::ZERO,
+        };
+
+        match (self, position) {
+            (CompleteFee::LongPaysShort(_), Position::Long)
+            | (CompleteFee::ShortPaysLong(_), Position::Short) => abs_fee * -1,
+            (CompleteFee::LongPaysShort(_), Position::Short)
+            | (CompleteFee::ShortPaysLong(_), Position::Long) => abs_fee,
+            (CompleteFee::None, _) => abs_fee,
+        }
+    }
+}
+
 /// Our own accumulated fees
 ///
 /// The balance being positive means we owe this amount to the other party.

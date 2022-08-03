@@ -121,6 +121,7 @@ impl From<OrderId> for Uuid {
 pub struct MakerOffers {
     pub long: Option<Offer>,
     pub short: Option<Offer>,
+
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate_long: FundingRate,
     pub funding_rate_short: FundingRate,
