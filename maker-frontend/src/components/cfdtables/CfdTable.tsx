@@ -28,8 +28,8 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
+import { useAsync } from "@react-hookz/web";
 import React from "react";
-import { useAsync } from "react-async";
 import { Column, Row, useExpanded, useSortBy, useTable } from "react-table";
 import createErrorToast from "../ErrorToast";
 import { HttpError } from "../HttpError";
@@ -45,15 +45,16 @@ export function CfdTable(
 ) {
     const toast = useToast();
 
-    let { run: postAction, isLoading: isActioning } = useAsync({
-        deferFn: async ([orderId, action]: any[]) => {
+    const [{ status: postActionStatus }, { execute: postAction }] = useAsync(
+        async (orderId: string, action: string) => {
             try {
                 await doPostAction(orderId, action);
             } catch (e) {
                 createErrorToast(toast, e);
             }
         },
-    });
+    );
+    const isActioning = postActionStatus === "loading";
 
     const tableData = React.useMemo(
         () => data,
@@ -201,7 +202,7 @@ export function CfdTable(
                                     colorScheme={colorSchemaForAction(action)}
                                     aria-label={action}
                                     icon={iconForAction(action)}
-                                    onClick={() => postAction(order_id, action)}
+                                    onClick={async () => await postAction(order_id, action)}
                                     isLoading={isActioning}
                                 />
                             </Tooltip>
