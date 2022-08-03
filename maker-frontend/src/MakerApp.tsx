@@ -8,6 +8,7 @@ import {
     Grid,
     GridItem,
     HStack,
+    Select,
     Stack,
     Switch,
     Tab,
@@ -35,11 +36,34 @@ import { CfdNewOfferParamsPayload, putCfdNewOfferParamsRequest, triggerWalletSyn
 const SPREAD_ASK = 1.01;
 const SPREAD_BID = 0.99;
 
+interface SymbolDefaults {
+    minQuantity: string;
+    maxQuantity: string;
+    shortPrice: string;
+    longPrice: string;
+}
+
+let Defaults: { [key: string]: SymbolDefaults } = {
+    btcusd: {
+        minQuantity: "100",
+        maxQuantity: "1000",
+        shortPrice: "0",
+        longPrice: "0",
+    } as SymbolDefaults,
+    ethusd: {
+        minQuantity: "1",
+        maxQuantity: "10000",
+        shortPrice: "0",
+        longPrice: "0",
+    } as SymbolDefaults,
+};
+
 export default function App() {
     document.title = "Hermes Maker";
+    const [symbol, setSymbol] = useState("btcusd");
+    let symbolDefaults = Defaults[symbol];
 
-    // TODO: make this dynamic or subscribe to both
-    let source = useEventSource({ source: "/api/btcusd/feed", options: { withCredentials: true } });
+    let source = useEventSource({ source: `/api/${symbol}/feed`, options: { withCredentials: true } });
 
     let [leverages, setLeverages] = useState(["1", "2", "3"]);
 
@@ -52,10 +76,10 @@ export default function App() {
 
     const toast = useToast();
 
-    let [minQuantity, setMinQuantity] = useState<string>("100");
-    let [maxQuantity, setMaxQuantity] = useState<string>("1000");
-    let [shortPrice, setShortPrice] = useState<string>("0");
-    let [longPrice, setLongPrice] = useState<string>("0");
+    let [minQuantity, setMinQuantity] = useState<string>(symbolDefaults.minQuantity);
+    let [maxQuantity, setMaxQuantity] = useState<string>(symbolDefaults.maxQuantity);
+    let [shortPrice, setShortPrice] = useState<string>(symbolDefaults.shortPrice);
+    let [longPrice, setLongPrice] = useState<string>(symbolDefaults.longPrice);
     let [autoRefreshShort, setAutoRefreshShort] = useState(true);
     let [autoRefreshLong, setAutoRefreshLong] = useState(true);
 
@@ -72,9 +96,9 @@ export default function App() {
     }, [priceInfo, autoRefreshLong]);
 
     const [{ status: newCfdStatus }, { execute: makeNewCfdSellOrder }] = useAsync(
-        async (payload: CfdNewOfferParamsPayload) => {
+        async (payload: CfdNewOfferParamsPayload, symbol: string) => {
             try {
-                await putCfdNewOfferParamsRequest(payload);
+                await putCfdNewOfferParamsRequest(payload, symbol);
             } catch (e) {
                 createErrorToast(toast, e);
             }
@@ -101,6 +125,15 @@ export default function App() {
     const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
     const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
 
+    const onSymbolChange = (value: string) => {
+        setSymbol(value);
+        let symbolDefaults = Defaults[value];
+        setMinQuantity(symbolDefaults.minQuantity);
+        setMaxQuantity(symbolDefaults.maxQuantity);
+        setShortPrice(symbolDefaults.shortPrice);
+        setLongPrice(symbolDefaults.longPrice);
+    };
+
     return (
         <Container maxWidth="120ch" marginTop="1rem">
             <HStack spacing={5}>
@@ -122,6 +155,12 @@ export default function App() {
                         width="100%"
                         alignItems="center"
                     >
+                        <Text align={"left"}>Contract Symbol</Text>
+                        <Select value={symbol} onChange={(item) => onSymbolChange(item.target.value)}>
+                            <option value="btcusd">BTCUSD</option>
+                            <option value="ethusd">ETHUSD</option>
+                        </Select>
+
                         <Text align={"left"}>Reference Price:</Text>
                         <CurrentPrice priceInfo={priceInfo} />
 
@@ -211,7 +250,7 @@ export default function App() {
                                         opening_fee: Number.parseFloat("100"),
                                         leverage_choices: leverages.map((val) => Number.parseInt(val)),
                                     };
-                                    await makeNewCfdSellOrder(payload);
+                                    await makeNewCfdSellOrder(payload, symbol);
                                 }}
                             >
                                 {makerLongOrder ? "Update Offers" : "Create Offers"}
