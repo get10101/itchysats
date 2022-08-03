@@ -3,6 +3,7 @@ use async_trait::async_trait;
 pub use bitmex_stream::Network;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
+use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 use time::OffsetDateTime;
@@ -12,7 +13,7 @@ use xtra_productivity::xtra_productivity;
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
 pub struct Actor {
-    latest_quote: Option<Quote>,
+    latest_quote: HashMap<ContractSymbol, Quote>,
 
     /// Contains the reason we are stopping.
     stop_reason: Option<Error>,
@@ -22,7 +23,7 @@ pub struct Actor {
 impl Actor {
     pub fn new(network: Network) -> Self {
         Self {
-            latest_quote: None,
+            latest_quote: HashMap::new(),
             stop_reason: None,
             network,
         }
@@ -106,11 +107,11 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: NewQuoteReceived) {
-        self.latest_quote = Some(msg.0);
+        self.latest_quote.insert(msg.0.symbol, msg.0);
     }
 
-    async fn handle(&mut self, _: LatestQuote) -> Option<Quote> {
-        self.latest_quote
+    async fn handle(&mut self, lq: LatestQuote) -> Option<Quote> {
+        self.latest_quote.get(&lq.0).cloned()
     }
 }
 
@@ -132,7 +133,7 @@ struct NewQuoteReceived(Quote);
 
 /// Request the latest quote from the price feed.
 #[derive(Debug, Clone, Copy)]
-pub struct LatestQuote;
+pub struct LatestQuote(pub ContractSymbol);
 
 #[derive(Clone, Copy)]
 pub struct Quote {
@@ -142,7 +143,9 @@ pub struct Quote {
     pub symbol: ContractSymbol,
 }
 
-#[derive(Debug, Clone, Copy, strum_macros::EnumString, strum_macros::Display, PartialEq)]
+#[derive(
+    Debug, Clone, Copy, strum_macros::EnumString, strum_macros::Display, PartialEq, Eq, Hash,
+)]
 pub enum ContractSymbol {
     #[strum(serialize = "XBTUSD")]
     BtcUsd,
