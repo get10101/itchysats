@@ -1484,6 +1484,18 @@
     prop-types "^15.7.2"
     tslib "^2.1.0"
 
+"@react-hookz/deep-equal@^1.0.2":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@react-hookz/deep-equal/-/deep-equal-1.0.3.tgz#e044bca38c1612ea8c1596ef858ef7cfea49dd7a"
+  integrity sha512-lGZR5l3YRjzeIOHtJhiq96vQKrsq+9lsCyv+0fROMQeSNWtLLzX3R+psHNi6nsoP3XEhspiZ92nsiPmdNo8ztQ==
+
+"@react-hookz/web@^15.0.1":
+  version "15.0.1"
+  resolved "https://registry.yarnpkg.com/@react-hookz/web/-/web-15.0.1.tgz#a6e5460dd16e54ccc0b899e1eed4ae29e871060f"
+  integrity sha512-nvVLUsDFv3fpZcINoy3I4MeaX8+yoKU21m2Ey2g0VAVqOMp+0GBBC6OHkzT2lRa2fiPIVuJwlmboSKQt7segfQ==
+  dependencies:
+    "@react-hookz/deep-equal" "^1.0.2"
+
 "@rollup/pluginutils@^4.1.1":
   version "4.1.2"
   resolved "https://registry.yarnpkg.com/@rollup/pluginutils/-/pluginutils-4.1.2.tgz#ed5821c15e5e05e32816f5fb9ec607cdf5a75751"

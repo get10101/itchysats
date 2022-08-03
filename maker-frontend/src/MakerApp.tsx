@@ -19,8 +19,8 @@ import {
     useToast,
     VStack,
 } from "@chakra-ui/react";
+import { useAsync } from "@react-hookz/web";
 import React, { useEffect, useState } from "react";
-import { useAsync } from "react-async";
 import { useEventSource } from "react-sse-hooks";
 import { CfdTable } from "./components/cfdtables/CfdTable";
 import CurrencyInputField from "./components/CurrencyInputField";
@@ -71,24 +71,28 @@ export default function App() {
         }
     }, [priceInfo, autoRefreshLong]);
 
-    let { run: makeNewCfdSellOrder, isLoading: isCreatingNewCfdOrder } = useAsync({
-        deferFn: async ([payload]: any[]) => {
+    const [{ status: newCfdStatus }, { execute: makeNewCfdSellOrder }] = useAsync(
+        async (payload: CfdNewOfferParamsPayload) => {
             try {
-                await putCfdNewOfferParamsRequest(payload as CfdNewOfferParamsPayload);
+                await putCfdNewOfferParamsRequest(payload);
             } catch (e) {
                 createErrorToast(toast, e);
             }
         },
-    });
-    let { run: syncWallet, isLoading: isSyncingWallet } = useAsync({
-        deferFn: async () => {
+    );
+    const isCreatingNewCfdOrder = newCfdStatus === "loading";
+
+    const [{ status: walletStatus }, { execute: syncWallet }] = useAsync(
+        async () => {
             try {
                 await triggerWalletSync();
             } catch (e) {
                 createErrorToast(toast, e);
             }
         },
-    });
+    );
+
+    const isSyncingWallet = walletStatus === "loading";
 
     const pendingOrders = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_ORDER);
     const pendingSettlements = cfds.filter((value) => value.state.getGroup() === StateGroupKey.PENDING_SETTLEMENT);
@@ -103,8 +107,8 @@ export default function App() {
                 <VStack>
                     <Wallet
                         walletInfo={walletInfo}
-                        syncWallet={() => {
-                            syncWallet();
+                        syncWallet={async () => {
+                            await syncWallet();
                         }}
                         isSyncingWallet={isSyncingWallet}
                     />
@@ -192,7 +196,7 @@ export default function App() {
                                 disabled={isCreatingNewCfdOrder || shortPrice === "0"}
                                 variant={"solid"}
                                 colorScheme={"blue"}
-                                onClick={() => {
+                                onClick={async () => {
                                     let payload: CfdNewOfferParamsPayload = {
                                         price_short: Number.parseFloat(shortPrice),
                                         price_long: Number.parseFloat(longPrice),
@@ -207,7 +211,7 @@ export default function App() {
                                         opening_fee: Number.parseFloat("100"),
                                         leverage_choices: leverages.map((val) => Number.parseInt(val)),
                                     };
-                                    makeNewCfdSellOrder(payload);
+                                    await makeNewCfdSellOrder(payload);
                                 }}
                             >
                                 {makerLongOrder ? "Update Offers" : "Create Offers"}
