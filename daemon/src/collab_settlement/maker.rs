@@ -120,7 +120,6 @@ impl Actor {
         let (transaction, proposal) = match result {
             Ok((transaction, proposal)) => (transaction, proposal),
             Err(e) => {
-                tracing::debug!(%order_id, %peer, "Failed to start collab settlement protocol: {e:#}");
                 emit_failed(order_id, e, &self.executor).await;
                 return;
             }
