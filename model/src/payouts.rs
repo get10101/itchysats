@@ -14,6 +14,8 @@ use maia_core::Payout;
 use std::collections::HashMap;
 
 mod payout_curve;
+#[cfg(test)]
+mod prop_compose;
 
 /// Payout combinations associated with the oracle events that may
 /// trigger them.
@@ -154,10 +156,10 @@ mod tests {
     use super::*;
     use crate::olivia::Announcement;
     use crate::olivia::BitMexPriceEventId;
-    use crate::payouts::payout_curve::prop_compose::arb_contracts;
-    use crate::payouts::payout_curve::prop_compose::arb_fee_flow;
-    use crate::payouts::payout_curve::prop_compose::arb_leverage;
-    use crate::payouts::payout_curve::prop_compose::arb_price;
+    use crate::payouts::prop_compose::arb_contracts;
+    use crate::payouts::prop_compose::arb_fee_flow;
+    use crate::payouts::prop_compose::arb_leverage;
+    use crate::payouts::prop_compose::arb_price;
     use proptest::prelude::*;
     use std::ops::Add;
     use time::ext::NumericalDuration;
