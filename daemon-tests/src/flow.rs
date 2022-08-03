@@ -12,14 +12,14 @@ use tokio::sync::watch;
 /// Waiting time for the time on the watch channel before returning error
 const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) { 90 } else { 30 });
 
-/// Wait and return next non-empty maker offers with `symbol`
+/// Wait and return next non-empty maker offers with `contract_symbol`
 pub async fn next_maker_offers(
     rx_a: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
     rx_b: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
-    symbol: &ContractSymbol,
+    contract_symbol: &ContractSymbol,
 ) -> Result<(MakerOffers, MakerOffers)> {
-    let mut rx_a = rx_a.get(symbol).unwrap().clone();
-    let mut rx_b = rx_b.get(symbol).unwrap().clone();
+    let mut rx_a = rx_a.get(contract_symbol).unwrap().clone();
+    let mut rx_b = rx_b.get(contract_symbol).unwrap().clone();
 
     let non_empty_offer = |offer: MakerOffers| {
         if offer != MakerOffers::default() {
@@ -39,9 +39,9 @@ pub async fn next_maker_offers(
 
 pub async fn is_next_offers_none(
     rx: &mut HashMap<ContractSymbol, watch::Receiver<MakerOffers>>,
-    symbol: &ContractSymbol,
+    contract_symbol: &ContractSymbol,
 ) -> Result<bool> {
-    let mut rx = rx.get(symbol).cloned().unwrap();
+    let mut rx = rx.get(contract_symbol).cloned().unwrap();
     let maker_offers = next(&mut rx).await?;
     Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
 }
