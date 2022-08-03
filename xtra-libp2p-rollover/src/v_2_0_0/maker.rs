@@ -162,7 +162,7 @@ where
                         .await
                 },
                 move |e| async move {
-                    tracing::debug!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
+                    tracing::warn!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
                 },
             );
             self.protocol_tasks.insert(order_id, tasks);
@@ -179,7 +179,7 @@ where
             {
                 let executor = self.executor.clone();
                 let oracle = self.oracle.clone();
-                let rates =  self.rates.clone();
+                let rates = self.rates.clone();
                 let oracle_pk = self.oracle_pk;
                 let n_payouts = self.n_payouts;
                 async move {
@@ -187,10 +187,7 @@ where
                         funding_rate_long,
                         funding_rate_short,
                         tx_fee_rate,
-                    } = rates
-                        .get_rates()
-                        .await
-                        .context("Failed to get rates")?;
+                    } = rates.get_rates().await.context("Failed to get rates")?;
 
                     let (rollover_params, dlc, position, oracle_event_ids, funding_rate) = executor
                         .execute(order_id, |cfd| {
@@ -203,7 +200,10 @@ where
                                 .accept_rollover_proposal(
                                     tx_fee_rate,
                                     funding_rate,
-                                    Some((base_dlc_params.settlement_event_id(), base_dlc_params.complete_fee())),
+                                    Some((
+                                        base_dlc_params.settlement_event_id(),
+                                        base_dlc_params.complete_fee(),
+                                    )),
                                     RolloverVersion::V3,
                                 )?;
 
@@ -231,7 +231,8 @@ where
                         .get_announcements(oracle_event_ids)
                         .await
                         .context("Failed to get announcement")?;
-                    let settlement_event_id = announcements.last().context("Empty to_event_ids")?.id;
+                    let settlement_event_id =
+                        announcements.last().context("Empty to_event_ids")?.id;
 
                     let funding_fee = *rollover_params.funding_fee();
 
@@ -245,7 +246,12 @@ where
                         .next()
                         .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                         .await
-                        .with_context(|| format!("Expected Msg0 within {} seconds", ROLLOVER_MSG_TIMEOUT.as_secs()))?
+                        .with_context(|| {
+                            format!(
+                                "Expected Msg0 within {} seconds",
+                                ROLLOVER_MSG_TIMEOUT.as_secs()
+                            )
+                        })?
                         .context("Empty stream instead of Msg0")?
                         .context("Unable to decode dialer Msg0")?
                         .into_rollover_msg()?
@@ -261,12 +267,8 @@ where
                         .await
                         .context("Failed to send Msg0")?;
 
-                    let punish_params = PunishParams::new(
-                        rev_pk,
-                        msg0.revocation_pk,
-                        publish_pk,
-                        msg0.publish_pk,
-                    );
+                    let punish_params =
+                        PunishParams::new(rev_pk, msg0.revocation_pk, publish_pk, msg0.publish_pk);
 
                     let own_cfd_txs = build_own_cfd_transactions(
                         &dlc,
@@ -285,7 +287,12 @@ where
                         .next()
                         .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                         .await
-                        .with_context(|| format!("Expected Msg1 within {} seconds", ROLLOVER_MSG_TIMEOUT.as_secs()))?
+                        .with_context(|| {
+                            format!(
+                                "Expected Msg1 within {} seconds",
+                                ROLLOVER_MSG_TIMEOUT.as_secs()
+                            )
+                        })?
                         .context("Empty stream instead of Msg1")?
                         .context("Unable to decode dialer Msg1")?
                         .into_rollover_msg()?
@@ -298,7 +305,11 @@ where
                         .await
                         .context("Failed to send Msg1")?;
 
-                    let commit_desc = build_commit_descriptor(dlc.identity_pk(), dlc.identity_counterparty, punish_params);
+                    let commit_desc = build_commit_descriptor(
+                        dlc.identity_pk(),
+                        dlc.identity_counterparty,
+                        punish_params,
+                    );
                     let (cets, refund_tx) = build_and_verify_cets_and_refund(
                         &dlc,
                         oracle_pk,
@@ -314,7 +325,12 @@ where
                         .next()
                         .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
                         .await
-                        .with_context(|| format!("Expected Msg2 within {} seconds", ROLLOVER_MSG_TIMEOUT.as_secs()))?
+                        .with_context(|| {
+                            format!(
+                                "Expected Msg2 within {} seconds",
+                                ROLLOVER_MSG_TIMEOUT.as_secs()
+                            )
+                        })?
                         .context("Empty stream instead of Msg2")?
                         .context("Unable to decode dialer Msg2")?
                         .into_rollover_msg()?
