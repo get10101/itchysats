@@ -1335,7 +1335,7 @@ impl Cfd {
     }
 
     pub fn fail_collaborative_settlement(self, error: anyhow::Error) -> CfdEvent {
-        tracing::error!(order_id=%self.id(), "Collaborative settlement failed: {:#}", error);
+        tracing::warn!(order_id = %self.id(), peer_id=?self.counterparty_peer_id, "Collaborative settlement failed: {error:#}");
 
         self.event(EventKind::CollaborativeSettlementFailed)
     }
