@@ -4,6 +4,7 @@ pub use bitmex_stream::Network;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
 use std::fmt;
+use std::str::FromStr;
 use time::OffsetDateTime;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
@@ -62,6 +63,7 @@ impl xtra::Actor for Actor {
                                     bid = %quote.bid,
                                     ask = %quote.ask,
                                     timestamp = %quote.timestamp,
+                                    symbol = %quote.symbol,
                                 );
 
                                 let is_our_address_disconnected = this
@@ -137,6 +139,13 @@ pub struct Quote {
     pub timestamp: OffsetDateTime,
     pub bid: Decimal,
     pub ask: Decimal,
+    pub symbol: ContractSymbol,
+}
+
+#[derive(Debug, Clone, Copy, strum_macros::EnumString, strum_macros::Display, PartialEq)]
+pub enum ContractSymbol {
+    #[strum(serialize = "XBTUSD")]
+    BtcUsd,
 }
 
 impl fmt::Debug for Quote {
@@ -166,10 +175,12 @@ impl Quote {
 
         let [quote] = table_message.data;
 
+        let symbol = ContractSymbol::from_str(quote.symbol.as_str())?;
         Ok(Some(Self {
             timestamp: quote.timestamp,
             bid: quote.bid_price,
             ask: quote.ask_price,
+            symbol,
         }))
     }
 
@@ -226,7 +237,8 @@ mod tests {
 
         assert_eq!(quote.bid, dec!(42640.5));
         assert_eq!(quote.ask, dec!(42641));
-        assert_eq!(quote.timestamp.unix_timestamp(), 1632192000)
+        assert_eq!(quote.timestamp.unix_timestamp(), 1632192000);
+        assert_eq!(quote.symbol, ContractSymbol::BtcUsd)
     }
 
     #[test]
@@ -252,6 +264,7 @@ mod tests {
             timestamp,
             bid: dec!(10),
             ask: dec!(10),
+            symbol: ContractSymbol::BtcUsd,
         }
     }
 }
