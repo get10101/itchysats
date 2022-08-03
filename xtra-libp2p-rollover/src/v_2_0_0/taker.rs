@@ -107,10 +107,13 @@ where
             from_settlement_event_id,
         } = msg;
 
-        let substream = match self.open_substream(maker_peer_id).await {
+        let substream = match self
+            .open_substream(maker_peer_id)
+            .await
+            .context("Failed to start rollover")
+        {
             Ok(substream) => substream,
             Err(e) => {
-                tracing::error!(%order_id, "Failed to start rollover: {e:#}");
                 emit_failed(order_id, e, &self.executor).await;
                 return;
             }
