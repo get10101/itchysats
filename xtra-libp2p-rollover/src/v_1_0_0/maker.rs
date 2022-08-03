@@ -162,7 +162,7 @@ where
                         .await
                 },
                 move |e| async move {
-                    tracing::debug!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
+                    tracing::warn!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
                 },
             );
             self.protocol_tasks.insert(order_id, tasks);
