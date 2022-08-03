@@ -155,7 +155,9 @@ impl Actor {
 
                     let DialerSignature { dialer_signature } = framed
                         .next()
-                        .timeout(SETTLEMENT_MSG_TIMEOUT, || tracing::debug_span!("receive dialer signature"))
+                        .timeout(SETTLEMENT_MSG_TIMEOUT, || {
+                            tracing::debug_span!("receive dialer signature")
+                        })
                         .await
                         .with_context(|| {
                             format!(
@@ -181,7 +183,9 @@ impl Actor {
                     );
 
                     framed
-                        .send(ListenerMessage::ListenerSignature(ListenerSignature { listener_signature }))
+                        .send(ListenerMessage::ListenerSignature(ListenerSignature {
+                            listener_signature,
+                        }))
                         .await
                         .map_err(|source| Failed::AfterReceiving {
                             source: anyhow!(source),
@@ -233,7 +237,7 @@ impl Actor {
                     .await
             },
             move |e| async move {
-                tracing::debug!(%order_id, "Failed to reject collaborative settlement: {e:#}")
+                tracing::warn!(%order_id, "Failed to reject collaborative settlement: {e:#}")
             },
         );
         self.protocol_tasks.insert(order_id, tasks);
