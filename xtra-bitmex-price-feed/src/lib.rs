@@ -3,7 +3,9 @@ use async_trait::async_trait;
 pub use bitmex_stream::Network;
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
+use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 use time::OffsetDateTime;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
@@ -11,7 +13,7 @@ use xtra_productivity::xtra_productivity;
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
 pub struct Actor {
-    latest_quote: Option<Quote>,
+    latest_quote: HashMap<ContractSymbol, Quote>,
 
     /// Contains the reason we are stopping.
     stop_reason: Option<Error>,
@@ -21,7 +23,7 @@ pub struct Actor {
 impl Actor {
     pub fn new(network: Network) -> Self {
         Self {
-            latest_quote: None,
+            latest_quote: HashMap::new(),
             stop_reason: None,
             network,
         }
@@ -62,6 +64,7 @@ impl xtra::Actor for Actor {
                                     bid = %quote.bid,
                                     ask = %quote.ask,
                                     timestamp = %quote.timestamp,
+                                    symbol = %quote.symbol,
                                 );
 
                                 let is_our_address_disconnected = this
@@ -104,11 +107,11 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: NewQuoteReceived) {
-        self.latest_quote = Some(msg.0);
+        self.latest_quote.insert(msg.0.symbol, msg.0);
     }
 
-    async fn handle(&mut self, _: LatestQuote) -> Option<Quote> {
-        self.latest_quote
+    async fn handle(&mut self, lq: LatestQuote) -> Option<Quote> {
+        self.latest_quote.get(&lq.0).cloned()
     }
 }
 
@@ -130,13 +133,22 @@ struct NewQuoteReceived(Quote);
 
 /// Request the latest quote from the price feed.
 #[derive(Debug, Clone, Copy)]
-pub struct LatestQuote;
+pub struct LatestQuote(pub ContractSymbol);
 
 #[derive(Clone, Copy)]
 pub struct Quote {
     pub timestamp: OffsetDateTime,
     pub bid: Decimal,
     pub ask: Decimal,
+    pub symbol: ContractSymbol,
+}
+
+#[derive(
+    Debug, Clone, Copy, strum_macros::EnumString, strum_macros::Display, PartialEq, Eq, Hash,
+)]
+pub enum ContractSymbol {
+    #[strum(serialize = "XBTUSD")]
+    BtcUsd,
 }
 
 impl fmt::Debug for Quote {
@@ -166,10 +178,12 @@ impl Quote {
 
         let [quote] = table_message.data;
 
+        let symbol = ContractSymbol::from_str(quote.symbol.as_str())?;
         Ok(Some(Self {
             timestamp: quote.timestamp,
             bid: quote.bid_price,
             ask: quote.ask_price,
+            symbol,
         }))
     }
 
@@ -226,7 +240,8 @@ mod tests {
 
         assert_eq!(quote.bid, dec!(42640.5));
         assert_eq!(quote.ask, dec!(42641));
-        assert_eq!(quote.timestamp.unix_timestamp(), 1632192000)
+        assert_eq!(quote.timestamp.unix_timestamp(), 1632192000);
+        assert_eq!(quote.symbol, ContractSymbol::BtcUsd)
     }
 
     #[test]
@@ -252,6 +267,7 @@ mod tests {
             timestamp,
             bid: dec!(10),
             ask: dec!(10),
+            symbol: ContractSymbol::BtcUsd,
         }
     }
 }

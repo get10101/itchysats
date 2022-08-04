@@ -1199,8 +1199,11 @@ impl xtra::Actor for Actor {
                 loop {
                     {
                         let span = info_span!("Update projection with latest quote");
+                        // TODO: subscribe to all the quotes
                         let latest = price_feed
-                            .send(xtra_bitmex_price_feed::LatestQuote)
+                            .send(xtra_bitmex_price_feed::LatestQuote(
+                                xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
+                            ))
                             .instrument(span.clone())
                             .await;
 

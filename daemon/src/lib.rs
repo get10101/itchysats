@@ -417,9 +417,12 @@ where
 
     #[instrument(skip(self), err)]
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
+        // TODO: we need to know which contract symbol the order is for
         let latest_quote = self
             .price_feed_actor
-            .send(xtra_bitmex_price_feed::LatestQuote)
+            .send(xtra_bitmex_price_feed::LatestQuote(
+                xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
+            ))
             .await
             .context("Price feed not available")?
             .context("No quote available")?;

@@ -991,6 +991,7 @@ pub fn dummy_quote() -> Quote {
         timestamp: OffsetDateTime::now_utc(),
         bid: dummy_price(),
         ask: dummy_price(),
+        symbol: xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
     }
 }
 
