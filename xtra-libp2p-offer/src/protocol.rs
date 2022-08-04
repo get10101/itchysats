@@ -1,3 +1,4 @@
+use crate::MakerOffers;
 use asynchronous_codec::FramedRead;
 use asynchronous_codec::FramedWrite;
 use asynchronous_codec::JsonCodec;
@@ -6,7 +7,6 @@ use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
 use futures::SinkExt;
 use futures::StreamExt;
-use model::MakerOffers;
 
 static MESSAGES_SENT: conquer_once::Lazy<prometheus::IntCounter> = conquer_once::Lazy::new(|| {
     prometheus::register_int_counter!(

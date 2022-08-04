@@ -401,7 +401,7 @@ where
             .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
                 self.current_offers
                     .get(&order_to_take.contract_symbol)
-                    .cloned(),
+                    .map(|offer| offer.clone().into()),
             ))
             .await
         {
@@ -768,7 +768,9 @@ where
 
         if let Err(e) = self
             .libp2p_offer
-            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(Some(maker_offers)))
+            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(Some(
+                maker_offers.into(),
+            )))
             .await
         {
             tracing::warn!("{e:#}");
