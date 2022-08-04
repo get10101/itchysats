@@ -13,7 +13,6 @@ use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
 use daemon::bdk::bitcoin::SignedAmount;
 use daemon::bdk::bitcoin::Txid;
-use daemon::connection::connect;
 use daemon::libp2p_utils::create_connect_multiaddr;
 use daemon::maia_core::secp256k1_zkp::XOnlyPublicKey;
 use daemon::online_status::ConnectionStatus;
@@ -506,7 +505,6 @@ pub async fn start_both() -> (Maker, Taker) {
     let maker = Maker::start(&MakerConfig::default()).await;
     let taker = Taker::start(
         &TakerConfig::default(),
-        maker.listen_addr,
         maker.identity,
         maker.connect_addr.clone(),
     )
@@ -520,18 +518,10 @@ pub struct MakerConfig {
     seed: RandomSeed,
     pub heartbeat_interval: Duration,
     n_payouts: usize,
-    dedicated_port: Option<u16>,
     dedicated_libp2p_port: Option<u16>,
 }
 
 impl MakerConfig {
-    pub fn with_dedicated_port(self, port: u16) -> Self {
-        Self {
-            dedicated_port: Some(port),
-            ..self
-        }
-    }
-
     pub fn with_dedicated_libp2p_port(self, port: u16) -> Self {
         Self {
             dedicated_libp2p_port: Some(port),
@@ -547,7 +537,6 @@ impl Default for MakerConfig {
             seed: RandomSeed::default(),
             heartbeat_interval: HEARTBEAT_INTERVAL,
             n_payouts: N_PAYOUTS,
-            dedicated_port: None,
             dedicated_libp2p_port: None,
         }
     }
@@ -632,10 +621,7 @@ impl Maker {
 
     #[instrument(name = "Start maker", skip_all)]
     pub async fn start(config: &MakerConfig) -> Self {
-        let port = match config.dedicated_port {
-            Some(port) => port,
-            None => find_random_free_port().await,
-        };
+        let port = find_random_free_port().await;
         let libp2p_port = match config.dedicated_libp2p_port {
             Some(port) => port,
             None => find_random_free_port().await,
@@ -843,7 +829,6 @@ impl Taker {
     #[instrument(name = "Start taker", skip_all)]
     pub async fn start(
         config: &TakerConfig,
-        maker_address: SocketAddr,
         maker_identity: Identity,
         maker_multiaddr: Multiaddr,
     ) -> Self {
@@ -904,13 +889,6 @@ impl Taker {
             taker.price_feed_actor.clone().into(),
         );
         tasks.add(projection_context.run(proj_actor));
-
-        tasks.add(connect(
-            taker.maker_online_status_feed_receiver.clone(),
-            taker.connection_actor.clone(),
-            maker_identity,
-            vec![maker_address],
-        ));
 
         Self {
             id: model::Identity::new(identities.identity_pk),

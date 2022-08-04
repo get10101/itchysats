@@ -6,12 +6,15 @@ use crate::listen_protocols::TAKER_LISTEN_PROTOCOLS;
 use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
+pub use bdk;
 use bdk::bitcoin;
 use bdk::bitcoin::Amount;
 use bdk::FeeRate;
 use identify::PeerInfo;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
+pub use maia;
+pub use maia_core;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::olivia;
@@ -43,20 +46,15 @@ use xtra_libp2p_ping::pong;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
-use xtras::HandlerTimeoutExt;
-
-pub use bdk;
-pub use maia;
-pub use maia_core;
 
 pub mod archive_closed_cfds;
 pub mod archive_failed_cfds;
 pub mod auto_rollover;
 pub mod collab_settlement;
 pub mod command;
-pub mod connection;
 pub mod identify;
 pub mod libp2p_utils;
+pub mod listen_protocols;
 pub mod monitor;
 pub mod noise;
 pub mod online_status;
@@ -68,9 +66,7 @@ pub mod projection;
 pub mod seed;
 pub mod setup_contract;
 // TODO: Remove setup_contract_deprecated module after phasing out legacy networking
-pub mod listen_protocols;
 pub mod setup_contract_deprecated;
-pub mod setup_taker;
 pub mod taker_cfd;
 pub mod wallet;
 pub mod wire;
@@ -90,7 +86,6 @@ pub const N_PAYOUTS: usize = 200;
 
 pub struct TakerActorSystem<O, W, P> {
     pub cfd_actor: Address<taker_cfd::Actor>,
-    pub connection_actor: Address<connection::Actor>,
     wallet_actor: Address<W>,
     _oracle_actor: Address<O>,
     pub auto_rollover_actor: Address<auto_rollover::Actor>,
@@ -220,7 +215,6 @@ where
         });
         tasks.add(collab_settlement_supervisor.run_log_summary());
 
-        let (connection_actor_addr, connection_actor_ctx) = Context::new(None);
         let cfd_actor_addr = taker_cfd::Actor::new(
             db.clone(),
             projection_actor,
@@ -267,17 +261,6 @@ where
         )
         .create(None)
         .spawn(&mut tasks);
-
-        tasks.add(
-            connection_actor_ctx
-                .with_handler_timeout(Duration::from_secs(120))
-                .run(connection::Actor::new(
-                    identity.identity_sk.clone(),
-                    identity.peer_id(),
-                    connect_timeout,
-                    environment,
-                )),
-        );
 
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
@@ -370,7 +353,6 @@ where
 
         Ok(Self {
             cfd_actor: cfd_actor_addr,
-            connection_actor: connection_actor_addr,
             wallet_actor: wallet_actor_addr,
             _oracle_actor: oracle_addr,
             auto_rollover_actor: auto_rollover_addr,
