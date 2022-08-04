@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use asynchronous_codec::Framed;
 use asynchronous_codec::JsonCodec;
 use bdk_ext::keypair;
+use futures::executor::block_on;
 use futures::SinkExt;
 use futures::StreamExt;
 use libp2p_core::PeerId;
@@ -174,12 +175,6 @@ where
             tracing::debug_span!("next rollover message")
         }
 
-        let contract_symbol = self
-            .executor
-            .execute(order_id, |cfd| Ok((None, cfd.contract_symbol())))
-            .await
-            .unwrap();
-
         let mut tasks = Tasks::default();
         tasks.add_fallible(
             {
@@ -189,17 +184,19 @@ where
                 let oracle_pk = self.oracle_pk;
                 let n_payouts = self.n_payouts;
                 async move {
-                    let Rates {
-                        funding_rate_long,
-                        funding_rate_short,
-                        tx_fee_rate,
-                    } = rates
-                        .get_rates(contract_symbol)
-                        .await
-                        .context("Failed to get rates")?;
 
-                    let (rollover_params, dlc, position, oracle_event_ids, funding_rate) = executor
+
+                    let (rollover_params, dlc, position, oracle_event_ids, funding_rate, tx_fee_rate) = executor
                         .execute(order_id, |cfd| {
+                            let contract_symbol = cfd.contract_symbol();
+                            let Rates {
+                                funding_rate_long,
+                                funding_rate_short,
+                                tx_fee_rate,
+                            } = block_on(async {
+                                rates.get_rates(contract_symbol).await
+                            }).context("Failed to get rates")?;
+
                             let funding_rate = match cfd.position() {
                                 Position::Long => funding_rate_long,
                                 Position::Short => funding_rate_short,
@@ -213,7 +210,7 @@ where
                                     RolloverVersion::V3,
                                 )?;
 
-                            Ok((event, params, dlc, position, oracle_event_ids, funding_rate))
+                            Ok((event, params, dlc, position, oracle_event_ids, funding_rate, tx_fee_rate))
                         })
                         .await?;
 
