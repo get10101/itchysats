@@ -1,7 +1,7 @@
-use crate::payouts::payout_curve::basis::BSplineBasis;
-use crate::payouts::payout_curve::splineobject::SplineObject;
-use crate::payouts::payout_curve::utils::*;
-use crate::payouts::payout_curve::Error;
+use crate::payouts::inverse::basis::BSplineBasis;
+use crate::payouts::inverse::splineobject::SplineObject;
+use crate::payouts::inverse::utils::*;
+use crate::payouts::inverse::Error;
 use ndarray::prelude::*;
 use ndarray::s;
 use std::cmp::max;

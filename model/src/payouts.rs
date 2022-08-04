@@ -1,4 +1,5 @@
 use crate::olivia;
+use crate::payouts;
 use crate::CompleteFee;
 use crate::Leverage;
 use crate::Position;
@@ -13,7 +14,7 @@ use maia_core::Announcement;
 use maia_core::Payout;
 use std::collections::HashMap;
 
-mod payout_curve;
+mod inverse;
 #[cfg(test)]
 mod prop_compose;
 
@@ -64,7 +65,7 @@ pub struct Payouts {
 impl Payouts {
     #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(err)]
-    pub fn new(
+    pub fn new_inverse(
         position: Position,
         role: Role,
         price: Price,
@@ -74,7 +75,7 @@ impl Payouts {
         n_payouts: usize,
         fee: CompleteFee,
     ) -> Result<Self> {
-        let payouts = payout_curve::calculate(
+        let payouts = payouts::inverse::calculate(
             price,
             quantity,
             long_leverage,
@@ -167,7 +168,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn given_generated_payouts_then_can_build_oracle_payouts(
+        fn given_generated_inverse_payouts_then_can_build_oracle_payouts(
             position in prop_oneof![Just(Position::Long), Just(Position::Short)],
             role in prop_oneof![Just(Role::Maker), Just(Role::Taker)],
             price in arb_price(1000.0, 100_000.0),
@@ -175,7 +176,7 @@ mod tests {
             short_leverage in arb_leverage(1, 100),
             fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
         ) {
-            let payouts = Payouts::new(
+            let payouts = Payouts::new_inverse(
                 position,
                 role,
                 price,

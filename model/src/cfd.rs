@@ -1146,7 +1146,7 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
-        let payouts = Payouts::new(
+        let payouts = Payouts::new_inverse(
             self.position,
             self.role,
             self.initial_price,
@@ -1200,7 +1200,7 @@ impl Cfd {
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payouts = Payouts::new(
+        let payouts = Payouts::new_inverse(
             self.position,
             self.role,
             self.initial_price,

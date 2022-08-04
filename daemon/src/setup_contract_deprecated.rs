@@ -158,7 +158,7 @@ pub async fn new(
     let settlement_event_id = announcement.id;
     let payouts = HashMap::from_iter([(
         announcement.into(),
-        Payouts::new(
+        Payouts::new_inverse(
             position,
             role,
             setup_params.price,
@@ -468,7 +468,7 @@ pub async fn roll_over(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        Payouts::new(
+        Payouts::new_inverse(
             our_position,
             our_role,
             rollover_params.price,

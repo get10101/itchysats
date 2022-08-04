@@ -308,7 +308,7 @@ async fn create_cfd_transactions(
 
     let settlement_event_id = announcements.last().context("Empty announcements")?.id;
 
-    let payouts = Payouts::new(
+    let payouts = Payouts::new_inverse(
         position,
         role,
         setup_params.price,
