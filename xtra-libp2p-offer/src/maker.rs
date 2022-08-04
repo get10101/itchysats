@@ -45,7 +45,7 @@ impl Actor {
         };
 
         let err_handler =
-            move |e| async move { tracing::debug!(%peer, "Failed to send offers: {e:#}") };
+            move |e| async move { tracing::warn!(%peer, "Failed to send offers: {e:#}") };
 
         let this = ctx.address().expect("self to be alive");
         spawn_fallible(&this, task.instrument(span), err_handler);

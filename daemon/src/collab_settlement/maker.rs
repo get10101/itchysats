@@ -120,7 +120,6 @@ impl Actor {
         let (transaction, proposal) = match result {
             Ok((transaction, proposal)) => (transaction, proposal),
             Err(e) => {
-                tracing::debug!(%order_id, %peer, "Failed to start collab settlement protocol: {e:#}");
                 emit_failed(order_id, e, &self.executor).await;
                 return;
             }
@@ -156,7 +155,9 @@ impl Actor {
 
                     let DialerSignature { dialer_signature } = framed
                         .next()
-                        .timeout(SETTLEMENT_MSG_TIMEOUT, || tracing::debug_span!("receive dialer signature"))
+                        .timeout(SETTLEMENT_MSG_TIMEOUT, || {
+                            tracing::debug_span!("receive dialer signature")
+                        })
                         .await
                         .with_context(|| {
                             format!(
@@ -182,7 +183,9 @@ impl Actor {
                     );
 
                     framed
-                        .send(ListenerMessage::ListenerSignature(ListenerSignature { listener_signature }))
+                        .send(ListenerMessage::ListenerSignature(ListenerSignature {
+                            listener_signature,
+                        }))
                         .await
                         .map_err(|source| Failed::AfterReceiving {
                             source: anyhow!(source),
@@ -197,16 +200,13 @@ impl Actor {
                 let executor = self.executor.clone();
                 move |failed| async move {
                     match failed {
-                        Failed::BeforeReceiving { source } => {
-                            emit_failed(order_id, source, &executor).await;
+                        e @ Failed::BeforeReceiving { .. } => {
+                            emit_failed(order_id, anyhow!(e), &executor).await;
                         }
-                        Failed::AfterReceiving { source, settlement } => {
-                            // TODO: proceed with the transaction when taker will be able to handle that case.
-                            tracing::trace!(
-                        ?settlement,
-                        "Failed after receiving. Ideally, we should be able to act upon this settlement"
-                    );
-                            emit_failed(order_id, source, &executor).await;
+                        e @ Failed::AfterReceiving { .. } => {
+                            // TODO: proceed with the transaction when taker will be able to handle
+                            // that case.
+                            emit_failed(order_id, anyhow!(e), &executor).await;
                         }
                     }
                 }
@@ -234,7 +234,7 @@ impl Actor {
                     .await
             },
             move |e| async move {
-                tracing::debug!(%order_id, "Failed to reject collaborative settlement: {e:#}")
+                tracing::warn!(%order_id, "Failed to reject collaborative settlement: {e:#}")
             },
         );
         self.protocol_tasks.insert(order_id, tasks);

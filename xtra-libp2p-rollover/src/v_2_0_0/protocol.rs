@@ -267,8 +267,6 @@ pub(crate) async fn emit_completed<E>(
     {
         tracing::error!(%order_id, "Failed to execute rollover completed: {e:#}")
     }
-
-    tracing::info!(%order_id, "Rollover completed");
 }
 
 pub(crate) async fn emit_rejected<E>(order_id: OrderId, executor: &E)
@@ -283,16 +281,12 @@ where
     {
         tracing::error!(%order_id, "Failed to execute rollover rejected: {e:#}")
     }
-
-    tracing::info!(%order_id, "Rollover rejected");
 }
 
 pub(crate) async fn emit_failed<E>(order_id: OrderId, e: anyhow::Error, executor: &E)
 where
     E: ExecuteOnCfd,
 {
-    tracing::error!(%order_id, "Rollover failed: {e:#}");
-
     if let Err(e) = executor
         .execute(order_id, |cfd| Ok(cfd.fail_rollover(e)))
         .await

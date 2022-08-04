@@ -18,7 +18,7 @@ impl Actor {
             &ctx.address().expect("self to be alive"),
             future,
             move |e| async move {
-                tracing::debug!(%peer, "Inbound ping protocol failed: {e}");
+                tracing::warn!(%peer, "Inbound ping protocol failed: {e}");
             },
         );
     }
