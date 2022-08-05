@@ -172,15 +172,12 @@ pub async fn post_cfd_action(
         CfdAction::RejectRollover => maker.reject_rollover(order_id).await,
         CfdAction::Commit => maker.commit(order_id).await,
         CfdAction::Settle => {
-            let msg = "Collaborative settlement can only be triggered by taker";
-            tracing::error!(msg);
-            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
+            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
+                .detail("Collaborative settlement can only be triggered by taker"));
         }
     };
 
     result.map_err(|e| {
-        tracing::warn!(%order_id, %action, "Processing action failed: {e:#}");
-
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title(action.to_string() + " failed")
             .detail(format!("{e:#}"))
