@@ -150,37 +150,48 @@ pub async fn put_offer_params(
     Ok(())
 }
 
-#[rocket::post("/cfd/<id>/<action>")]
-#[instrument(name = "POST /cfd/<id>/<action>", skip(maker, _auth), err)]
+#[rocket::post("/cfd/<order_id>/<action>")]
+#[instrument(name = "POST /cfd/<order_id>/<action>", skip(maker, _auth), err)]
 pub async fn post_cfd_action(
-    id: Uuid,
+    order_id: Uuid,
     action: String,
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
-    let id = OrderId::from(id);
+    let order_id = OrderId::from(order_id);
     let action = action.parse().map_err(|_| {
         HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(format!("Invalid action: {}", action))
     })?;
 
     let result = match action {
-        CfdAction::AcceptOrder => maker.accept_order(id).await,
-        CfdAction::RejectOrder => maker.reject_order(id).await,
-        CfdAction::AcceptSettlement => maker.accept_settlement(id).await,
-        CfdAction::RejectSettlement => maker.reject_settlement(id).await,
-        CfdAction::AcceptRollover => maker.accept_rollover(id).await,
-        CfdAction::RejectRollover => maker.reject_rollover(id).await,
-        CfdAction::Commit => maker.commit(id).await,
+        CfdAction::AcceptOrder => maker.accept_order(order_id).await,
+        CfdAction::RejectOrder => maker.reject_order(order_id).await,
+        CfdAction::AcceptSettlement => maker.accept_settlement(order_id).await,
+        CfdAction::RejectSettlement => maker.reject_settlement(order_id).await,
+        CfdAction::AcceptRollover => {
+            if let Err(e) = maker.accept_rollover(order_id).await {
+                // Only matters for legacy rollovers, which we won't investigate anyway
+                tracing::trace!("Failed to accept rollover: {e:#}")
+            };
+
+            Ok(())
+        }
+        CfdAction::RejectRollover => {
+            if let Err(e) = maker.reject_rollover(order_id).await {
+                // Only matters for legacy rollovers, which we won't investigate anyway
+                tracing::trace!("Failed to reject rollover: {e:#}")
+            };
+
+            Ok(())
+        }
+        CfdAction::Commit => maker.commit(order_id).await,
         CfdAction::Settle => {
-            let msg = "Collaborative settlement can only be triggered by taker";
-            tracing::error!(msg);
-            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(msg));
+            return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
+                .detail("Collaborative settlement can only be triggered by taker"));
         }
     };
 
     result.map_err(|e| {
-        tracing::warn!(order_id=%id, %action, "Processing action failed: {e:#}");
-
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title(action.to_string() + " failed")
             .detail(format!("{e:#}"))

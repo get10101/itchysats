@@ -183,15 +183,15 @@ pub async fn post_order_request(
     Ok(())
 }
 
-#[rocket::post("/cfd/<id>/<action>")]
-#[instrument(name = "POST /cfd/<id>/<action>", skip(taker, _auth), err)]
+#[rocket::post("/cfd/<order_id>/<action>")]
+#[instrument(name = "POST /cfd/<order_id>/<action>", skip(taker, _auth), err)]
 pub async fn post_cfd_action(
-    id: Uuid,
+    order_id: Uuid,
     action: String,
     taker: &State<Taker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
-    let id = OrderId::from(id);
+    let order_id = OrderId::from(order_id);
     let action = action.parse().map_err(|_| {
         HttpApiProblem::new(StatusCode::BAD_REQUEST).detail(format!("Invalid action: {}", action))
     })?;
@@ -206,8 +206,8 @@ pub async fn post_cfd_action(
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
                 .detail(format!("taker cannot invoke action {action}")));
         }
-        CfdAction::Commit => taker.commit(id).await,
-        CfdAction::Settle => taker.propose_settlement(id).await,
+        CfdAction::Commit => taker.commit(order_id).await,
+        CfdAction::Settle => taker.propose_settlement(order_id).await,
     };
 
     result.map_err(|e| {
