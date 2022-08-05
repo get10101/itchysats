@@ -1355,17 +1355,17 @@ impl Cfd {
             None => return Ok(None),
         };
 
-        let cet = dlc.signed_cet(attestation)?;
-
-        let cet = match cet {
-            Ok(Ok(cet)) => cet,
-            Ok(Err(IrrelevantAttestation { .. })) => {
+        let cet = match dlc.signed_cet(attestation) {
+            Ok(cet) => cet,
+            Err(SignCetError::IrrelevantAttestation { .. }) => {
                 return Ok(None);
             }
-            Err(PriceOutOfRange { id, .. }) if dlc.liquidation_event_ids().contains(&id) => {
+            Err(SignCetError::PriceOutOfRange { id, .. })
+                if dlc.liquidation_event_ids().contains(&id) =>
+            {
                 return Ok(None);
             }
-            Err(e @ PriceOutOfRange { .. }) => {
+            Err(e) => {
                 return Err(anyhow!(e).context("Failed to decrypt settlement CET"));
             }
         };
@@ -2323,23 +2323,21 @@ impl Dlc {
     pub fn signed_cet(
         &self,
         attestation: &olivia::Attestation,
-    ) -> Result<Result<Result<Transaction, IrrelevantAttestation>, PriceOutOfRange>> {
+    ) -> Result<Transaction, SignCetError> {
         let event_id = attestation.id;
         let price = attestation.price;
-        let cets = match self.cets.get(&event_id) {
-            Some(cets) => cets,
-            None => {
-                return Ok(Ok(Err(IrrelevantAttestation {
-                    id: event_id,
-                    txid: self.lock.0.txid(),
-                })))
-            }
-        };
+        let cets = self
+            .cets
+            .get(&event_id)
+            .ok_or(SignCetError::IrrelevantAttestation {
+                id: event_id,
+                txid: self.lock.0.txid(),
+            })?;
 
         let cet = cets
             .iter()
             .find(|Cet { range, .. }| range.contains(&price))
-            .ok_or(PriceOutOfRange {
+            .ok_or(SignCetError::PriceOutOfRange {
                 id: event_id,
                 price,
             })?;
@@ -2347,7 +2345,9 @@ impl Dlc {
 
         let mut decryption_sk = attestation.scalars[0];
         for oracle_attestation in attestation.scalars[1..cet.n_bits].iter() {
-            decryption_sk.add_assign(oracle_attestation.as_ref())?;
+            decryption_sk
+                .add_assign(oracle_attestation.as_ref())
+                .context("Failed to construct decryption sk")?;
         }
 
         let cet = cet
@@ -2369,7 +2369,9 @@ impl Dlc {
             bdk::bitcoin::secp256k1::PublicKey::from_secret_key(SECP256K1, &self.identity),
         );
 
-        let counterparty_sig = encsig.decrypt(&decryption_sk)?;
+        let counterparty_sig = encsig
+            .decrypt(&decryption_sk)
+            .context("Failed to decrypt counterparty CET encsig")?;
         let counterparty_pubkey = self.identity_counterparty;
 
         let signed_cet = maia::finalize_spend_transaction(
@@ -2379,7 +2381,7 @@ impl Dlc {
             (counterparty_pubkey, counterparty_sig),
         )?;
 
-        Ok(Ok(Ok(signed_cet)))
+        Ok(signed_cet)
     }
 
     /// All the oracle event IDs associated with the DLC.
@@ -2423,18 +2425,14 @@ impl Dlc {
     }
 }
 
-#[derive(Debug, thiserror::Error, Clone, Copy)]
-#[error("Attestation {id} is irrelevant for DLC with lock TX {txid}")]
-pub struct IrrelevantAttestation {
-    id: BitMexPriceEventId,
-    txid: Txid,
-}
-
-#[derive(Debug, thiserror::Error, Clone, Copy)]
-#[error("Attested price {price} is not in range of any CETs for event {id}")]
-pub struct PriceOutOfRange {
-    id: BitMexPriceEventId,
-    price: u64,
+#[derive(Debug, thiserror::Error)]
+pub enum SignCetError {
+    #[error("Attestation {id} is irrelevant for DLC with lock TX {txid}")]
+    IrrelevantAttestation { id: BitMexPriceEventId, txid: Txid },
+    #[error("Attested price {price} is not in range of any CETs for event {id}")]
+    PriceOutOfRange { id: BitMexPriceEventId, price: u64 },
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
 
 /// Information which we need to remember in order to construct a
