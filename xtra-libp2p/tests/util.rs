@@ -72,11 +72,11 @@ impl Actor for EndpointSubscriberStats {
 #[xtra_productivity(message_impl = false)]
 impl EndpointSubscriberStats {
     async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
-        self.connected_peers.insert(msg.peer);
+        self.connected_peers.insert(msg.peer_id);
     }
 
     async fn handle(&mut self, msg: endpoint::ConnectionDropped) {
-        self.connected_peers.remove(&msg.peer);
+        self.connected_peers.remove(&msg.peer_id);
     }
 
     async fn handle(&mut self, msg: endpoint::ListenAddressAdded) {

@@ -65,6 +65,9 @@ pub async fn insert(
         EventKind::RolloverCompleted { dlc: None, .. } => {
             // We ignore rollover completed events without DLC data as we don't need to store
             // anything
+            tracing::error!(
+                "Invalid RolloverCompleted event: Trying to insert a RolloverCompleted event without a DLC"
+            )
         }
         _ => {
             tracing::error!("Invalid event type. Use `append_event` function instead")

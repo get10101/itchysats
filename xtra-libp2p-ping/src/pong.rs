@@ -10,7 +10,7 @@ pub struct Actor;
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, message: NewInboundSubstream, ctx: &mut Context<Self>) {
-        let NewInboundSubstream { stream, peer } = message;
+        let NewInboundSubstream { stream, peer_id } = message;
 
         let future = protocol::recv(stream);
 
@@ -18,7 +18,7 @@ impl Actor {
             &ctx.address().expect("self to be alive"),
             future,
             move |e| async move {
-                tracing::warn!(%peer, "Inbound ping protocol failed: {e}");
+                tracing::warn!(%peer_id, "Inbound ping protocol failed: {e}");
             },
         );
     }

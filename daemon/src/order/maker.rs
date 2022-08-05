@@ -126,7 +126,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
-        let NewInboundSubstream { peer, stream } = msg;
+        let NewInboundSubstream { peer_id, stream } = msg;
 
         let mut framed = Framed::new(stream, JsonCodec::<MakerMessage, TakerMessage>::new());
 
@@ -138,7 +138,7 @@ impl Actor {
             }
         };
 
-        let (id, offer, quantity, leverage) = match order {
+        let (order_id, offer, quantity, leverage) = match order {
             TakerMessage::PlaceOrder {
                 id,
                 offer: offer_id,
@@ -151,7 +151,7 @@ impl Actor {
             }
         };
 
-        tracing::info!(taker = %peer, %quantity, order_id = %id, "Taker wants to place an order");
+        tracing::info!(%peer_id, %quantity, %order_id, "Taker wants to place an order");
 
         // Reject the order if the offer cannot be found in the latest offers
         let offer = match self.pick_offer(offer.id).await {
@@ -171,7 +171,7 @@ impl Actor {
                     &ctx.address().expect("self to be alive"),
                     future,
                     move |e| async move {
-                        tracing::debug!(%peer, "Failed to send reject order message: {e}");
+                        tracing::debug!(%peer_id, "Failed to send reject order message: {e}");
                     },
                 );
 
@@ -182,13 +182,13 @@ impl Actor {
         let oracle_event_id = offer.oracle_event_id;
 
         let cfd = Cfd::from_order(
-            id,
+            order_id,
             &offer,
             quantity,
             Identity::new(x25519_dalek::PublicKey::from(
                 *b"hello world, oh what a beautiful",
             )),
-            Some(peer.into()),
+            Some(peer_id.into()),
             Role::Maker,
             leverage,
         );
@@ -205,12 +205,12 @@ impl Actor {
             .send_async_safe(projection::CfdChanged(cfd.id()))
             .await
         {
-            tracing::error!(%id, "Failed to update projection with new cfd when handling order: {e:#}");
+            tracing::error!(%order_id, "Failed to update projection with new cfd when handling order: {e:#}");
             return;
         }
 
         let (sender, receiver) = oneshot::channel();
-        self.decision_senders.insert(id, sender);
+        self.decision_senders.insert(order_id, sender);
 
         let task = {
             let build_party_params = self.build_party_params.clone();
@@ -226,17 +226,17 @@ impl Actor {
                             .send(MakerMessage::Decision(protocol::Decision::Accept))
                             .await?;
 
-                        tracing::info!(taker = %peer, %quantity, order_id = %id, "Order accepted");
+                        tracing::info!(%peer_id, %quantity, %order_id, "Order accepted");
                     }
                     protocol::Decision::Reject => {
                         framed
                             .send(MakerMessage::Decision(protocol::Decision::Reject))
                             .await?;
 
-                        tracing::info!(taker = %peer, %quantity, order_id = %id, "Order rejected");
+                        tracing::info!(%peer_id, %quantity, %order_id, "Order rejected");
 
                         executor
-                            .execute(id, |cfd| {
+                            .execute(order_id, |cfd| {
                                 cfd.reject_contract_setup(anyhow::anyhow!("Unknown"))
                             })
                             .await?;
@@ -246,7 +246,7 @@ impl Actor {
                 }
 
                 let (setup_params, position) = executor
-                    .execute(id, |cfd| cfd.start_contract_setup())
+                    .execute(order_id, |cfd| cfd.start_contract_setup())
                     .await?;
 
                 let (sink, stream) = framed.split();
@@ -286,10 +286,10 @@ impl Actor {
                 .await?;
 
                 if let Err(e) = executor
-                    .execute(id, |cfd| cfd.complete_contract_setup(dlc))
+                    .execute(order_id, |cfd| cfd.complete_contract_setup(dlc))
                     .await
                 {
-                    tracing::error!(%id, "Failed to execute contract_setup_completed: {e:#}");
+                    tracing::error!(%order_id, "Failed to execute contract_setup_completed: {e:#}");
                 }
 
                 anyhow::Ok(())
@@ -300,10 +300,10 @@ impl Actor {
             let executor = self.executor.clone();
             move |e| async move {
                 if let Err(e) = executor
-                    .execute(id, |cfd| Ok(cfd.fail_contract_setup(e)))
+                    .execute(order_id, |cfd| Ok(cfd.fail_contract_setup(e)))
                     .await
                 {
-                    tracing::error!(%id, "Failed to execute fail_contract_setup: {e:#}");
+                    tracing::error!(%order_id, "Failed to execute fail_contract_setup: {e:#}");
                 }
             }
         };

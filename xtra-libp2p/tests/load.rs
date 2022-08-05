@@ -243,7 +243,7 @@ impl SomeMessageExchangeDialer {
 
         for trigger_time in 0..self.protocol_trigger_times {
             let future = {
-                let peer = msg.peer;
+                let peer = msg.peer_id;
                 let endpoint = self.endpoint.clone();
                 let protocol = self.protocol;
                 let trigger_time = trigger_time;
@@ -318,7 +318,7 @@ impl SomeMessageExchangeListener {
         };
 
         tokio_extras::spawn_fallible(&this, future, move |e| async move {
-            tracing::warn!("Parallel message with peer {} failed: {}", msg.peer, e);
+            tracing::warn!("Parallel message with peer {} failed: {}", msg.peer_id, e);
         });
     }
 }

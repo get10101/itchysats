@@ -82,7 +82,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     pub async fn handle(&mut self, msg: PlaceOrder, ctx: &mut xtra::Context<Self>) {
-        let id = msg.id;
+        let id = msg.order_id;
 
         let task = {
             let build_party_params = self.build_party_params.clone();
@@ -98,7 +98,7 @@ impl Actor {
                 tracing::info!(order = ?msg, "Placing order");
 
                 let PlaceOrder {
-                    id,
+                    order_id,
                     quantity,
                     leverage,
                     offer,
@@ -108,7 +108,7 @@ impl Actor {
 
                 let oracle_event_id = offer.oracle_event_id;
                 let cfd = Cfd::from_order(
-                    id,
+                    order_id,
                     &offer,
                     quantity,
                     maker_identity,
@@ -139,7 +139,7 @@ impl Actor {
 
                 framed
                     .send(TakerMessage::PlaceOrder {
-                        id,
+                        id: order_id,
                         offer,
                         quantity,
                         leverage,
@@ -148,13 +148,13 @@ impl Actor {
 
                 match framed.next().await.context("Stream terminated")?? {
                     MakerMessage::Decision(Decision::Accept) => {
-                        tracing::info!(order_id = %msg.id, %maker_peer_id, "Order accepted");
+                        tracing::info!(order_id = %msg.order_id, %maker_peer_id, "Order accepted");
                     }
                     MakerMessage::Decision(Decision::Reject) => {
-                        tracing::info!(order_id = %msg.id, %maker_peer_id, "Order rejected");
+                        tracing::info!(order_id = %msg.order_id, %maker_peer_id, "Order rejected");
 
                         executor
-                            .execute(id, |cfd| {
+                            .execute(order_id, |cfd| {
                                 cfd.reject_contract_setup(anyhow::anyhow!("Unknown"))
                             })
                             .await?;
@@ -165,7 +165,7 @@ impl Actor {
                 };
 
                 let (setup_params, position) = executor
-                    .execute(id, |cfd| cfd.start_contract_setup())
+                    .execute(order_id, |cfd| cfd.start_contract_setup())
                     .await?;
 
                 let (sink, stream) = framed.split();
@@ -205,10 +205,10 @@ impl Actor {
                 .await?;
 
                 if let Err(e) = executor
-                    .execute(id, |cfd| cfd.complete_contract_setup(dlc))
+                    .execute(order_id, |cfd| cfd.complete_contract_setup(dlc))
                     .await
                 {
-                    tracing::error!(%id, "Failed to execute contract_setup_completed: {e:#}");
+                    tracing::error!(%order_id, "Failed to execute contract_setup_completed: {e:#}");
                 }
 
                 anyhow::Ok(())
@@ -234,7 +234,7 @@ impl Actor {
 
 #[derive(Debug)]
 pub(crate) struct PlaceOrder {
-    id: OrderId,
+    order_id: OrderId,
     offer: Offer,
     quantity: Usd,
     leverage: Leverage,
@@ -244,14 +244,14 @@ pub(crate) struct PlaceOrder {
 
 impl PlaceOrder {
     pub(crate) fn new(
-        id: OrderId,
+        order_id: OrderId,
         offer: Offer,
         (quantity, leverage): (Usd, Leverage),
         maker_peer_id: PeerId,
         maker_identity: Identity,
     ) -> Self {
         Self {
-            id,
+            order_id,
             offer,
             quantity,
             leverage,

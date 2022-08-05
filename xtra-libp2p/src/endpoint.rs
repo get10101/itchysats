@@ -70,7 +70,7 @@ pub struct Endpoint {
 /// protocols.
 #[derive(Debug)]
 pub struct OpenSubstream<P> {
-    peer: PeerId,
+    peer_id: PeerId,
     protocols: Vec<&'static str>,
     marker_num_protocols: PhantomData<P>,
 }
@@ -88,11 +88,11 @@ impl OpenSubstream<Single> {
     ///
     /// We will only attempt to negotiate the given protocol. If the endpoint does not speak this
     /// protocol, negotiation will fail.
-    pub fn single_protocol(peer: PeerId, protocol: &'static str) -> Self {
-        tracing::trace!("Open substream with peer {peer} on protocol {protocol}");
+    pub fn single_protocol(peer_id: PeerId, protocol: &'static str) -> Self {
+        tracing::trace!(%peer_id, %protocol, "Opening substream with");
 
         Self {
-            peer,
+            peer_id,
             protocols: vec![protocol],
             marker_num_protocols: PhantomData,
         }
@@ -106,12 +106,12 @@ impl OpenSubstream<Multiple> {
     /// Specifying multiple protocols can useful to maintain backwards-compatibility. An endpoint
     /// can attempt to first establish a substream with a new protocol and falling back to older
     /// versions in case the new version is not supported.
-    pub fn multiple_protocols(peer: PeerId, protocols: Vec<&'static str>) -> Self {
+    pub fn multiple_protocols(peer_id: PeerId, protocols: Vec<&'static str>) -> Self {
         tracing::trace!(
-            "Open substream (multi protocol) with peer {peer} on protocol {protocols:?}"
+            %peer_id, ?protocols, "Open substream (multi protocol) with"
         );
         Self {
-            peer,
+            peer_id,
             protocols,
             marker_num_protocols: PhantomData,
         }
@@ -149,7 +149,7 @@ pub struct ConnectionStats {
 /// Notifies an actor of a new, inbound substream from the given peer.
 #[derive(Debug)]
 pub struct NewInboundSubstream {
-    pub peer: PeerId,
+    pub peer_id: PeerId,
     pub stream: Substream,
 }
 
@@ -253,8 +253,8 @@ impl Endpoint {
         }
     }
 
-    async fn drop_connection(&mut self, this: &Address<Self>, peer: &PeerId) {
-        let (mut control, tasks) = match self.controls.remove(peer) {
+    async fn drop_connection(&mut self, this: &Address<Self>, peer_id: &PeerId) {
+        let (mut control, tasks) = match self.controls.remove(peer_id) {
             None => return,
             Some(control) => control,
         };
@@ -264,13 +264,13 @@ impl Endpoint {
             let _ = control.close().await;
             drop(tasks);
         });
-        self.notify_connection_dropped(*peer).await;
+        self.notify_connection_dropped(*peer_id).await;
     }
 
     #[instrument(skip(control, connection_timeout), err)]
     async fn open_substream(
         mut control: yamux::Control,
-        peer: PeerId,
+        peer_id: PeerId,
         protocols: Vec<&'static str>,
         connection_timeout: Duration,
     ) -> Result<(&'static str, Substream), Error> {
@@ -298,11 +298,11 @@ impl Endpoint {
 #[xtra_productivity]
 impl Endpoint {
     async fn handle(&mut self, msg: NewConnection, ctx: &mut Context<Self>) {
-        self.inflight_connections.remove(&msg.peer);
+        self.inflight_connections.remove(&msg.peer_id);
         let this = ctx.address().expect("we are alive");
 
         let NewConnection {
-            peer,
+            peer_id,
             control,
             mut incoming_substreams,
             worker,
@@ -341,7 +341,7 @@ impl Endpoint {
                         let stream =
                             Substream::new(stream, protocol, libp2p_core::Endpoint::Listener);
 
-                        let substream = NewInboundSubstream { peer, stream };
+                        let substream = NewInboundSubstream { peer_id, stream };
                         let span =
                             tracing::debug_span!("Register new inbound substream", ?substream);
                         let _ = channel.send_async_safe(substream).instrument(span).await;
@@ -349,13 +349,13 @@ impl Endpoint {
                 }
             },
             move |error| async move {
-                this.send_async_next(ExistingConnectionFailed { peer, error })
+                this.send_async_next(ExistingConnectionFailed { peer_id, error })
                     .await;
             },
         );
 
-        self.controls.insert(peer, (control, tasks));
-        self.notify_connection_established(peer).await;
+        self.controls.insert(peer_id, (control, tasks));
+        self.notify_connection_established(peer_id).await;
     }
 
     async fn handle(&mut self, msg: ListenerFailed) {
@@ -367,7 +367,7 @@ impl Endpoint {
 
     async fn handle(&mut self, msg: FailedToConnect, ctx: &mut Context<Self>) {
         tracing::debug!("Failed to connect: {:#}", msg.error);
-        let peer = msg.peer;
+        let peer = msg.peer_id;
 
         self.inflight_connections.remove(&peer);
         self.drop_connection(&ctx.address().expect("self to be alive"), &peer)
@@ -376,7 +376,7 @@ impl Endpoint {
 
     async fn handle(&mut self, msg: ExistingConnectionFailed, ctx: &mut Context<Self>) {
         tracing::debug!("Connection failed: {:#}", msg.error);
-        let peer = msg.peer;
+        let peer = msg.peer_id;
 
         self.drop_connection(&ctx.address().expect("self to be alive"), &peer)
             .await;
@@ -392,19 +392,19 @@ impl Endpoint {
     async fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) -> Result<(), Error> {
         let this = ctx.address().expect("we are alive");
 
-        let peer = msg
+        let peer_id = msg
             .0
             .clone()
             .extract_peer_id()
             .ok_or_else(|| Error::NoPeerIdInAddress(msg.0.clone()))?;
 
-        if self.inflight_connections.contains(&peer) || self.controls.contains_key(&peer) {
-            return Err(Error::AlreadyTryingToConnected(peer));
+        if self.inflight_connections.contains(&peer_id) || self.controls.contains_key(&peer_id) {
+            return Err(Error::AlreadyTryingToConnected(peer_id));
         }
 
         let mut transport = (self.transport_fn)();
 
-        self.inflight_connections.insert(peer);
+        self.inflight_connections.insert(peer_id);
         tokio_extras::spawn_fallible(
             &this.clone(),
             {
@@ -412,16 +412,17 @@ impl Endpoint {
                 let connection_timeout = self.connection_timeout;
 
                 let fut = async move {
-                    let (peer, control, incoming_substreams, worker) = tokio_extras::time::timeout(
-                        connection_timeout,
-                        transport.dial(msg.0)?,
-                        || tracing::debug_span!("transport dial"),
-                    )
-                    .await
-                    .context("Dialing timed out")??;
+                    let (peer_id, control, incoming_substreams, worker) =
+                        tokio_extras::time::timeout(
+                            connection_timeout,
+                            transport.dial(msg.0)?,
+                            || tracing::debug_span!("transport dial"),
+                        )
+                        .await
+                        .context("Dialing timed out")??;
 
                     this.send_async_next(NewConnection {
-                        peer,
+                        peer_id,
                         control,
                         incoming_substreams,
                         worker,
@@ -434,7 +435,8 @@ impl Endpoint {
                 fut.instrument(tracing::debug_span!("Dial new connection").or_current())
             },
             move |error| async move {
-                this.send_async_next(FailedToConnect { peer, error }).await;
+                this.send_async_next(FailedToConnect { peer_id, error })
+                    .await;
             },
         );
 
@@ -481,7 +483,7 @@ impl Endpoint {
                                 let this = this.clone();
                                 tasks.add_fallible(
                                     async move {
-                                        let (peer, control, incoming_substreams, worker) =
+                                        let (peer_id, control, incoming_substreams, worker) =
                                             upgrade.await.with_context(|| {
                                                 match PeerId::try_from_multiaddr(&remote_addr) {
                                                     Some(peer_id) => format!(
@@ -491,7 +493,7 @@ impl Endpoint {
                                                 }
                                             })?;
                                         this.send_async_next(NewConnection {
-                                            peer,
+                                            peer_id,
                                             control,
                                             incoming_substreams,
                                             worker,
@@ -531,7 +533,7 @@ impl Endpoint {
         _: &mut Context<Self>,
     ) -> Result<Pin<Box<dyn futures::Future<Output = Result<Substream, Error>> + Send>>, Error>
     {
-        let peer = msg.peer;
+        let peer = msg.peer_id;
         let protocols = msg.protocols;
 
         debug_assert!(
@@ -569,7 +571,7 @@ impl Endpoint {
         Pin<Box<dyn futures::Future<Output = Result<(&'static str, Substream), Error>> + Send>>,
         Error,
     > {
-        let peer = msg.peer;
+        let peer = msg.peer_id;
         let protocols = msg.protocols;
 
         let (control, _) = self.controls.get(&peer).ok_or(Error::NoConnection(peer))?;
@@ -597,21 +599,23 @@ impl Endpoint {
 }
 
 impl Endpoint {
-    async fn notify_connection_established(&mut self, peer: PeerId) {
-        tracing::info!(%peer, "Connection established");
+    async fn notify_connection_established(&mut self, peer_id: PeerId) {
+        tracing::info!(%peer_id, "Connection established");
 
         for subscriber in &self.subscribers.connection_established {
             subscriber
-                .send_async_next(ConnectionEstablished { peer })
+                .send_async_next(ConnectionEstablished { peer_id })
                 .await;
         }
     }
 
-    async fn notify_connection_dropped(&mut self, peer: PeerId) {
-        tracing::info!(%peer, "Connection dropped");
+    async fn notify_connection_dropped(&mut self, peer_id: PeerId) {
+        tracing::info!(%peer_id, "Connection dropped");
 
         for subscriber in &self.subscribers.connection_dropped {
-            subscriber.send_async_next(ConnectionDropped { peer }).await
+            subscriber
+                .send_async_next(ConnectionDropped { peer_id })
+                .await
         }
     }
 
@@ -672,13 +676,13 @@ struct ListenerFailed {
 
 #[derive(Debug)]
 struct FailedToConnect {
-    peer: PeerId,
+    peer_id: PeerId,
     error: anyhow::Error,
 }
 
 #[derive(Debug)]
 struct ExistingConnectionFailed {
-    peer: PeerId,
+    peer_id: PeerId,
     error: anyhow::Error,
 }
 
@@ -687,7 +691,7 @@ struct NewListenAddress {
 }
 
 struct NewConnection {
-    peer: PeerId,
+    peer_id: PeerId,
     control: yamux::Control,
     #[allow(clippy::type_complexity)]
     incoming_substreams: BoxStream<
@@ -702,12 +706,12 @@ struct NewConnection {
 
 #[derive(Clone, Copy)]
 pub struct ConnectionEstablished {
-    pub peer: PeerId,
+    pub peer_id: PeerId,
 }
 
 #[derive(Clone, Copy)]
 pub struct ConnectionDropped {
-    pub peer: PeerId,
+    pub peer_id: PeerId,
 }
 
 pub struct ListenAddressAdded {

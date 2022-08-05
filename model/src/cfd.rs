@@ -1257,7 +1257,7 @@ impl Cfd {
             )
         }
 
-        tracing::info!(order_id = %self.id, "Contract setup was completed");
+        tracing::info!(order_id = %self.id, peer_id=?self.counterparty_peer_id, "Contract setup was completed");
 
         Ok(self.event(EventKind::ContractSetupCompleted { dlc: Some(dlc) }))
     }
@@ -1269,13 +1269,13 @@ impl Cfd {
             "Rejecting contract setup not allowed because cfd in version {version}",
         );
 
-        tracing::info!(order_id = %self.id, "Contract setup was rejected: {reason:#}");
+        tracing::info!(order_id = %self.id, peer_id=?self.counterparty_peer_id, "Contract setup was rejected: {reason:#}");
 
         Ok(self.event(EventKind::OfferRejected))
     }
 
     pub fn fail_contract_setup(self, error: anyhow::Error) -> CfdEvent {
-        tracing::error!(order_id = %self.id, "Contract setup failed: {error:#}");
+        tracing::error!(order_id = %self.id, peer_id=?self.counterparty_peer_id, "Contract setup failed: {error:#}");
 
         self.event(EventKind::ContractSetupFailed)
     }
@@ -1288,7 +1288,7 @@ impl Cfd {
     ) -> CfdEvent {
         match self.can_rollover() {
             Ok(_) => {
-                tracing::info!(order_id = %self.id, "Rollover was completed");
+                tracing::info!(order_id = %self.id, peer_id=?self.counterparty_peer_id, "Rollover was completed");
 
                 self.event(EventKind::RolloverCompleted {
                     dlc: Some(dlc),
@@ -1301,13 +1301,13 @@ impl Cfd {
     }
 
     pub fn reject_rollover(self, reason: anyhow::Error) -> CfdEvent {
-        tracing::info!(order_id = %self.id, "Rollover was rejected: {:#}", reason);
+        tracing::info!(order_id = %self.id, peer_id=?self.counterparty_peer_id, "Rollover was rejected: {:#}", reason);
 
         self.event(EventKind::RolloverRejected)
     }
 
     pub fn fail_rollover(self, error: anyhow::Error) -> CfdEvent {
-        tracing::warn!(order_id = %self.id, "Rollover failed: {:#}", error);
+        tracing::warn!(order_id = %self.id, peer_id=?self.counterparty_peer_id, "Rollover failed: {:#}", error);
 
         self.event(EventKind::RolloverFailed)
     }
@@ -1317,7 +1317,7 @@ impl Cfd {
         settlement: CollaborativeSettlement,
     ) -> CfdEvent {
         if self.can_settle_collaboratively() {
-            tracing::info!(order_id=%self.id(), tx=%settlement.tx.txid(), "Collaborative settlement completed");
+            tracing::info!(order_id=%self.id(), peer_id=?self.counterparty_peer_id, tx=%settlement.tx.txid(), "Collaborative settlement completed");
 
             self.event(EventKind::CollaborativeSettlementCompleted {
                 spend_tx: settlement.tx,
@@ -1325,12 +1325,14 @@ impl Cfd {
                 price: settlement.price,
             })
         } else {
-            self.fail_collaborative_settlement(anyhow!("Cannot complete collaborative settlement"))
+            self.fail_collaborative_settlement(anyhow!(
+                "CFD not eligible for collaborative settlement anymore"
+            ))
         }
     }
 
     pub fn reject_collaborative_settlement(self, reason: anyhow::Error) -> CfdEvent {
-        tracing::warn!(order_id=%self.id(), "Collaborative settlement rejected: {reason:#}");
+        tracing::warn!(order_id=%self.id(), peer_id=?self.counterparty_peer_id, "Collaborative settlement rejected: {reason:#}");
 
         self.event(EventKind::CollaborativeSettlementRejected)
     }
