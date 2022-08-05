@@ -361,6 +361,19 @@ pub enum NoRolloverReason {
     Closed,
 }
 
+/// Reasons why we cannot collab close a CFD
+#[derive(thiserror::Error, Debug, PartialEq, Clone, Copy)]
+pub enum CannotSettleCollaborativeley {
+    #[error("The CFD was already force closed")]
+    OngoingForceClose,
+    #[error("The CFD is already Committed")]
+    Committed,
+    #[error("The CFD already has an attestation")]
+    Attested,
+    #[error("The CFD is already closed")]
+    Closed,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdEvent {
     pub timestamp: Timestamp,
@@ -796,11 +809,24 @@ impl Cfd {
         Ok(())
     }
 
-    fn can_settle_collaboratively(&self) -> bool {
-        !self.is_closed()
-            && !self.commit_finality
-            && !self.is_attested()
-            && !self.is_in_force_close()
+    fn can_settle_collaboratively(&self) -> Result<(), CannotSettleCollaborativeley> {
+        if self.is_closed() {
+            return Err(CannotSettleCollaborativeley::Closed);
+        }
+
+        if self.commit_finality {
+            return Err(CannotSettleCollaborativeley::Committed);
+        }
+
+        if self.is_attested() {
+            return Err(CannotSettleCollaborativeley::Attested);
+        }
+
+        if self.is_in_force_close() {
+            return Err(CannotSettleCollaborativeley::OngoingForceClose);
+        }
+
+        Ok(())
     }
 
     fn is_attested(&self) -> bool {
@@ -1098,7 +1124,8 @@ impl Cfd {
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Taker);
-        ensure!(self.can_settle_collaboratively());
+        self.can_settle_collaboratively()
+            .context("Cannot collaboratively settle")?;
 
         let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1121,7 +1148,8 @@ impl Cfd {
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Maker);
-        ensure!(self.can_settle_collaboratively());
+        self.can_settle_collaboratively()
+            .context("Cannot collaboratively settle")?;
 
         let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1196,8 +1224,9 @@ impl Cfd {
     ) -> Result<CfdEvent> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Maker);
-        ensure!(self.can_settle_collaboratively());
         ensure!(proposal.order_id == self.id);
+        self.can_settle_collaboratively()
+            .context("Cannot collaboratively settle")?;
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
@@ -1316,18 +1345,17 @@ impl Cfd {
         self,
         settlement: CollaborativeSettlement,
     ) -> CfdEvent {
-        if self.can_settle_collaboratively() {
-            tracing::info!(order_id=%self.id(), peer_id=?self.counterparty_peer_id, tx=%settlement.tx.txid(), "Collaborative settlement completed");
+        match self.can_settle_collaboratively() {
+            Ok(()) => {
+                tracing::info!(order_id=%self.id(), peer_id=?self.counterparty_peer_id, tx=%settlement.tx.txid(), "Collaborative settlement completed");
 
-            self.event(EventKind::CollaborativeSettlementCompleted {
-                spend_tx: settlement.tx,
-                script: settlement.script_pubkey,
-                price: settlement.price,
-            })
-        } else {
-            self.fail_collaborative_settlement(anyhow!(
-                "CFD not eligible for collaborative settlement anymore"
-            ))
+                self.event(EventKind::CollaborativeSettlementCompleted {
+                    spend_tx: settlement.tx,
+                    script: settlement.script_pubkey,
+                    price: settlement.price,
+                })
+            }
+            Err(e) => self.fail_collaborative_settlement(anyhow!(e)),
         }
     }
 
