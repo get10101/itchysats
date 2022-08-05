@@ -16,7 +16,7 @@ libp2p-core = { version = "0.33", default-features = false }
 maia = "0.2.0"
 maia-core = "0.1.1"
 model = { path = "../model" }
-rust_decimal = "1.25"
+rust_decimal = "1.26"
 rust_decimal_macros = "1.25"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
