@@ -121,6 +121,7 @@ impl From<OrderId> for Uuid {
 pub struct MakerOffers {
     pub long: Option<Offer>,
     pub short: Option<Offer>,
+
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate_long: FundingRate,
     pub funding_rate_short: FundingRate,
@@ -1146,7 +1147,7 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
-        let payouts = Payouts::new(
+        let payouts = Payouts::new_inverse(
             self.position,
             self.role,
             self.initial_price,
@@ -1200,7 +1201,7 @@ impl Cfd {
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payouts = Payouts::new(
+        let payouts = Payouts::new_inverse(
             self.position,
             self.role,
             self.initial_price,

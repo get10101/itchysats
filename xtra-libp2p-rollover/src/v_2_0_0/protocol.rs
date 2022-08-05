@@ -338,7 +338,7 @@ pub(crate) async fn build_own_cfd_transactions(
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
 
-    let payouts = Payouts::new(
+    let payouts = Payouts::new_inverse(
         our_position,
         role,
         rollover_params.price,
