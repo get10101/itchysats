@@ -85,9 +85,9 @@ impl Actor {
     async fn handle_connection_established(&mut self, msg: endpoint::ConnectionEstablished) {
         tracing::debug!(
             "Adding newly established connection to online_status: {:?}",
-            msg.peer
+            msg.peer_id
         );
-        if msg.peer == self.watched_peer {
+        if msg.peer_id == self.watched_peer {
             self.sender
                 .send(ConnectionStatus::Online)
                 .expect("Receiver to outlive this actor");
@@ -97,10 +97,10 @@ impl Actor {
     async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
         tracing::debug!(
             "Remove dropped connection from online_status: {:?}",
-            msg.peer
+            msg.peer_id
         );
 
-        if msg.peer == self.watched_peer {
+        if msg.peer_id == self.watched_peer {
             self.sender
                 .send(ConnectionStatus::Offline)
                 .expect("Receiver to outlive this actor");

@@ -28,14 +28,14 @@ impl Actor {
         }
     }
 
-    async fn send_offers(&self, peer: PeerId, ctx: &mut xtra::Context<Self>) {
+    async fn send_offers(&self, peer_id: PeerId, ctx: &mut xtra::Context<Self>) {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
 
-        let span = tracing::debug_span!("Send offers", %peer).or_current();
+        let span = tracing::debug_span!("Send offers", %peer_id).or_current();
         let task = async move {
             let stream = endpoint
-                .send(OpenSubstream::single_protocol(peer, PROTOCOL))
+                .send(OpenSubstream::single_protocol(peer_id, PROTOCOL))
                 .await??
                 .await?;
 
@@ -45,7 +45,7 @@ impl Actor {
         };
 
         let err_handler =
-            move |e| async move { tracing::warn!(%peer, "Failed to send offers: {e:#}") };
+            move |e| async move { tracing::warn!(%peer_id, "Failed to send offers: {e:#}") };
 
         let this = ctx.address().expect("self to be alive");
         spawn_fallible(&this, task.instrument(span), err_handler);
@@ -58,8 +58,8 @@ impl Actor {
         self.latest_offers = msg.0;
 
         let quiet = quiet_spans::sometimes_quiet_children();
-        for peer in self.connected_peers.iter().copied() {
-            self.send_offers(peer, ctx)
+        for peer_id in self.connected_peers.iter().copied() {
+            self.send_offers(peer_id, ctx)
                 .instrument(quiet.in_scope(|| {
                     tracing::debug_span!("Broadcast offers to taker (libp2p)").or_current()
                 }))
@@ -79,14 +79,14 @@ impl Actor {
         msg: endpoint::ConnectionEstablished,
         ctx: &mut xtra::Context<Self>,
     ) {
-        tracing::trace!("Adding newly established connection: {:?}", msg.peer);
-        self.connected_peers.insert(msg.peer);
-        self.send_offers(msg.peer, ctx).await;
+        tracing::trace!("Adding newly established connection: {:?}", msg.peer_id);
+        self.connected_peers.insert(msg.peer_id);
+        self.send_offers(msg.peer_id, ctx).await;
     }
 
     async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
-        tracing::trace!("Remove dropped connection: {:?}", msg.peer);
-        self.connected_peers.remove(&msg.peer);
+        tracing::trace!("Remove dropped connection: {:?}", msg.peer_id);
+        self.connected_peers.remove(&msg.peer_id);
     }
 }
 

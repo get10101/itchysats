@@ -91,7 +91,7 @@ struct Ping;
 
 /// Private message to record latency of a peer.
 struct RecordLatency {
-    peer: PeerId,
+    peer_id: PeerId,
     latency: Duration,
 }
 
@@ -107,7 +107,7 @@ impl Actor {
 
         let quiet = quiet_spans::sometimes_quiet_children();
 
-        for peer in self.connected_peers.iter().copied() {
+        for peer_id in self.connected_peers.iter().copied() {
             let endpoint = self.endpoint.clone();
             let this = ctx.address().expect("we are alive");
 
@@ -116,18 +116,19 @@ impl Actor {
 
                 async move {
                     let stream = endpoint
-                        .send(OpenSubstream::single_protocol(peer, PROTOCOL))
+                        .send(OpenSubstream::single_protocol(peer_id, PROTOCOL))
                         .await??
                         .await?;
                     let latency = protocol::send(stream).await?;
 
-                    this.send_async_next(RecordLatency { peer, latency }).await;
+                    this.send_async_next(RecordLatency { peer_id, latency })
+                        .await;
                     anyhow::Ok(())
                 }
             };
 
             let err_handler = move |e| async move {
-                tracing::warn!(%peer, "Outbound ping protocol failed: {e:#}")
+                tracing::warn!(%peer_id, "Outbound ping protocol failed: {e:#}")
             };
 
             spawn_fallible(
@@ -140,13 +141,13 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: RecordLatency) {
-        let RecordLatency { peer, latency } = msg;
+        let RecordLatency { peer_id, latency } = msg;
 
-        self.latencies.insert(peer, latency);
+        self.latencies.insert(peer_id, latency);
 
         let latency_milliseconds = latency.as_millis();
 
-        tracing::trace!(%peer, %latency_milliseconds, "Received pong");
+        tracing::trace!(%peer_id, %latency_milliseconds, "Received pong");
 
         let latency_seconds = latency_milliseconds.checked_div(1000).unwrap_or_default();
         PEER_LATENCY_HISTOGRAM.observe(latency_seconds as f64);
@@ -162,14 +163,14 @@ impl Actor {
     async fn handle_connection_established(&mut self, msg: endpoint::ConnectionEstablished) {
         tracing::trace!(
             "Adding newly established connection to ping: {:?}",
-            msg.peer
+            msg.peer_id
         );
-        self.connected_peers.insert(msg.peer);
+        self.connected_peers.insert(msg.peer_id);
     }
 
     async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
-        tracing::trace!("Remove dropped connection from ping: {:?}", msg.peer);
-        self.connected_peers.remove(&msg.peer);
+        tracing::trace!("Remove dropped connection from ping: {:?}", msg.peer_id);
+        self.connected_peers.remove(&msg.peer_id);
     }
 }
 

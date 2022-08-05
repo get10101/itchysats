@@ -61,7 +61,7 @@ impl xtra::Actor for Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
-        let NewInboundSubstream { peer, stream } = msg;
+        let NewInboundSubstream { peer_id, stream } = msg;
         let address = ctx.address().expect("we are alive");
 
         tokio_extras::spawn_fallible(
@@ -81,14 +81,14 @@ impl Actor {
                     .send(ProposeReceived {
                         propose,
                         framed,
-                        peer,
+                        peer_id,
                     })
                     .await?;
 
                 anyhow::Ok(())
             },
             move |e| async move {
-                tracing::warn!(%peer, "Failed to handle incoming collab settlement: {e:#}")
+                tracing::warn!(%peer_id, "Failed to handle incoming collab settlement: {e:#}")
             },
         );
     }
@@ -100,14 +100,14 @@ impl Actor {
         let ProposeReceived {
             propose,
             framed,
-            peer,
+            peer_id,
         } = msg;
         let order_id = propose.id;
 
         let result = self
             .executor
             .execute(order_id, |cfd| {
-                cfd.verify_counterparty_peer_id(&peer.into())?;
+                cfd.verify_counterparty_peer_id(&peer_id.into())?;
                 cfd.start_collab_settlement_maker(
                     propose.price,
                     self.n_payouts,
@@ -126,7 +126,7 @@ impl Actor {
         };
 
         self.pending_protocols
-            .insert(order_id, (framed, transaction, proposal, peer));
+            .insert(order_id, (framed, transaction, proposal, peer_id));
     }
 
     async fn handle(&mut self, msg: Accept) -> Result<()> {
@@ -246,7 +246,7 @@ impl Actor {
 struct ProposeReceived {
     propose: Propose,
     framed: Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
-    peer: PeerId,
+    peer_id: PeerId,
 }
 
 #[derive(Clone, Copy)]

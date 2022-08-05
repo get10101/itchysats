@@ -19,14 +19,14 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
-        let NewInboundSubstream { peer, stream } = msg;
+        let NewInboundSubstream { peer_id, stream } = msg;
         let maker_offers = self.maker_offers.clone();
 
         let this = ctx.address().expect("self to be alive");
 
         let task = async move {
             let offers = protocol::recv(stream).await?;
-            let span = tracing::debug_span!("Received new offers from maker", %peer, ?offers);
+            let span = tracing::debug_span!("Received new offers from maker", %peer_id, ?offers);
             maker_offers
                 .send(LatestMakerOffers(offers))
                 .instrument(span)
@@ -35,8 +35,9 @@ impl Actor {
             anyhow::Ok(())
         };
 
-        let err_handler =
-            move |e| async move { tracing::warn!(%peer, "Failed to process maker offers: {e:#}") };
+        let err_handler = move |e| async move {
+            tracing::warn!(%peer_id, "Failed to process maker offers: {e:#}")
+        };
 
         tokio_extras::spawn_fallible(&this, task, err_handler);
     }

@@ -360,11 +360,11 @@ impl Actor for EndpointSubscriberStats {
 #[xtra_productivity]
 impl EndpointSubscriberStats {
     async fn handle(&mut self, msg: endpoint::ConnectionEstablished) {
-        self.connected_peers.insert(msg.peer);
+        self.connected_peers.insert(msg.peer_id);
     }
 
     async fn handle(&mut self, msg: endpoint::ConnectionDropped) {
-        self.connected_peers.remove(&msg.peer);
+        self.connected_peers.remove(&msg.peer_id);
     }
 
     async fn handle(&mut self, msg: endpoint::ListenAddressAdded) {
@@ -393,13 +393,17 @@ struct HelloWorld;
 #[xtra_productivity]
 impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
-        tracing::info!("New hello world stream from {}", msg.peer);
+        tracing::info!("New hello world stream from {}", msg.peer_id);
 
         tokio_extras::spawn_fallible(
             &ctx.address().unwrap(),
             hello_world_listener(msg.stream),
             move |e| async move {
-                tracing::warn!("Hello world protocol with peer {} failed: {}", msg.peer, e);
+                tracing::warn!(
+                    "Hello world protocol with peer {} failed: {}",
+                    msg.peer_id,
+                    e
+                );
             },
         );
     }

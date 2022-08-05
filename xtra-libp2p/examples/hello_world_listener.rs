@@ -84,13 +84,17 @@ pub struct HelloWorld;
 #[xtra_productivity]
 impl HelloWorld {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut Context<Self>) {
-        tracing::info!("New hello world stream from {}", msg.peer);
+        tracing::info!("New hello world stream from {}", msg.peer_id);
 
         tokio_extras::spawn_fallible(
             &ctx.address().unwrap(),
             hello_world_listener(msg.stream),
             move |e| async move {
-                tracing::warn!("Hello world protocol with peer {} failed: {}", msg.peer, e);
+                tracing::warn!(
+                    "Hello world protocol with peer {} failed: {}",
+                    msg.peer_id,
+                    e
+                );
             },
         );
     }

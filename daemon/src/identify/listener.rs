@@ -38,7 +38,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, message: NewInboundSubstream, ctx: &mut Context<Self>) {
-        let NewInboundSubstream { stream, peer } = message;
+        let NewInboundSubstream { stream, peer_id } = message;
 
         // TODO: Set observed address according to the address we observed when establishing the
         //  connection
@@ -54,7 +54,7 @@ impl Actor {
         let send_identify_msg_fut = protocol::send(stream, identify_msg);
 
         let err_handler = move |e| async move {
-            tracing::debug!(peer_id=%peer, "Identify protocol failed upon response: {e:#}")
+            tracing::debug!(%peer_id, "Identify protocol failed upon response: {e:#}")
         };
 
         let this = ctx.address().expect("we are alive");

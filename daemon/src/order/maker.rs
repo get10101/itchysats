@@ -126,7 +126,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
-        let NewInboundSubstream { peer, stream } = msg;
+        let NewInboundSubstream { peer_id, stream } = msg;
 
         let mut framed = Framed::new(stream, JsonCodec::<MakerMessage, TakerMessage>::new());
 
@@ -151,7 +151,7 @@ impl Actor {
             }
         };
 
-        tracing::info!(taker = %peer, %quantity, order_id = %id, "Taker wants to place an order");
+        tracing::info!(%peer_id, %quantity, order_id = %id, "Taker wants to place an order");
 
         // Reject the order if the offer cannot be found in the latest offers
         let offer = match self.pick_offer(offer.id).await {
@@ -171,7 +171,7 @@ impl Actor {
                     &ctx.address().expect("self to be alive"),
                     future,
                     move |e| async move {
-                        tracing::debug!(%peer, "Failed to send reject order message: {e}");
+                        tracing::debug!(%peer_id, "Failed to send reject order message: {e}");
                     },
                 );
 
@@ -188,7 +188,7 @@ impl Actor {
             Identity::new(x25519_dalek::PublicKey::from(
                 *b"hello world, oh what a beautiful",
             )),
-            Some(peer.into()),
+            Some(peer_id.into()),
             Role::Maker,
             leverage,
         );
@@ -226,14 +226,14 @@ impl Actor {
                             .send(MakerMessage::Decision(protocol::Decision::Accept))
                             .await?;
 
-                        tracing::info!(taker = %peer, %quantity, order_id = %id, "Order accepted");
+                        tracing::info!(%peer_id, %quantity, order_id = %id, "Order accepted");
                     }
                     protocol::Decision::Reject => {
                         framed
                             .send(MakerMessage::Decision(protocol::Decision::Reject))
                             .await?;
 
-                        tracing::info!(taker = %peer, %quantity, order_id = %id, "Order rejected");
+                        tracing::info!(%peer_id, %quantity, order_id = %id, "Order rejected");
 
                         executor
                             .execute(id, |cfd| {

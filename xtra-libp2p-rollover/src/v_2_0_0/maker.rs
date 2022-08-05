@@ -88,7 +88,7 @@ where
     R: GetRates + Clone + Send + Sync + 'static,
 {
     async fn handle(&mut self, msg: NewInboundSubstream, ctx: &mut xtra::Context<Self>) {
-        let NewInboundSubstream { peer, stream } = msg;
+        let NewInboundSubstream { peer_id, stream } = msg;
         let address = ctx.address().expect("we are alive");
 
         tokio_extras::spawn_fallible(
@@ -108,14 +108,14 @@ where
                     .send(ProposeReceived {
                         propose,
                         framed,
-                        peer,
+                        peer_id,
                     })
                     .await?;
 
                 anyhow::Ok(())
             },
             move |e| async move {
-                tracing::warn!(%peer, "Failed to handle incoming rollover protocol: {e:#}")
+                tracing::warn!(%peer_id, "Failed to handle incoming rollover protocol: {e:#}")
             },
         );
     }
@@ -124,14 +124,14 @@ where
         let ProposeReceived {
             propose,
             mut framed,
-            peer,
+            peer_id,
         } = msg;
         let order_id = propose.order_id;
 
         let base_dlc_params = match self
             .executor
             .execute(order_id, |cfd| {
-                cfd.verify_counterparty_peer_id(&peer.into())?;
+                cfd.verify_counterparty_peer_id(&peer_id.into())?;
                 cfd.start_rollover_maker(propose.from_commit_txid)
             })
             .await
@@ -406,5 +406,5 @@ impl UpdateConfiguration {
 struct ProposeReceived {
     propose: Propose,
     framed: Framed<Substream, JsonCodec<ListenerMessage, DialerMessage>>,
-    peer: PeerId,
+    peer_id: PeerId,
 }

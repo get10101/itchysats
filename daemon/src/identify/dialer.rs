@@ -99,7 +99,7 @@ impl Actor {
         msg: endpoint::ConnectionEstablished,
         ctx: &mut Context<Self>,
     ) {
-        let peer_id = msg.peer;
+        let peer_id = msg.peer_id;
         let endpoint = self.endpoint.clone();
         let this = ctx.address().expect("we are alive");
 
@@ -131,7 +131,7 @@ impl Actor {
     }
 
     async fn handle_connections_dropped(&mut self, msg: endpoint::ConnectionDropped) {
-        let peer_id = msg.peer;
+        let peer_id = msg.peer_id;
         tracing::trace!(%peer_id, "Remove peer-info because connection dropped");
         if let Some(peer_info) = self.peer_infos.remove(&peer_id) {
             NUM_LIBP2P_CONNECTIONS_GAUGE

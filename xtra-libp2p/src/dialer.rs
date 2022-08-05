@@ -134,7 +134,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: endpoint::ConnectionDropped, ctx: &mut xtra::Context<Self>) {
-        if msg.peer == self.peer_id() {
+        if msg.peer_id == self.peer_id() {
             tracing::debug!("Dialer noticed connection got dropped");
             self.stop_with_error(Error::ConnectionDropped, ctx);
         }
