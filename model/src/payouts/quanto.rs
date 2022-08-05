@@ -130,9 +130,16 @@ impl Curve {
         let long_liquidation_interval = self
             .long_liquidation_interval()
             .context("Could not calculate long liquidation interval")?;
-        let short_liquidation_interval = self
+        let mut short_liquidation_interval = self
             .short_liquidation_interval()
             .context("Could not calculate short liquidation interval")?;
+
+        // Under very specific conditions the liquidation intervals can overlap. To avoid this
+        // situation we shift the short liquidation interval by 1
+        if long_liquidation_interval.end() == short_liquidation_interval.start() {
+            short_liquidation_interval =
+                *short_liquidation_interval.start() + 1..=*short_liquidation_interval.end()
+        }
 
         let long_liquidation_threshold = long_liquidation_interval.end();
         let short_liquidation_threshold = short_liquidation_interval.start();
