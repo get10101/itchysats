@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2022-08-05
+
 ### Added
 
 - Add dynamic liquidation to the DLC, enabling the CFD to be unilaterally closed every hour by either party if the oracle attests to a price close to the ends of the payout curve's domain.
@@ -22,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It allows a peer to share their contact details with others on request.
   It replaces a previous similar mechanism, which ran over a bespoke network stack.
 - Breaking change: renamed `trading_pair` to `contract_symbol` in Http API.
+
+## [0.5.3] - 2022-08-01
+
+### Changed
+
+- Update `xtra` dependency to be able to ignore frequent trace spans added in 0.5.2
 
 ## [0.5.2] - 2022-07-26
 
@@ -272,7 +280,9 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.2...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.4...HEAD
+[0.5.4]: https://github.com/itchysats/itchysats/compare/0.5.3...0.5.4
+[0.5.3]: https://github.com/itchysats/itchysats/compare/0.5.2...0.5.3
 [0.5.2]: https://github.com/itchysats/itchysats/compare/0.5.1...0.5.2
 [0.5.1]: https://github.com/itchysats/itchysats/compare/0.5.0...0.5.1
 [0.5.0]: https://github.com/itchysats/itchysats/compare/0.4.21...0.5.0
