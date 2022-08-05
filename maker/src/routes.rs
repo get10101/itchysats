@@ -236,22 +236,6 @@ pub async fn post_cfd_action(
         CfdAction::RejectOrder => maker.reject_order(order_id).await,
         CfdAction::AcceptSettlement => maker.accept_settlement(order_id).await,
         CfdAction::RejectSettlement => maker.reject_settlement(order_id).await,
-        CfdAction::AcceptRollover => {
-            if let Err(e) = maker.accept_rollover(order_id).await {
-                // Only matters for legacy rollovers, which we won't investigate anyway
-                tracing::trace!("Failed to accept rollover: {e:#}")
-            };
-
-            Ok(())
-        }
-        CfdAction::RejectRollover => {
-            if let Err(e) = maker.reject_rollover(order_id).await {
-                // Only matters for legacy rollovers, which we won't investigate anyway
-                tracing::trace!("Failed to reject rollover: {e:#}")
-            };
-
-            Ok(())
-        }
         CfdAction::Commit => maker.commit(order_id).await,
         CfdAction::Settle => {
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)

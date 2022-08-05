@@ -233,9 +233,7 @@ pub async fn post_cfd_action(
         CfdAction::AcceptOrder
         | CfdAction::RejectOrder
         | CfdAction::AcceptSettlement
-        | CfdAction::RejectSettlement
-        | CfdAction::AcceptRollover
-        | CfdAction::RejectRollover => {
+        | CfdAction::RejectSettlement => {
             return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST)
                 .detail(format!("taker cannot invoke action {action}")));
         }

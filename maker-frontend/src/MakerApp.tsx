@@ -286,9 +286,6 @@ export default function App() {
                         <CfdTable data={pendingSettlements} />
                     </TabPanel>
                     <TabPanel>
-                        <CfdTable data={pendingRollovers} />
-                    </TabPanel>
-                    <TabPanel>
                         <CfdTable data={opening} />
                     </TabPanel>
                     <TabPanel>

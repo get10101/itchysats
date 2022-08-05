@@ -245,10 +245,6 @@ function iconForAction(action: Action): any {
             return <CloseIcon />;
         case Action.ROLL_OVER:
             return <RepeatIcon />;
-        case Action.ACCEPT_ROLLOVER:
-            return <CheckIcon />;
-        case Action.REJECT_ROLLOVER:
-            return <CloseIcon />;
     }
 }
 
@@ -267,10 +263,6 @@ function colorSchemaForAction(action: Action): string {
         case Action.ACCEPT_SETTLEMENT:
             return "green";
         case Action.REJECT_SETTLEMENT:
-            return "red";
-        case Action.ACCEPT_ROLLOVER:
-            return "green";
-        case Action.REJECT_ROLLOVER:
             return "red";
     }
 }
