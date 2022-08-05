@@ -1325,7 +1325,9 @@ impl Cfd {
                 price: settlement.price,
             })
         } else {
-            self.fail_collaborative_settlement(anyhow!("Cannot complete collaborative settlement"))
+            self.fail_collaborative_settlement(anyhow!(
+                "CFD not eligible for collaborative settlement anymore"
+            ))
         }
     }
 
