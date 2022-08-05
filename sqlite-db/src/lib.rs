@@ -3,7 +3,6 @@ mod sqlx_ext; // Must come first because it is a macro.
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use chashmap_async::CHashMap;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use futures::Stream;
@@ -29,11 +28,8 @@ use sqlx::Connection as _;
 use sqlx::Sqlite;
 use sqlx::SqlitePool;
 use sqlx::Transaction;
-use std::any::Any;
-use std::any::TypeId;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use time::Duration;
 
 pub use closed::*;
@@ -51,15 +47,11 @@ pub mod time_to_first_position;
 #[derive(Clone)]
 pub struct Connection {
     inner: SqlitePool,
-    aggregate_cache: Arc<CHashMap<(TypeId, OrderId), Box<dyn Any + Send + Sync + 'static>>>,
 }
 
 impl Connection {
     fn new(pool: SqlitePool) -> Self {
-        Self {
-            inner: pool,
-            aggregate_cache: Arc::new(CHashMap::new()),
-        }
+        Self { inner: pool }
     }
 
     pub async fn close(self) {
@@ -277,24 +269,9 @@ impl Connection {
         let mut conn = self.inner.acquire().await?;
         let mut db_tx = conn.begin().await?;
 
-        let cache_key = (TypeId::of::<C>(), id);
-        let aggregate = std::any::type_name::<C>();
+        let cfd = load_cfd_row(&mut db_tx, id).await?;
 
-        let cfd = match self.aggregate_cache.remove(&cache_key).await {
-            None => {
-                // No cache entry? Load the CFD row. Version will be 0 because we haven't applied
-                // any events, thus all events will be loaded.
-                let cfd = load_cfd_row(&mut db_tx, id).await?;
-
-                C::new(args, cfd)
-            }
-            Some(cfd) => {
-                // Got a cache entry: Downcast it to the type at hand.
-
-                *cfd.downcast::<C>()
-                    .expect("we index by type id, must be able to downcast")
-            }
-        };
+        let cfd = C::new(args, cfd);
         let cfd_version = cfd.version();
 
         let events = load_cfd_events(&mut db_tx, id, cfd_version)
@@ -302,13 +279,9 @@ impl Connection {
             .with_context(|| format!("Could not load events for CFD {id}"))?;
         let num_events = events.len();
 
-        tracing::trace!(target = "aggregate", order_id =  %id, %aggregate, %cfd_version, %num_events, "Applying new events to CFD");
+        tracing::trace!(target = "aggregate", order_id =  %id, %cfd_version, %num_events, "Applying new events to CFD");
 
         let cfd = events.into_iter().fold(cfd, C::apply);
-
-        self.aggregate_cache
-            .insert(cache_key, Box::new(cfd.clone()))
-            .await;
 
         db_tx.commit().await?;
 

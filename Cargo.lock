@@ -4258,7 +4258,6 @@ dependencies = [
  "anyhow",
  "async-stream",
  "bdk",
- "chashmap-async",
  "futures",
  "hex",
  "libp2p-core",
