@@ -319,7 +319,7 @@ impl Actor {
                 .execute(id, |cfd| cfd.decrypt_cet(&attestation.0))
                 .await
             {
-                tracing::warn!(order_id = %id, "Failed to decrypt CET using attestation: {err:#}")
+                tracing::error!(order_id = %id, "Failed to decrypt CET using attestation: {err:#}")
             }
         }
 
