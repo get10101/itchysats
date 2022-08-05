@@ -259,9 +259,29 @@ impl Connection {
             bail!("failed to insert event");
         }
 
-        // if we have a rollover completed event we store it additionally in its own table
-        if let RolloverCompleted { .. } = event.event {
-            rollover::insert(&mut conn, query_result.last_insert_rowid(), event).await?;
+        match event.event {
+            // if we have a rollover completed event we store it additionally in its own table
+            RolloverCompleted {
+                dlc: Some(dlc),
+                funding_fee,
+                complete_fee,
+            } => {
+                rollover::insert(
+                    &mut conn,
+                    query_result.last_insert_rowid(),
+                    order_id,
+                    dlc,
+                    funding_fee,
+                    complete_fee,
+                )
+                .await?;
+            }
+            RolloverCompleted { dlc: None, .. } => {
+                tracing::error!(
+                    "Invalid RolloverCompleted event: Trying to insert a RolloverCompleted event without a DLC"
+                )
+            }
+            _ => {}
         }
 
         tracing::info!(event = %event_name, %order_id, "Appended event to database");

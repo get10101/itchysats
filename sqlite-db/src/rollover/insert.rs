@@ -4,10 +4,8 @@ use anyhow::bail;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
 use model::Cet;
-use model::CfdEvent;
 use model::CompleteFee;
 use model::Dlc;
-use model::EventKind;
 use model::FundingFee;
 use model::RevokedCommit;
 use models::BitMexPriceEventId;
@@ -19,60 +17,37 @@ use sqlx::Transaction;
 pub async fn insert(
     connection: &mut PoolConnection<Sqlite>,
     event_id: i64,
-    event: CfdEvent,
+    order_id: models::OrderId,
+    dlc: Dlc,
+    funding_fee: FundingFee,
+    complete_fee: Option<CompleteFee>,
 ) -> Result<()> {
-    let event_kind = event.event;
-    match event_kind {
-        EventKind::RolloverCompleted {
-            dlc: Some(dlc),
-            funding_fee,
-            complete_fee,
-        } => {
-            let mut inner_transaction = connection.begin().await?;
+    let mut inner_transaction = connection.begin().await?;
 
-            crate::rollover::delete::delete(&mut inner_transaction, event.id.into()).await?;
+    crate::rollover::delete::delete(&mut inner_transaction, order_id).await?;
 
-            insert_rollover_completed_event_data(
-                &mut inner_transaction,
-                event_id,
-                &dlc,
-                funding_fee,
-                complete_fee,
-                event.id.into(),
-            )
-            .await?;
+    insert_rollover_completed_event_data(
+        &mut inner_transaction,
+        event_id,
+        &dlc,
+        funding_fee,
+        complete_fee,
+        order_id,
+    )
+    .await?;
 
-            for revoked in dlc.revoked_commit {
-                insert_revoked_commit_transaction(&mut inner_transaction, event.id.into(), revoked)
-                    .await?;
-            }
+    for revoked in dlc.revoked_commit {
+        insert_revoked_commit_transaction(&mut inner_transaction, order_id, revoked).await?;
+    }
 
-            for (event_id, cets) in dlc.cets {
-                for cet in cets {
-                    insert_cet(
-                        &mut inner_transaction,
-                        event_id.into(),
-                        event.id.into(),
-                        cet,
-                    )
-                    .await?;
-                }
-            }
-
-            // Commit the transaction to either write all or rollback
-            inner_transaction.commit().await?;
-        }
-        EventKind::RolloverCompleted { dlc: None, .. } => {
-            // We ignore rollover completed events without DLC data as we don't need to store
-            // anything
-            tracing::error!(
-                "Invalid RolloverCompleted event: Trying to insert a RolloverCompleted event without a DLC"
-            )
-        }
-        _ => {
-            tracing::error!("Invalid event type. Use `append_event` function instead")
+    for (event_id, cets) in dlc.cets {
+        for cet in cets {
+            insert_cet(&mut inner_transaction, event_id.into(), order_id, cet).await?;
         }
     }
+
+    // Commit the transaction to either write all or rollback
+    inner_transaction.commit().await?;
 
     Ok(())
 }
