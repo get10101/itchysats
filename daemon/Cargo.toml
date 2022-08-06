@@ -31,7 +31,7 @@ prometheus = { version = "0.13", default-features = false }
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 rollover = { path = "../xtra-libp2p-rollover", package = "xtra-libp2p-rollover" }
-rust_decimal = { version = "1.25", features = ["serde-with-float"] }
+rust_decimal = { version = "1.26", features = ["serde-with-float"] }
 rust_decimal_macros = "1.25"
 semver = { version = "1.0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

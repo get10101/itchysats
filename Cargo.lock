@@ -3706,9 +3706,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.25.0"
+version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34a3bb58e85333f1ab191bf979104b586ebd77475bc6681882825f4532dfe87c"
+checksum = "8fc129ab6000ab4037e7718703cdeab82a12c4ee23a238658f55372d80ef2b05"
 dependencies = [
  "arrayvec",
  "num-traits",
@@ -5777,9 +5777,9 @@ dependencies = [
 
 [[package]]
 name = "yamux"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c0608f53c1dc0bad505d03a34bbd49fbf2ad7b51eb036123e896365532745a1"
+checksum = "e5d9ba232399af1783a58d8eb26f6b5006fbefe2dc9ef36bd283324792d03ea5"
 dependencies = [
  "futures",
  "log",
