@@ -1,4 +1,3 @@
-mod delete;
 mod load;
 mod overwrite;
 

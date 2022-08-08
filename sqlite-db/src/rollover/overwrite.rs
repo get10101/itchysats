@@ -1,9 +1,9 @@
 use crate::models;
 use crate::models::into_complete_fee_and_flow;
-use crate::rollover;
 use anyhow::bail;
 use anyhow::Result;
 use bdk::bitcoin::hashes::hex::ToHex;
+use delete::delete;
 use model::Cet;
 use model::CompleteFee;
 use model::Dlc;
@@ -14,6 +14,8 @@ use sqlx::pool::PoolConnection;
 use sqlx::Connection as SqlxConnection;
 use sqlx::Sqlite;
 use sqlx::Transaction;
+
+mod delete;
 
 /// Overwrite a CFD's latest rollover data.
 ///
@@ -29,7 +31,7 @@ pub async fn overwrite(
 ) -> Result<()> {
     let mut inner_transaction = connection.begin().await?;
 
-    rollover::delete::delete(&mut inner_transaction, order_id).await?;
+    delete(&mut inner_transaction, order_id).await?;
 
     insert_rollover_completed_event_data(
         &mut inner_transaction,
