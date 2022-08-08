@@ -119,7 +119,7 @@ export const App = () => {
         void fetchDaemonVersion(setDaemonVersion);
     }, []);
 
-    const [source, isConnected] = useEventSource("/api/feed");
+    const [source, isConnected] = useEventSource(`/api/${symbol}/feed`);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
     const makerLong = useLatestEvent<MakerOffer>(source, daemon_long_offer, intoMakerOffer);

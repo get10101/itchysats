@@ -1,7 +1,7 @@
 use crate::protocol;
+use crate::MakerOffers;
 use crate::PROTOCOL;
 use async_trait::async_trait;
-use model::MakerOffers;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::spawn_fallible;
@@ -67,8 +67,8 @@ impl Actor {
         }
     }
 
-    async fn handle(&mut self, _: GetLatestOffers) -> Option<MakerOffers> {
-        self.latest_offers.clone()
+    async fn handle(&mut self, _: GetLatestOffers) -> Option<model::MakerOffers> {
+        self.latest_offers.clone().map(|offer| offer.into())
     }
 }
 

@@ -24,6 +24,7 @@ use model::shared_protocol::verify_adaptor_signature;
 use model::shared_protocol::verify_cets;
 use model::shared_protocol::verify_signature;
 use model::Cet;
+use model::ContractSymbol;
 use model::Dlc;
 use model::ExecuteOnCfd;
 use model::FundingFee;
@@ -554,7 +555,7 @@ pub trait GetAnnouncements {
 
 #[async_trait]
 pub trait GetRates {
-    async fn get_rates(&self) -> Result<Rates>;
+    async fn get_rates(&self, contract_symbol: ContractSymbol) -> Result<Rates>;
 }
 
 /// Set of rates needed to accept rollover proposals.

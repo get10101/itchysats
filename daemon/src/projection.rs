@@ -82,9 +82,19 @@ pub struct Actor {
 }
 
 pub struct Feeds {
-    pub quote: watch::Receiver<Option<Quote>>,
-    pub offers: watch::Receiver<MakerOffers>,
+    pub quote: QuoteFeed,
+    pub offers: OffersFeed,
     pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
+}
+
+pub struct QuoteFeed {
+    pub btc_usd: watch::Receiver<Option<Quote>>,
+    pub eth_usd: watch::Receiver<Option<Quote>>,
+}
+
+pub struct OffersFeed {
+    pub btc_usd: watch::Receiver<MakerOffers>,
+    pub eth_usd: watch::Receiver<MakerOffers>,
 }
 
 impl Actor {
@@ -97,26 +107,44 @@ impl Actor {
         >,
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
-        let (tx_order, rx_order) = watch::channel(MakerOffers {
+
+        let (tx_order_btc_usd, rx_order_btc_usd) = watch::channel(MakerOffers {
             long: None,
             short: None,
         });
-        let (tx_quote, rx_quote) = watch::channel(None);
+        let (tx_quote_btc_usd, rx_quote_btc_usd) = watch::channel(None);
+        let (tx_order_eth_usd, rx_order_eth_usd) = watch::channel(MakerOffers {
+            long: None,
+            short: None,
+        });
+        let (tx_quote_eth_usd, rx_quote_eth_usd) = watch::channel(None);
 
         let actor = Self {
             db,
             tx: Tx {
                 cfds: tx_cfds,
-                order: tx_order,
-                quote: tx_quote,
+                order: OrderSenders {
+                    btc_usd: tx_order_btc_usd,
+                    eth_usd: tx_order_eth_usd,
+                },
+                quote: QuoteSenders {
+                    btc_usd: tx_quote_btc_usd,
+                    eth_usd: tx_quote_eth_usd,
+                },
             },
             state: State::new(network),
             price_feed,
         };
         let feeds = Feeds {
             cfds: rx_cfds,
-            offers: rx_order,
-            quote: rx_quote,
+            offers: OffersFeed {
+                btc_usd: rx_order_btc_usd,
+                eth_usd: rx_order_eth_usd,
+            },
+            quote: QuoteFeed {
+                btc_usd: rx_quote_btc_usd,
+                eth_usd: rx_quote_eth_usd,
+            },
         };
 
         (actor, feeds)
@@ -783,8 +811,18 @@ impl Cfd {
 /// Internal struct to keep all the senders around in one place
 struct Tx {
     cfds: watch::Sender<Option<Vec<Cfd>>>,
-    pub order: watch::Sender<MakerOffers>,
-    pub quote: watch::Sender<Option<Quote>>,
+    pub order: OrderSenders,
+    pub quote: QuoteSenders,
+}
+
+pub struct OrderSenders {
+    pub btc_usd: watch::Sender<MakerOffers>,
+    pub eth_usd: watch::Sender<MakerOffers>,
+}
+
+pub struct QuoteSenders {
+    pub btc_usd: watch::Sender<Option<Quote>>,
+    pub eth_usd: watch::Sender<Option<Quote>>,
 }
 
 impl Tx {
@@ -808,42 +846,20 @@ impl Tx {
     }
 
     fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
-        let _ = self.quote.send(quote.map(|q| q.into()));
+        // TODO: make xtra_bitmex_price_feed::Quote symbol dependent
+
+        let _ = self.quote.btc_usd.send(quote.map(|q| q.into()));
     }
 
-    fn send_order_update(&self, offers: Option<model::MakerOffers>) {
-        let (long, short) = match offers {
-            None => (None, None),
-            Some(offers) => {
-                let projection_long =
-                    offers
-                        .long
-                        .and_then(|long| match TryInto::<CfdOffer>::try_into(long) {
-                            Ok(projection_long) => Some(projection_long),
-                            Err(e) => {
-                                tracing::warn!("Unable to convert long order: {e:#}");
-                                None
-                            }
-                        });
-
-                let projection_short =
-                    offers
-                        .short
-                        .and_then(|short| match TryInto::<CfdOffer>::try_into(short) {
-                            Ok(projection_short) => Some(projection_short),
-                            Err(e) => {
-                                tracing::warn!("Unable to convert short order: {e:#}");
-                                None
-                            }
-                        });
-
-                (projection_long, projection_short)
+    fn send_order_update(&self, symbol: ContractSymbol, offer: MakerOffers) {
+        match symbol {
+            ContractSymbol::BtcUsd => {
+                self.order.btc_usd.send(offer).unwrap_or_default();
             }
-        };
-
-        let projection_offers = MakerOffers { long, short };
-
-        let _ = self.order.send(projection_offers);
+            ContractSymbol::EthUsd => {
+                self.order.eth_usd.send(offer).unwrap_or_default();
+            }
+        }
     }
 }
 
@@ -1165,8 +1181,8 @@ impl Actor {
         );
     }
 
-    fn handle(&mut self, msg: Update<Option<model::MakerOffers>>) {
-        self.tx.send_order_update(msg.0);
+    fn handle(&mut self, msg: Update<(ContractSymbol, Option<model::MakerOffers>)>) {
+        self.tx.send_order_update(msg.0 .0, msg.0 .1.into());
     }
 
     fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {
@@ -1248,12 +1264,45 @@ impl From<xtra_bitmex_price_feed::Quote> for Quote {
 }
 
 /// Maker offers represents the offers as created by the maker
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct MakerOffers {
     /// The offer where the maker's position is long
     pub long: Option<CfdOffer>,
     /// The offer where the maker's position is short
     pub short: Option<CfdOffer>,
+}
+
+impl From<Option<model::MakerOffers>> for MakerOffers {
+    fn from(offers: Option<model::MakerOffers>) -> Self {
+        let (long, short) = match offers {
+            None => (None, None),
+            Some(offers) => {
+                let projection_long =
+                    offers
+                        .long
+                        .and_then(|long| match TryInto::<CfdOffer>::try_into(long) {
+                            Ok(projection_long) => Some(projection_long),
+                            Err(e) => {
+                                tracing::warn!("Unable to convert long offer: {e:#}");
+                                None
+                            }
+                        });
+
+                let projection_short =
+                    offers
+                        .short
+                        .and_then(|short| match TryInto::<CfdOffer>::try_into(short) {
+                            Ok(projection_short) => Some(projection_short),
+                            Err(e) => {
+                                tracing::warn!("Unable to convert short offer: {e:#}");
+                                None
+                            }
+                        });
+                (projection_long, projection_short)
+            }
+        };
+        MakerOffers { long, short }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

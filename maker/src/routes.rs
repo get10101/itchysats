@@ -10,7 +10,6 @@ use daemon::projection::Feeds;
 use daemon::wallet;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
-use model::ContractSymbol;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -21,6 +20,7 @@ use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
+use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
@@ -42,18 +42,21 @@ use uuid::Uuid;
 pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sled::Tree>>;
 
 #[allow(clippy::too_many_arguments)]
-#[rocket::get("/feed")]
-#[instrument(name = "GET /feed", skip_all)]
+#[rocket::get("/<symbol>/feed")]
+#[instrument(name = "GET /<symbol>/feed", skip_all)]
 pub async fn maker_feed(
+    symbol: ContractSymbol,
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     _auth: Authenticated,
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let mut rx_offers = rx.offers.clone();
     let mut rx_wallet = rx_wallet.inner().clone();
-    let mut rx_quote = rx.quote.clone();
+    let (mut rx_offers, mut rx_quote) = match symbol {
+        ContractSymbol::BtcUsd => (rx.offers.btc_usd.clone(), rx.quote.btc_usd.clone()),
+        ContractSymbol::EthUsd => (rx.offers.eth_usd.clone(), rx.quote.eth_usd.clone()),
+    };
 
     EventStream! {
         let wallet_info = rx_wallet.borrow().clone();
@@ -127,6 +130,7 @@ pub async fn put_offer_params(
     maker: &State<Maker>,
     _auth: Authenticated,
 ) -> Result<(), HttpApiProblem> {
+    tracing::warn!("Deprecated /offer was called. Please use /<contract_symbol>/offer from now.");
     maker
         .set_offer_params(
             offer_params.price_long,
@@ -138,7 +142,71 @@ pub async fn put_offer_params(
             offer_params.daily_funding_rate_short,
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
-            ContractSymbol::BtcUsd, // TODO: Allow choosing different TradingPairs
+            ContractSymbol::BtcUsd.into(),
+        )
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Posting offer failed")
+                .detail(format!("{e:#}"))
+        })?;
+
+    Ok(())
+}
+
+#[derive(Debug, Copy, Clone, strum_macros::Display)]
+pub enum ContractSymbol {
+    BtcUsd,
+    EthUsd,
+}
+
+impl From<ContractSymbol> for model::ContractSymbol {
+    fn from(symbol: ContractSymbol) -> Self {
+        match symbol {
+            ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
+            ContractSymbol::EthUsd => model::ContractSymbol::EthUsd,
+        }
+    }
+}
+
+impl<'r> FromParam<'r> for ContractSymbol {
+    type Error = anyhow::Error;
+
+    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
+        match param.to_lowercase().as_str() {
+            "btcusd" => Ok(ContractSymbol::BtcUsd),
+            "ethusd" => Ok(ContractSymbol::EthUsd),
+            _ => anyhow::bail!("Unknown contract symbol provided: {param}"),
+        }
+    }
+}
+
+#[rocket::put("/<symbol>/offer", data = "<offer_params>")]
+#[instrument(name = "PUT /offer", skip(maker, _auth), err)]
+pub async fn put_offer_params_for_symbol(
+    symbol: Result<ContractSymbol>,
+    offer_params: Json<CfdNewOfferParamsRequest>,
+    maker: &State<Maker>,
+    _auth: Authenticated,
+) -> Result<(), HttpApiProblem> {
+    // if we use `ContractSymbol` as arg directly the error gets lost. So we need to do this:
+    let symbol = symbol.map_err(|e| {
+        HttpApiProblem::new(StatusCode::BAD_REQUEST)
+            .title("Unknown ContractSymbol provided")
+            .detail(format!("{e:#}"))
+    })?;
+    maker
+        .set_offer_params(
+            offer_params.price_long,
+            offer_params.price_short,
+            offer_params.min_quantity,
+            offer_params.max_quantity,
+            offer_params.tx_fee_rate,
+            offer_params.daily_funding_rate_long,
+            offer_params.daily_funding_rate_short,
+            offer_params.opening_fee,
+            offer_params.leverage_choices.clone(),
+            symbol.into(),
         )
         .await
         .map_err(|e| {

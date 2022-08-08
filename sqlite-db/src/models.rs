@@ -958,12 +958,14 @@ pub fn into_complete_fee_and_flow(
 #[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
 pub enum ContractSymbol {
     BtcUsd,
+    EthUsd,
 }
 
 impl From<model::ContractSymbol> for ContractSymbol {
     fn from(contract_symbol: model::ContractSymbol) -> Self {
         match contract_symbol {
             model::ContractSymbol::BtcUsd => ContractSymbol::BtcUsd,
+            model::ContractSymbol::EthUsd => ContractSymbol::EthUsd,
         }
     }
 }
@@ -972,6 +974,7 @@ impl From<ContractSymbol> for model::ContractSymbol {
     fn from(contract_symbol: ContractSymbol) -> Self {
         match contract_symbol {
             ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
+            ContractSymbol::EthUsd => model::ContractSymbol::EthUsd,
         }
     }
 }

@@ -43,6 +43,7 @@ use model::Timestamp;
 use model::TxFeeRate;
 use model::Usd;
 use sqlite_db;
+use std::collections::HashMap;
 use time::Duration;
 use tokio_extras::FutureExt;
 use tracing::instrument;
@@ -104,7 +105,7 @@ pub struct TakerDisconnected {
 #[derive(Clone, Copy)]
 pub struct GetOffers;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OfferParams {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
@@ -195,7 +196,7 @@ pub struct Actor<O: 'static, T: 'static, W: 'static> {
     executor: command::Executor,
     rollover_actors: AddressMap<OrderId, legacy_rollover::Actor>,
     takers: xtra::Address<T>,
-    current_offers: Option<MakerOffers>,
+    current_offers: HashMap<ContractSymbol, MakerOffers>,
     setup_actors: AddressMap<OrderId, contract_setup::Actor>,
     settlement_actors: AddressMap<OrderId, collab_settlement::Actor>,
     oracle: xtra::Address<O>,
@@ -233,7 +234,7 @@ impl<O, T, W> Actor<O, T, W> {
             executor: command::Executor::new(db, process_manager),
             rollover_actors: AddressMap::default(),
             takers,
-            current_offers: None,
+            current_offers: HashMap::new(),
             setup_actors: AddressMap::default(),
             oracle,
             time_to_first_position,
@@ -254,7 +255,9 @@ where
         self.takers
             .send_async_safe(connection::TakerMessage {
                 taker_id,
-                msg: wire::MakerToTaker::CurrentOffers(self.current_offers.clone()),
+                msg: wire::MakerToTaker::CurrentOffers(
+                    self.current_offers.get(&ContractSymbol::BtcUsd).cloned(),
+                ),
             })
             .await?;
 
@@ -337,11 +340,11 @@ where
                 format!("Contract setup for order {order_id} is already in progress")
             })?;
 
-        // 1. Validate if order is still valid
+        // 1. Validate if offer is still valid
         let order_to_take = self
             .current_offers
-            .as_ref()
-            .and_then(|offers| offers.pick_offer_to_take(order_id));
+            .values()
+            .find_map(|offer| offer.pick_offer_to_take(order_id));
 
         let order_to_take = if let Some(order_to_take) = order_to_take {
             order_to_take
@@ -374,15 +377,20 @@ where
             leverage,
         );
 
-        // 2. Replicate the orders in the offers with new ones to allow other takers to use
-        // the same offer
-        if let Some(offers) = &self.current_offers {
-            self.current_offers = Some(offers.replicate());
+        // 2. Replicate the offers with new ones to allow other takers to use the same offer
+
+        if let Some(offers) = self.current_offers.get(&order_to_take.contract_symbol) {
+            self.current_offers
+                .insert(order_to_take.contract_symbol, offers.replicate());
         }
 
         if let Err(e) = self
             .takers
-            .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
+            .send_async_safe(connection::BroadcastOffers(
+                self.current_offers
+                    .get(&order_to_take.contract_symbol)
+                    .cloned(),
+            ))
             .await
         {
             tracing::warn!("{e:#}");
@@ -391,15 +399,23 @@ where
         if let Err(e) = self
             .libp2p_offer
             .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
-                self.current_offers.clone(),
+                self.current_offers
+                    .get(&order_to_take.contract_symbol)
+                    .map(|offer| offer.clone().into()),
             ))
             .await
         {
             tracing::warn!("{e:#}");
         }
 
+        // 3. update projection
         self.projection
-            .send(projection::Update(self.current_offers.clone()))
+            .send(projection::Update((
+                order_to_take.contract_symbol,
+                self.current_offers
+                    .get(&order_to_take.contract_symbol)
+                    .cloned(),
+            )))
             .await?;
 
         self.db.insert_cfd(&cfd).await?;
@@ -622,12 +638,14 @@ impl<O, T, W> Actor<O, T, W> {
     }
 
     async fn handle_accept_rollover(&mut self, msg: AcceptRollover) -> Result<()> {
+        let order_id = msg.order_id;
+        let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
+
         let current_offers = self
             .current_offers
-            .as_ref()
+            .get(&cfd.contract_symbol())
             .context("Cannot accept rollover without current offer, as we need up-to-date fees")?;
 
-        let order_id = msg.order_id;
         match self
             .rollover_actors
             .send_async(
@@ -669,7 +687,7 @@ impl<O, T, W> Actor<O, T, W> {
         }
     }
 
-    async fn handle(&mut self, _: GetOffers) -> Option<MakerOffers> {
+    async fn handle(&mut self, _: GetOffers) -> HashMap<ContractSymbol, MakerOffers> {
         self.current_offers.clone()
     }
 }
@@ -727,18 +745,22 @@ where
 {
     async fn handle_offer_params(&mut self, msg: OfferParams) -> Result<()> {
         // 1. Update actor state to current order
+        let maker_offers = create_maker_offers(msg.clone(), self.settlement_interval);
         self.current_offers
-            .replace(create_maker_offers(msg, self.settlement_interval));
+            .insert(msg.contract_symbol, maker_offers.clone());
 
         // 2. Notify UI via feed
         self.projection
-            .send(projection::Update(self.current_offers.clone()))
+            .send(projection::Update((
+                msg.contract_symbol,
+                Some(maker_offers.clone()),
+            )))
             .await?;
 
         // 3. Inform connected takers
         if let Err(e) = self
             .takers
-            .send_async_safe(connection::BroadcastOffers(self.current_offers.clone()))
+            .send_async_safe(connection::BroadcastOffers(Some(maker_offers.clone())))
             .await
         {
             tracing::warn!("{e:#}");
@@ -746,9 +768,9 @@ where
 
         if let Err(e) = self
             .libp2p_offer
-            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(
-                self.current_offers.clone(),
-            ))
+            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(Some(
+                maker_offers.into(),
+            )))
             .await
         {
             tracing::warn!("{e:#}");
@@ -907,10 +929,10 @@ where
 
 /// Source of offer rates used for rolling over CFDs.
 #[derive(Clone)]
-pub struct RatesChannel(MessageChannel<GetOffers, Option<MakerOffers>>);
+pub struct RatesChannel(MessageChannel<GetOffers, HashMap<ContractSymbol, MakerOffers>>);
 
 impl RatesChannel {
-    pub fn new(channel: MessageChannel<GetOffers, Option<MakerOffers>>) -> Self {
+    pub fn new(channel: MessageChannel<GetOffers, HashMap<ContractSymbol, MakerOffers>>) -> Self {
         Self(channel)
     }
 }
@@ -928,7 +950,9 @@ impl rollover::v_1_0_0::protocol::GetRates for RatesChannel {
             .send(GetOffers)
             .await
             .context("CFD actor disconnected")?
-            .context("No up-to-date rates")?;
+            .get(&ContractSymbol::BtcUsd)
+            .context("No up-to-date rates")?
+            .clone();
 
         Ok(rollover::v_1_0_0::protocol::Rates::new(
             funding_rate_long,
@@ -940,7 +964,10 @@ impl rollover::v_1_0_0::protocol::GetRates for RatesChannel {
 
 #[async_trait]
 impl rollover::v_2_0_0::protocol::GetRates for RatesChannel {
-    async fn get_rates(&self) -> Result<rollover::v_2_0_0::protocol::Rates> {
+    async fn get_rates(
+        &self,
+        contract_symbol: ContractSymbol,
+    ) -> Result<rollover::v_2_0_0::protocol::Rates> {
         let MakerOffers {
             funding_rate_long,
             funding_rate_short,
@@ -951,7 +978,9 @@ impl rollover::v_2_0_0::protocol::GetRates for RatesChannel {
             .send(GetOffers)
             .await
             .context("CFD actor disconnected")?
-            .context("No up-to-date rates")?;
+            .get(&contract_symbol)
+            .context("No up-to-date rates")?
+            .clone();
 
         Ok(rollover::v_2_0_0::protocol::Rates::new(
             funding_rate_long,

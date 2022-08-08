@@ -12,8 +12,8 @@ export interface CfdNewOfferParamsPayload {
     leverage_choices: number[];
 }
 
-export async function putCfdNewOfferParamsRequest(payload: CfdNewOfferParamsPayload) {
-    let res = await fetch(`/api/offer`, {
+export async function putCfdNewOfferParamsRequest(payload: CfdNewOfferParamsPayload, symbol: string) {
+    let res = await fetch(`/api/${symbol}/offer`, {
         method: "PUT",
         body: JSON.stringify(payload),
         headers: {
