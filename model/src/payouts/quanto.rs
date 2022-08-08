@@ -130,9 +130,16 @@ impl Curve {
         let long_liquidation_interval = self
             .long_liquidation_interval()
             .context("Could not calculate long liquidation interval")?;
-        let short_liquidation_interval = self
+        let mut short_liquidation_interval = self
             .short_liquidation_interval()
             .context("Could not calculate short liquidation interval")?;
+
+        // Under very specific conditions the liquidation intervals can overlap. To avoid this
+        // situation we shift the short liquidation interval by 1
+        if long_liquidation_interval.end() == short_liquidation_interval.start() {
+            short_liquidation_interval =
+                *short_liquidation_interval.start() + 1..=*short_liquidation_interval.end()
+        }
 
         let long_liquidation_threshold = long_liquidation_interval.end();
         let short_liquidation_threshold = short_liquidation_interval.start();
@@ -243,15 +250,15 @@ impl Curve {
             .to_unsigned()
             .context("Could not convert long's effective initial margin to bitcoin::Amount")?;
 
-        let thresholds = LiquidationThresholds::new(
+        let bankruptcy_price = bankruptcy_price_long(
             effective_initial_margin,
             self.n_contracts,
             self.initial_price,
             self.multiplier,
         )
-        .context("Could not calculate liquidation thresholds")?;
+        .context("Could not calculate long's bankruptcy price")?;
 
-        Ok(0..=thresholds.long())
+        Ok(0..=bankruptcy_price)
     }
 
     /// Price interval at which the party going short gets liquidated i.e. their payout amount
@@ -269,15 +276,15 @@ impl Curve {
             .to_unsigned()
             .context("Could not convert short's effective initial margin to bitcoin::Amount")?;
 
-        let thresholds = LiquidationThresholds::new(
+        let bankruptcy_price = bankruptcy_price_short(
             effective_initial_margin,
             self.n_contracts,
             self.initial_price,
             self.multiplier,
         )
-        .context("Could not calculate liquidation thresholds")?;
+        .context("Could not calculate short's bankruptcy price")?;
 
-        Ok(thresholds.short()..=maia_core::interval::MAX_PRICE_DEC)
+        Ok(bankruptcy_price..=maia_core::interval::MAX_PRICE_DEC)
     }
 
     /// Compute the initial BTC margin that the party going long has to put up.
@@ -373,48 +380,53 @@ impl Pnl {
     }
 }
 
-/// Closing prices at which parties get liquidated i.e. when they get a 0 payout.
-struct LiquidationThresholds {
-    bankruptcy_price: u64,
+/// Compute the closing price under which the party going long should get liquidated.
+fn bankruptcy_price_long(
+    initial_margin: Amount,
+    n_contracts: u64,
     initial_price: u64,
+    multiplier: Decimal,
+) -> Result<u64> {
+    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts)
+        .context("Could not calculate long's bankruptcy price shift")?;
+
+    Ok(initial_price.saturating_sub(shift))
 }
 
-impl LiquidationThresholds {
-    /// Compute the liquidation thresholds for both parties.
-    ///
-    /// Call `Self::new().long()` and `Self::new().short()` to access the liquidation threshold
-    /// values for long and short respectively.
-    fn new(
-        initial_margin: Amount,
-        n_contracts: u64,
-        initial_price: u64,
-        multiplier: Decimal,
-    ) -> Result<Self> {
-        let initial_margin = Decimal::from_f64(initial_margin.as_btc())
-            .context("Could not create Decimal from initial margin")?;
+/// Compute the closing price over which the party going short should get liquidated.
+fn bankruptcy_price_short(
+    initial_margin: Amount,
+    n_contracts: u64,
+    initial_price: u64,
+    multiplier: Decimal,
+) -> Result<u64> {
+    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts)
+        .context("Could not calculate short's bankruptcy price shift")?;
 
-        let n_contracts = Decimal::from(n_contracts);
+    Ok(initial_price + shift)
+}
 
-        let inner = initial_margin / (multiplier * n_contracts);
-        let inner = inner
-            .to_u64()
-            .context("Could not convert inner threshold calculation to u64")?;
+/// By how much the price of the asset needs to shift from the initial price in order to reach the
+/// bankruptcy price of the party that put up `initial_margin`.
+///
+/// This is an absolute value. How to apply it in order to calculate the bankruptcy price will
+/// depend on the party's position.
+fn bankruptcy_price_shift(
+    initial_margin: Amount,
+    multiplier: Decimal,
+    n_contracts: u64,
+) -> Result<u64> {
+    let initial_margin = Decimal::from_f64(initial_margin.as_btc())
+        .context("Could not create Decimal from initial margin")?;
 
-        Ok(Self {
-            bankruptcy_price: inner,
-            initial_price,
-        })
-    }
+    let n_contracts = Decimal::from(n_contracts);
 
-    /// Compute the closing price under which the party going long gets liquidated.
-    fn long(&self) -> u64 {
-        self.initial_price.saturating_sub(self.bankruptcy_price)
-    }
+    let price = initial_margin / (multiplier * n_contracts);
+    let price = price
+        .to_u64()
+        .context("Could not convert bankruptcy price to u64")?;
 
-    /// Compute the closing price over which the party going short gets liquidated.
-    fn short(&self) -> u64 {
-        self.initial_price + self.bankruptcy_price
-    }
+    Ok(price)
 }
 
 #[cfg(test)]
