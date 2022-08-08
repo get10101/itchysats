@@ -266,7 +266,7 @@ impl Connection {
                 funding_fee,
                 complete_fee,
             } => {
-                rollover::insert(
+                rollover::overwrite(
                     &mut conn,
                     query_result.last_insert_rowid(),
                     order_id,

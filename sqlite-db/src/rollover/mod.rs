@@ -1,9 +1,9 @@
 mod delete;
-mod insert;
 mod load;
+mod overwrite;
 
-pub use insert::insert;
 pub use load::load;
+pub use overwrite::overwrite;
 
 #[cfg(test)]
 mod tests {
@@ -80,7 +80,7 @@ mod tests {
         db.append_event(rollover_completed.clone()).await.unwrap();
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event);
-        insert(
+        overwrite(
             &mut connection,
             1,
             cfd.id().into(),
@@ -120,7 +120,7 @@ mod tests {
         db.append_event(rollover_completed.clone()).await?;
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
-        insert(
+        overwrite(
             &mut connection,
             1,
             cfd.id().into(),
@@ -141,7 +141,7 @@ mod tests {
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
 
-        insert(
+        overwrite(
             &mut connection,
             2,
             cfd.id().into(),
@@ -181,7 +181,7 @@ mod tests {
         let mut connection = db.inner.acquire().await?;
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
-        insert(
+        overwrite(
             &mut connection,
             1,
             cfd.id().into(),
@@ -234,7 +234,7 @@ mod tests {
         db.append_event(rollover_completed.clone()).await?;
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
-        insert(
+        overwrite(
             &mut connection,
             1,
             cfd.id().into(),
@@ -258,7 +258,7 @@ mod tests {
 
         let (dlc, funding_fee, complete_fee) =
             extract_rollover_completed_data(second_rollover_completed_event.event.clone());
-        insert(
+        overwrite(
             &mut connection,
             2,
             cfd.id().into(),
