@@ -346,7 +346,7 @@ pub struct SettlementProposal {
 
 /// Reasons why we cannot rollover a CFD.
 #[derive(thiserror::Error, Debug, PartialEq, Clone, Copy)]
-pub enum NoRolloverReason {
+pub enum CannotRollover {
     #[error("Is too recent to auto-rollover")]
     TooRecent,
     #[error("CFD does not have a DLC")]
@@ -358,6 +358,19 @@ pub enum NoRolloverReason {
     #[error("Cannot roll over while CFD is in collaborative settlement")]
     InCollaborativeSettlement,
     #[error("Cannot roll over when CFD is already closed")]
+    Closed,
+}
+
+/// Reasons why we cannot collab close a CFD
+#[derive(thiserror::Error, Debug, PartialEq, Clone, Copy)]
+pub enum CannotSettleCollaboratively {
+    #[error("The CFD was already force closed")]
+    OngoingForceClose,
+    #[error("The CFD is already committed")]
+    Committed,
+    #[error("The CFD already has an attestation")]
+    Attested,
+    #[error("The CFD is already closed")]
     Closed,
 }
 
@@ -756,51 +769,64 @@ impl Cfd {
     pub fn can_auto_rollover_taker(
         &self,
         now: OffsetDateTime,
-    ) -> Result<(Txid, BitMexPriceEventId), NoRolloverReason> {
-        let expiry_timestamp = self.expiry_timestamp().ok_or(NoRolloverReason::NoDlc)?;
+    ) -> Result<(Txid, BitMexPriceEventId), CannotRollover> {
+        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
         let time_until_expiry = expiry_timestamp - now;
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
-            return Err(NoRolloverReason::TooRecent);
+            return Err(CannotRollover::TooRecent);
         }
 
         self.can_rollover()?;
 
-        let dlc = self.dlc.as_ref().ok_or(NoRolloverReason::NoDlc)?;
+        let dlc = self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?;
 
         Ok((dlc.commit.0.txid(), dlc.settlement_event_id))
     }
 
-    fn can_rollover(&self) -> Result<(), NoRolloverReason> {
+    fn can_rollover(&self) -> Result<(), CannotRollover> {
         if self.is_closed() {
-            return Err(NoRolloverReason::Closed);
+            return Err(CannotRollover::Closed);
         }
 
         if self.commit_finality {
-            return Err(NoRolloverReason::Committed);
+            return Err(CannotRollover::Committed);
         }
 
         if !self.lock_finality {
-            return Err(NoRolloverReason::NotLocked);
+            return Err(CannotRollover::NotLocked);
         }
 
         if self.is_in_force_close() {
-            return Err(NoRolloverReason::Committed);
+            return Err(CannotRollover::Committed);
         }
 
         // Rollover and collaborative settlement are mutually exclusive, if we are currently
         // collaboratively settling we cannot roll over
         if self.is_in_collaborative_settlement() {
-            return Err(NoRolloverReason::InCollaborativeSettlement);
+            return Err(CannotRollover::InCollaborativeSettlement);
         }
 
         Ok(())
     }
 
-    fn can_settle_collaboratively(&self) -> bool {
-        !self.is_closed()
-            && !self.commit_finality
-            && !self.is_attested()
-            && !self.is_in_force_close()
+    fn can_settle_collaboratively(&self) -> Result<(), CannotSettleCollaboratively> {
+        if self.is_closed() {
+            return Err(CannotSettleCollaboratively::Closed);
+        }
+
+        if self.commit_finality {
+            return Err(CannotSettleCollaboratively::Committed);
+        }
+
+        if self.is_attested() {
+            return Err(CannotSettleCollaboratively::Attested);
+        }
+
+        if self.is_in_force_close() {
+            return Err(CannotSettleCollaboratively::OngoingForceClose);
+        }
+
+        Ok(())
     }
 
     fn is_attested(&self) -> bool {
@@ -1098,7 +1124,8 @@ impl Cfd {
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Taker);
-        ensure!(self.can_settle_collaboratively());
+        self.can_settle_collaboratively()
+            .context("Cannot collaboratively settle")?;
 
         let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1121,7 +1148,8 @@ impl Cfd {
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Maker);
-        ensure!(self.can_settle_collaboratively());
+        self.can_settle_collaboratively()
+            .context("Cannot collaboratively settle")?;
 
         let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
 
@@ -1196,8 +1224,9 @@ impl Cfd {
     ) -> Result<CfdEvent> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Maker);
-        ensure!(self.can_settle_collaboratively());
         ensure!(proposal.order_id == self.id);
+        self.can_settle_collaboratively()
+            .context("Cannot collaboratively settle")?;
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
@@ -1316,18 +1345,17 @@ impl Cfd {
         self,
         settlement: CollaborativeSettlement,
     ) -> CfdEvent {
-        if self.can_settle_collaboratively() {
-            tracing::info!(order_id=%self.id(), peer_id=?self.counterparty_peer_id, tx=%settlement.tx.txid(), "Collaborative settlement completed");
+        match self.can_settle_collaboratively() {
+            Ok(()) => {
+                tracing::info!(order_id=%self.id(), peer_id=?self.counterparty_peer_id, tx=%settlement.tx.txid(), "Collaborative settlement completed");
 
-            self.event(EventKind::CollaborativeSettlementCompleted {
-                spend_tx: settlement.tx,
-                script: settlement.script_pubkey,
-                price: settlement.price,
-            })
-        } else {
-            self.fail_collaborative_settlement(anyhow!(
-                "CFD not eligible for collaborative settlement anymore"
-            ))
+                self.event(EventKind::CollaborativeSettlementCompleted {
+                    spend_tx: settlement.tx,
+                    script: settlement.script_pubkey,
+                    price: settlement.price,
+                })
+            }
+            Err(e) => self.fail_collaborative_settlement(anyhow!(e)),
         }
     }
 
@@ -3001,7 +3029,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 10:00:01).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
+        assert_eq!(cannot_roll_over, CannotRollover::TooRecent)
     }
 
     #[test]
@@ -3018,7 +3046,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 09:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
+        assert_eq!(cannot_roll_over, CannotRollover::TooRecent)
     }
 
     #[test]
@@ -3035,7 +3063,7 @@ mod tests {
             .can_auto_rollover_taker(datetime!(2021-11-18 10:59:59).assume_utc())
             .unwrap_err();
 
-        assert_eq!(cannot_roll_over, NoRolloverReason::TooRecent)
+        assert_eq!(cannot_roll_over, CannotRollover::TooRecent)
     }
 
     #[test]
@@ -3044,10 +3072,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(
-            cannot_roll_over,
-            NoRolloverReason::NotLocked { .. }
-        ))
+        assert!(matches!(cannot_roll_over, CannotRollover::NotLocked { .. }))
     }
 
     #[test]
@@ -3058,7 +3083,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, NoRolloverReason::Closed))
+        assert!(matches!(cannot_roll_over, CannotRollover::Closed))
     }
 
     #[test]
@@ -3069,7 +3094,7 @@ mod tests {
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
 
-        assert!(matches!(cannot_roll_over, NoRolloverReason::Closed))
+        assert!(matches!(cannot_roll_over, CannotRollover::Closed))
     }
 
     #[test]
@@ -3112,8 +3137,8 @@ mod tests {
 
         let result = cfd.start_rollover_deprecated();
 
-        let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
-        assert_eq!(no_rollover_reason, NoRolloverReason::Closed);
+        let no_rollover_reason = result.unwrap_err().downcast::<CannotRollover>().unwrap();
+        assert_eq!(no_rollover_reason, CannotRollover::Closed);
     }
 
     /// Cover scenario where trigger a collab settlement during ongoing rollover
@@ -3173,10 +3198,10 @@ mod tests {
 
         let result = cfd.start_rollover_deprecated();
 
-        let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
+        let no_rollover_reason = result.unwrap_err().downcast::<CannotRollover>().unwrap();
         assert_eq!(
             no_rollover_reason,
-            NoRolloverReason::InCollaborativeSettlement
+            CannotRollover::InCollaborativeSettlement
         );
 
         let cfd = Cfd::dummy_maker_short()
@@ -3185,10 +3210,10 @@ mod tests {
 
         let result = cfd.start_rollover_deprecated();
 
-        let no_rollover_reason = result.unwrap_err().downcast::<NoRolloverReason>().unwrap();
+        let no_rollover_reason = result.unwrap_err().downcast::<CannotRollover>().unwrap();
         assert_eq!(
             no_rollover_reason,
-            NoRolloverReason::InCollaborativeSettlement
+            CannotRollover::InCollaborativeSettlement
         );
     }
 
