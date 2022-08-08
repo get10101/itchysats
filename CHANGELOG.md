@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New dynamic route for maker `PUT /<contract_symbol>/offer/`. This allows the creation of offers with `<contract_symbol>`.
+
+### Changed
+
+- Introduce path param to SSE event route for both maker and taker. The new route is `/<contract_symbol>/feed`.
+
 ## [0.5.4] - 2022-08-05
 
 ### Added
 
 - Add dynamic liquidation to the DLC, enabling the CFD to be unilaterally closed every hour by either party if the oracle attests to a price close to the ends of the payout curve's domain.
-- New dynamic route for maker `PUT /<contract_symbol>/offer/`. This allows the creation of offers with `<contract_symbol>`.
 
 ### Changed
 
@@ -25,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It allows a peer to share their contact details with others on request.
   It replaces a previous similar mechanism, which ran over a bespoke network stack.
 - Breaking change: renamed `trading_pair` to `contract_symbol` in Http API.
-- Introduce path param to SSE event route for both maker and taker. The new route is `/<contract_symbol>/feed`.
 
 ## [0.5.3] - 2022-08-01
 
