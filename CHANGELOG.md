@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Introduce the `/itchysats/order/1.0.0` protocol, running over libp2p.
   It is used to place an order and immediately set up the CFD on chain.
   It replaces the previous mechanism, which ran over a bespoke network stack.
-- Introduce the `/itchysats/identify/0.3.0` protocol, running over libp2p.
+- Introduce the `/itchysats/id/1.0.0` protocol, running over libp2p.
   It allows a peer to share their contact details with others on request.
   It replaces a previous similar mechanism, which ran over a bespoke network stack.
 - Breaking change: renamed `trading_pair` to `contract_symbol` in Http API.
