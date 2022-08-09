@@ -22,7 +22,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.6.1", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 thiserror = "1"
-time = { version = "0.3.11", features = [] }
+time = { version = "0.3.13", features = [] }
 tokio = { version = "1" }
 tracing = "0.1"
 x25519-dalek = "1.1"
