@@ -22,7 +22,7 @@ ndarray_einsum_beta = "0.7.0"
 num = "0.4.0"
 rand = "0.6"
 rust_decimal = "1.26"
-rust_decimal_macros = "1.25"
+rust_decimal_macros = "1.26"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "1", features = ["macros"] }
