@@ -1,9 +1,8 @@
-mod delete;
-mod insert;
 mod load;
+mod overwrite;
 
-pub use insert::insert;
 pub use load::load;
+pub use overwrite::overwrite;
 
 #[cfg(test)]
 mod tests {
@@ -17,8 +16,11 @@ mod tests {
     use model::olivia::BitMexPriceEventId;
     use model::Cfd;
     use model::CfdEvent;
+    use model::CompleteFee;
     use model::ContractSymbol;
+    use model::Dlc;
     use model::EventKind;
+    use model::FundingFee;
     use model::FundingRate;
     use model::Leverage;
     use model::OfferId;
@@ -70,14 +72,23 @@ mod tests {
         let rollover_completed = CfdEvent {
             timestamp,
             id: cfd.id(),
-            event,
+            event: event.clone(),
         };
 
         let mut connection = db.inner.acquire().await.unwrap();
         db.append_event(rollover_completed.clone()).await.unwrap();
-        insert(&mut connection, 1, rollover_completed.clone())
-            .await
-            .unwrap();
+
+        let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event);
+        overwrite(
+            &mut connection,
+            1,
+            cfd.id().into(),
+            dlc,
+            funding_fee,
+            complete_fee,
+        )
+        .await
+        .unwrap();
 
         let (rollovers, revokes, cets) = count_table_entries(connection).await;
         assert_eq!(rollovers, 1);
@@ -106,7 +117,18 @@ mod tests {
         // insert first rollovercompleted event
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
-        insert(&mut connection, 1, rollover_completed.clone()).await?;
+
+        let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
+        overwrite(
+            &mut connection,
+            1,
+            cfd.id().into(),
+            dlc.clone(),
+            funding_fee,
+            complete_fee,
+        )
+        .await
+        .unwrap();
 
         // insert second rollovercompleted event with different event id
         let rollover_completed = update_event_id(
@@ -117,7 +139,16 @@ mod tests {
         )?;
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
-        insert(&mut connection, 2, rollover_completed).await?;
+
+        overwrite(
+            &mut connection,
+            2,
+            cfd.id().into(),
+            dlc,
+            funding_fee,
+            complete_fee,
+        )
+        .await?;
 
         let (rollovers, revokes, cets) = count_table_entries(connection).await;
         assert_eq!(rollovers, 1);
@@ -142,12 +173,22 @@ mod tests {
         let rollover_completed = CfdEvent {
             timestamp,
             id: cfd.id(),
-            event,
+            event: event.clone(),
         };
 
         db.append_event(rollover_completed.clone()).await?;
         let mut connection = db.inner.acquire().await?;
-        insert(&mut connection, 1, rollover_completed.clone()).await?;
+
+        let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
+        overwrite(
+            &mut connection,
+            1,
+            cfd.id().into(),
+            dlc.clone(),
+            funding_fee,
+            complete_fee,
+        )
+        .await?;
 
         let order_id = models::OrderId::from(cfd.id());
 
@@ -164,22 +205,11 @@ mod tests {
                 .await?
                 .context("Expect to find data")?;
 
-        match rollover_completed.event {
-            EventKind::RolloverCompleted {
-                dlc: Some(dlc),
-                funding_fee,
-                complete_fee,
-            } => {
-                // dlc does not implement eq hence we only assert on the event id which is
-                // sufficient because we only expect to have 1 item in the db
-                assert_eq!(loaded_dlc.settlement_event_id, dlc.settlement_event_id);
-                assert_eq!(loaded_funding_fee, funding_fee);
-                assert_eq!(loaded_complete_fee, complete_fee)
-            }
-            _ => {
-                bail!("We should always have a RolloverCompletedEvent")
-            }
-        }
+        // dlc does not implement eq hence we only assert on the event id which is
+        // sufficient because we only expect to have 1 item in the db
+        assert_eq!(loaded_dlc.settlement_event_id, dlc.settlement_event_id);
+        assert_eq!(loaded_funding_fee, funding_fee);
+        assert_eq!(loaded_complete_fee, complete_fee);
 
         Ok(())
     }
@@ -201,12 +231,22 @@ mod tests {
         // insert first RolloverCompleted event data
         let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
-        insert(&mut connection, 1, rollover_completed.clone()).await?;
+
+        let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
+        overwrite(
+            &mut connection,
+            1,
+            cfd.id().into(),
+            dlc,
+            funding_fee,
+            complete_fee,
+        )
+        .await?;
 
         // insert second RolloverCompleted event data
         let second_rollover_completed_event = update_event_id(
             timestamp,
-            event,
+            event.clone(),
             datetime!(2021-06-01 10:00:00).assume_utc(),
             cfd.id(),
         )?;
@@ -214,9 +254,18 @@ mod tests {
         db.append_event(second_rollover_completed_event.clone())
             .await
             .unwrap();
-        insert(&mut connection, 2, second_rollover_completed_event.clone())
-            .await
-            .unwrap();
+
+        let (dlc, funding_fee, complete_fee) =
+            extract_rollover_completed_data(second_rollover_completed_event.event.clone());
+        overwrite(
+            &mut connection,
+            2,
+            cfd.id().into(),
+            dlc.clone(),
+            funding_fee,
+            complete_fee,
+        )
+        .await?;
 
         let order_id = models::OrderId::from(cfd.id());
 
@@ -232,22 +281,11 @@ mod tests {
                 .await?
                 .context("Expect to find data")?;
 
-        match second_rollover_completed_event.event {
-            EventKind::RolloverCompleted {
-                dlc: Some(dlc),
-                funding_fee,
-                complete_fee,
-            } => {
-                // dlc does not implement eq hence we only assert on the event id which is
-                // sufficient because we only expect to have 1 item in the db
-                assert_eq!(loaded_dlc.settlement_event_id, dlc.settlement_event_id);
-                assert_eq!(loaded_funding_fee, funding_fee);
-                assert_eq!(loaded_complete_fee, complete_fee);
-            }
-            _ => {
-                bail!("We should always have a RolloverCompletedEvent")
-            }
-        }
+        // dlc does not implement eq hence we only assert on the event id which is
+        // sufficient because we only expect to have 1 item in the db
+        assert_eq!(loaded_dlc.settlement_event_id, dlc.settlement_event_id);
+        assert_eq!(loaded_funding_fee, funding_fee);
+        assert_eq!(loaded_complete_fee, complete_fee);
 
         Ok(())
     }
@@ -304,6 +342,17 @@ mod tests {
             _ => {
                 bail!("We should always have a RolloverCompleted event")
             }
+        }
+    }
+
+    fn extract_rollover_completed_data(event: EventKind) -> (Dlc, FundingFee, Option<CompleteFee>) {
+        match event {
+            EventKind::RolloverCompleted {
+                dlc: Some(dlc),
+                funding_fee,
+                complete_fee,
+            } => (dlc, funding_fee, complete_fee),
+            _ => panic!("Expected RolloverCompleted event with DLC"),
         }
     }
 }
