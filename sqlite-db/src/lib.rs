@@ -224,6 +224,7 @@ impl Connection {
     /// implements `Into<Option>` event.
     pub async fn append_event(&self, event: impl Into<Option<CfdEvent>>) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
+        let mut db_tx = conn.begin().await?;
 
         let event = match event.into() {
             Some(event) => event,
@@ -250,7 +251,7 @@ impl Connection {
         .bind(&event_name)
         .bind(&event_data)
         .bind(&timestamp)
-        .execute(&mut conn)
+        .execute(&mut db_tx)
         .await?;
 
         if query_result.rows_affected() != 1 {
@@ -265,7 +266,7 @@ impl Connection {
                 complete_fee,
             } => {
                 rollover::overwrite(
-                    &mut conn,
+                    &mut db_tx,
                     query_result.last_insert_rowid(),
                     order_id,
                     dlc,
@@ -281,6 +282,8 @@ impl Connection {
             }
             _ => {}
         }
+
+        db_tx.commit().await?;
 
         tracing::info!(event = %event_name, %order_id, "Appended event to database");
 

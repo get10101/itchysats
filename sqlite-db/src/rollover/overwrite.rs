@@ -10,7 +10,6 @@ use model::Dlc;
 use model::FundingFee;
 use model::RevokedCommit;
 use models::BitMexPriceEventId;
-use sqlx::Acquire;
 use sqlx::SqliteConnection;
 use sqlx::SqliteExecutor;
 
@@ -28,12 +27,10 @@ pub async fn overwrite(
     funding_fee: FundingFee,
     complete_fee: Option<CompleteFee>,
 ) -> Result<()> {
-    let mut db_tx = conn.begin().await?;
-
-    delete(&mut *db_tx, order_id).await?;
+    delete(&mut *conn, order_id).await?;
 
     insert_rollover_completed_event_data(
-        &mut *db_tx,
+        &mut *conn,
         event_id,
         &dlc,
         funding_fee,
@@ -43,16 +40,14 @@ pub async fn overwrite(
     .await?;
 
     for revoked in dlc.revoked_commit {
-        insert_revoked_commit_transaction(&mut *db_tx, order_id, revoked).await?;
+        insert_revoked_commit_transaction(&mut *conn, order_id, revoked).await?;
     }
 
     for (event_id, cets) in dlc.cets {
         for cet in cets {
-            insert_cet(&mut *db_tx, event_id.into(), order_id, cet).await?;
+            insert_cet(&mut *conn, event_id.into(), order_id, cet).await?;
         }
     }
-
-    db_tx.commit().await?;
 
     Ok(())
 }
