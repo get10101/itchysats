@@ -13,8 +13,7 @@ use model::CompleteFee;
 use model::Dlc;
 use model::FundingFee;
 use model::RevokedCommit;
-use sqlx::Sqlite;
-use sqlx::Transaction;
+use sqlx::SqliteConnection;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::str::FromStr;
@@ -24,12 +23,12 @@ use std::str::FromStr;
 /// Returns Ok(Some(..)) if one was found or Ok(None) if none was found.
 /// In error case, it returns Err(..)
 pub async fn load(
-    transaction: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     cfd_row_id: i64,
     event_row_id: i64,
 ) -> Result<Option<(Dlc, FundingFee, Option<CompleteFee>)>> {
-    let revoked_commit = load_revoked_commit_transactions(transaction, cfd_row_id).await?;
-    let cets = load_cets(transaction, cfd_row_id).await?;
+    let revoked_commit = load_revoked_commit_transactions(&mut *conn, cfd_row_id).await?;
+    let cets = load_cets(&mut *conn, cfd_row_id).await?;
 
     let row = sqlx::query!(
         r#"
@@ -66,7 +65,7 @@ pub async fn load(
         cfd_row_id,
         event_row_id,
     )
-    .fetch_optional(transaction)
+    .fetch_optional(&mut *conn)
     .await?;
 
     let row = match row {
@@ -114,7 +113,7 @@ pub async fn load(
 }
 
 async fn load_revoked_commit_transactions(
-    db_transaction: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     cfd_row_id: i64,
 ) -> Result<Vec<RevokedCommit>> {
     let revoked_commit = sqlx::query!(
@@ -137,7 +136,7 @@ async fn load_revoked_commit_transactions(
             "#,
         cfd_row_id,
     )
-    .fetch_all(db_transaction)
+    .fetch_all(&mut *conn)
     .await?
     .into_iter()
     .map(|row| {
@@ -161,7 +160,7 @@ async fn load_revoked_commit_transactions(
 }
 
 async fn load_cets(
-    db_transaction: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     cfd_row_id: i64,
 ) -> Result<HashMap<BitMexPriceEventId, Vec<Cet>>> {
     let revoked_commit_per_event: Vec<(BitMexPriceEventId, Cet)> = sqlx::query!(
@@ -182,7 +181,7 @@ async fn load_cets(
             "#,
         cfd_row_id,
     )
-    .fetch_all(db_transaction)
+    .fetch_all(&mut *conn)
     .await?
     .into_iter()
     .map(|row| {

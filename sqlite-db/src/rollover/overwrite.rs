@@ -10,10 +10,9 @@ use model::Dlc;
 use model::FundingFee;
 use model::RevokedCommit;
 use models::BitMexPriceEventId;
-use sqlx::pool::PoolConnection;
-use sqlx::Connection as SqlxConnection;
-use sqlx::Sqlite;
-use sqlx::Transaction;
+use sqlx::Acquire;
+use sqlx::SqliteConnection;
+use sqlx::SqliteExecutor;
 
 mod delete;
 
@@ -22,19 +21,19 @@ mod delete;
 /// After a successful rollover, we can forget about the previous `Dlc`, `FundingFee` and
 /// `CompleteFee`.
 pub async fn overwrite(
-    connection: &mut PoolConnection<Sqlite>,
+    conn: &mut SqliteConnection,
     event_id: i64,
     order_id: models::OrderId,
     dlc: Dlc,
     funding_fee: FundingFee,
     complete_fee: Option<CompleteFee>,
 ) -> Result<()> {
-    let mut inner_transaction = connection.begin().await?;
+    let mut db_tx = conn.begin().await?;
 
-    delete(&mut inner_transaction, order_id).await?;
+    delete(&mut *db_tx, order_id).await?;
 
     insert_rollover_completed_event_data(
-        &mut inner_transaction,
+        &mut *db_tx,
         event_id,
         &dlc,
         funding_fee,
@@ -44,24 +43,23 @@ pub async fn overwrite(
     .await?;
 
     for revoked in dlc.revoked_commit {
-        insert_revoked_commit_transaction(&mut inner_transaction, order_id, revoked).await?;
+        insert_revoked_commit_transaction(&mut *db_tx, order_id, revoked).await?;
     }
 
     for (event_id, cets) in dlc.cets {
         for cet in cets {
-            insert_cet(&mut inner_transaction, event_id.into(), order_id, cet).await?;
+            insert_cet(&mut *db_tx, event_id.into(), order_id, cet).await?;
         }
     }
 
-    // Commit the transaction to either write all or rollback
-    inner_transaction.commit().await?;
+    db_tx.commit().await?;
 
     Ok(())
 }
 
 /// Inserts RolloverCompleted data and returns the resulting rowid
 async fn insert_rollover_completed_event_data(
-    inner_transaction: &mut Transaction<'_, Sqlite>,
+    conn: impl SqliteExecutor<'_>,
     event_id: i64,
     dlc: &Dlc,
     funding_fee: FundingFee,
@@ -161,7 +159,7 @@ async fn insert_rollover_completed_event_data(
         complete_fee,
         complete_fee_flow,
     )
-    .execute(&mut *inner_transaction)
+    .execute(conn)
     .await?;
 
     if query_result.rows_affected() != 1 {
@@ -171,7 +169,7 @@ async fn insert_rollover_completed_event_data(
 }
 
 async fn insert_revoked_commit_transaction(
-    inner_transaction: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     order_id: models::OrderId,
     revoked: RevokedCommit,
 ) -> Result<()> {
@@ -213,7 +211,7 @@ async fn insert_revoked_commit_transaction(
         complete_fee_flow,
         revocation_sk_ours
     )
-    .execute(&mut *inner_transaction)
+    .execute(&mut *conn)
     .await?;
 
     if query_result.rows_affected() != 1 {
@@ -223,7 +221,7 @@ async fn insert_revoked_commit_transaction(
 }
 
 async fn insert_cet(
-    db_transaction: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     event_id: BitMexPriceEventId,
     order_id: models::OrderId,
     cet: Cet,
@@ -260,7 +258,7 @@ async fn insert_cet(
         range_end,
         txid,
     )
-    .execute(&mut *db_transaction)
+    .execute(&mut *conn)
     .await?;
 
     if query_result.rows_affected() != 1 {

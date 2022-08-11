@@ -33,10 +33,8 @@ use model::FundingFee;
 use model::OrderId;
 use model::Timestamp;
 use models::FailedKind;
-use sqlx::pool::PoolConnection;
-use sqlx::Connection as _;
-use sqlx::Sqlite;
-use sqlx::Transaction;
+use sqlx::Acquire;
+use sqlx::SqliteConnection;
 
 /// A trait for building an aggregate based on a `FailedCfd`.
 pub trait FailedCfdAggregate: CfdAggregate {
@@ -159,7 +157,7 @@ impl Connection {
 }
 
 async fn insert_failed_cfd(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     cfd: Cfd,
     event_log: &EventLog,
 ) -> Result<()> {
@@ -257,7 +255,7 @@ async fn insert_failed_cfd(
 }
 
 async fn insert_event_log(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     event_log: EventLog,
 ) -> Result<()> {
@@ -297,10 +295,7 @@ async fn insert_event_log(
 ///
 /// We use the timestamp of the first event for a particular CFD `id`
 /// in the `event_log_failed` table.
-async fn load_creation_timestamp(
-    conn: &mut PoolConnection<Sqlite>,
-    id: OrderId,
-) -> Result<Timestamp> {
+async fn load_creation_timestamp(conn: &mut SqliteConnection, id: OrderId) -> Result<Timestamp> {
     let id = models::OrderId::from(id);
 
     let row = sqlx::query!(
@@ -337,6 +332,7 @@ mod tests {
     #[tokio::test]
     async fn given_offer_rejected_when_move_cfds_to_failed_table_then_can_load_cfd_as_failed() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         let order_id = cfd.id();
@@ -349,10 +345,7 @@ mod tests {
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
         let load_from_events = {
-            let mut conn = db.inner.acquire().await.unwrap();
-            let mut db_tx = conn.begin().await.unwrap();
-            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
-            db_tx.commit().await.unwrap();
+            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
 
             res
         };
@@ -367,6 +360,7 @@ mod tests {
     async fn given_contract_setup_failed_when_move_cfds_to_failed_table_then_can_load_cfd_as_failed(
     ) {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         let order_id = cfd.id();
@@ -379,10 +373,7 @@ mod tests {
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
         let load_from_events = {
-            let mut conn = db.inner.acquire().await.unwrap();
-            let mut db_tx = conn.begin().await.unwrap();
-            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
-            db_tx.commit().await.unwrap();
+            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
 
             res
         };
@@ -397,6 +388,7 @@ mod tests {
     async fn given_cfd_without_failed_events_when_move_cfds_to_failed_table_then_cannot_load_cfd_as_failed(
     ) {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         let order_id = cfd.id();
@@ -410,10 +402,7 @@ mod tests {
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
         let load_from_events = {
-            let mut conn = db.inner.acquire().await.unwrap();
-            let mut db_tx = conn.begin().await.unwrap();
-            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
-            db_tx.commit().await.unwrap();
+            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
 
             res
         };
@@ -428,6 +417,7 @@ mod tests {
     async fn given_contract_setup_failed_when_move_cfds_to_failed_table_then_creation_timestamp_is_that_of_contract_setup_started_event(
     ) {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         let id = cfd.id();
@@ -452,8 +442,7 @@ mod tests {
 
         db.move_to_failed_cfds().await.unwrap();
 
-        let mut conn = db.inner.acquire().await.unwrap();
-        let creation_timestamp = load_creation_timestamp(&mut conn, id).await.unwrap();
+        let creation_timestamp = load_creation_timestamp(&mut *conn, id).await.unwrap();
 
         assert_ne!(creation_timestamp, contract_setup_failed_timestamp);
         assert_eq!(creation_timestamp, contract_setup_started_timestamp);
