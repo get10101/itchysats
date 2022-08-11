@@ -7,7 +7,6 @@ use chashmap_async::CHashMap;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use futures::Stream;
-use futures::StreamExt;
 use model::libp2p::PeerId;
 use model::CfdEvent;
 use model::ContractSymbol;
@@ -25,10 +24,9 @@ use model::TxFeeRate;
 use model::Usd;
 use sqlx::migrate::MigrateError;
 use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::Connection as _;
-use sqlx::Sqlite;
+use sqlx::Acquire;
+use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
-use sqlx::Transaction;
 use std::any::Any;
 use std::any::TypeId;
 use std::path::PathBuf;
@@ -226,6 +224,7 @@ impl Connection {
     /// implements `Into<Option>` event.
     pub async fn append_event(&self, event: impl Into<Option<CfdEvent>>) -> Result<()> {
         let mut conn = self.inner.acquire().await?;
+        let mut db_tx = conn.begin().await?;
 
         let event = match event.into() {
             Some(event) => event,
@@ -252,7 +251,7 @@ impl Connection {
         .bind(&event_name)
         .bind(&event_data)
         .bind(&timestamp)
-        .execute(&mut conn)
+        .execute(&mut db_tx)
         .await?;
 
         if query_result.rows_affected() != 1 {
@@ -267,7 +266,7 @@ impl Connection {
                 complete_fee,
             } => {
                 rollover::overwrite(
-                    &mut conn,
+                    &mut db_tx,
                     query_result.last_insert_rowid(),
                     order_id,
                     dlc,
@@ -283,6 +282,8 @@ impl Connection {
             }
             _ => {}
         }
+
+        db_tx.commit().await?;
 
         tracing::info!(event = %event_name, %order_id, "Appended event to database");
 
@@ -335,7 +336,10 @@ impl Connection {
         Ok(cfd)
     }
 
-    pub fn load_all_cfds<C>(&self, args: C::CtorArgs) -> impl Stream<Item = Result<C>> + Unpin + '_
+    pub fn load_all_cfds<'a, C>(
+        &'a self,
+        args: C::CtorArgs,
+    ) -> impl Stream<Item = Result<C>> + Unpin + '_
     where
         C: CfdAggregate + ClosedCfdAggregate + FailedCfdAggregate,
         C::CtorArgs: Clone + Send + Sync,
@@ -371,7 +375,7 @@ impl Connection {
             }
         };
 
-        stream.boxed()
+        Box::pin(stream)
     }
 
     /// Loads all CFDs where we are still able to append events
@@ -384,8 +388,8 @@ impl Connection {
     ///     Cases: Collaborative settlement, CET, Refund
     /// 2. Event that fails the CFD early was recorded, meaning it becomes irrelevant for processing
     ///     Cases: Setup failed, Taker's take order rejected
-    pub fn load_all_open_cfds<C>(
-        &self,
+    pub fn load_all_open_cfds<'a, C>(
+        &'a self,
         args: C::CtorArgs,
     ) -> impl Stream<Item = Result<C>> + Unpin + '_
     where
@@ -412,7 +416,7 @@ impl Connection {
             }
         };
 
-        stream.boxed()
+        Box::pin(stream)
     }
 
     /// Load the IDs for all the CFDs found in the `cfds` table.
@@ -559,7 +563,7 @@ pub trait CfdAggregate: Clone + Send + Sync + 'static {
     fn version(&self) -> u32;
 }
 
-async fn load_cfd_row(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<Cfd, Error> {
+async fn load_cfd_row(conn: &mut SqliteConnection, id: OrderId) -> Result<Cfd, Error> {
     let id = models::OrderId::from(id);
 
     let cfd_row = sqlx::query!(
@@ -653,7 +657,7 @@ fn derive_known_peer_id(legacy_network_identity: Identity, role: Role) -> Option
 ///
 /// Events will be sorted in chronological order.
 async fn load_cfd_events(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     from_version: u32,
 ) -> Result<Vec<CfdEvent>> {
@@ -700,7 +704,7 @@ async fn load_cfd_events(
     for (cfd_row_id, event_row_id, event) in events.iter_mut() {
         if let RolloverCompleted { .. } = event.event {
             if let Some((dlc, funding_fee, complete_fee)) =
-                rollover::load(conn, *cfd_row_id, *event_row_id).await?
+                rollover::load(&mut *conn, *cfd_row_id, *event_row_id).await?
             {
                 event.event = RolloverCompleted {
                     dlc: Some(dlc),
@@ -719,7 +723,7 @@ async fn load_cfd_events(
     Ok(events)
 }
 
-async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+async fn delete_from_cfds_table(conn: &mut SqliteConnection, id: OrderId) -> Result<()> {
     let id = models::OrderId::from(id);
     let query_result = sqlx::query!(
         r#"
@@ -740,7 +744,7 @@ async fn delete_from_cfds_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId)
     Ok(())
 }
 
-async fn delete_from_events_table(conn: &mut Transaction<'_, Sqlite>, id: OrderId) -> Result<()> {
+async fn delete_from_events_table(conn: &mut SqliteConnection, id: OrderId) -> Result<()> {
     let id = models::OrderId::from(id);
 
     let query_result = sqlx::query!(
@@ -781,11 +785,10 @@ mod tests {
     #[tokio::test]
     async fn test_insert_and_load_cfd() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await.unwrap();
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let super::Cfd {
             id,
@@ -802,9 +805,7 @@ mod tests {
             initial_funding_rate,
             initial_tx_fee_rate,
             contract_symbol,
-        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
-
-        db_tx.commit().await.unwrap();
+        } = load_cfd_row(&mut *conn, cfd.id()).await.unwrap();
 
         assert_eq!(cfd.id(), id);
         assert_eq!(cfd.offer_id(), offer_id);
@@ -828,6 +829,7 @@ mod tests {
     #[tokio::test]
     async fn test_append_events() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await.unwrap();
@@ -842,11 +844,7 @@ mod tests {
 
         db.append_event(event1.clone()).await.unwrap();
 
-        let mut conn = db.inner.acquire().await.unwrap();
-
-        let mut db_tx = conn.begin().await.unwrap();
-        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
-        db_tx.commit().await.unwrap();
+        let events = load_cfd_events(&mut *conn, cfd.id(), 0).await.unwrap();
         assert_eq!(events, vec![event1.clone()]);
 
         let event2 = CfdEvent {
@@ -857,28 +855,22 @@ mod tests {
 
         db.append_event(event2.clone()).await.unwrap();
 
-        // let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
-        let events = load_cfd_events(&mut db_tx, cfd.id(), 0).await.unwrap();
-        db_tx.commit().await.unwrap();
+        let events = load_cfd_events(&mut *conn, cfd.id(), 0).await.unwrap();
         assert_eq!(events, vec![event1, event2])
     }
 
     #[tokio::test]
     async fn given_insert_cfd_with_peer_id_then_peer_id_loaded() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_taker_with_counterparty_peer_id();
         db.insert_cfd(&cfd).await.unwrap();
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let super::Cfd {
             counterparty_peer_id,
             ..
-        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
-
-        db_tx.commit().await.unwrap();
+        } = load_cfd_row(&mut *conn, cfd.id()).await.unwrap();
 
         assert_eq!(cfd.counterparty_peer_id(), counterparty_peer_id);
     }
@@ -886,20 +878,17 @@ mod tests {
     #[tokio::test]
     async fn given_insert_cfd_without_peer_id_when_known_mainnet_maker_then_peer_id_loaded() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_taker_with_legacy_identity(
             "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607",
         );
         db.insert_cfd(&cfd).await.unwrap();
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let super::Cfd {
             counterparty_peer_id,
             ..
-        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
-
-        db_tx.commit().await.unwrap();
+        } = load_cfd_row(&mut *conn, cfd.id()).await.unwrap();
 
         assert_eq!(
             "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY",
@@ -910,20 +899,17 @@ mod tests {
     #[tokio::test]
     async fn given_insert_cfd_without_peer_id_when_known_testnet_maker_then_peer_id_loaded() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_taker_with_legacy_identity(
             "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e",
         );
         db.insert_cfd(&cfd).await.unwrap();
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let super::Cfd {
             counterparty_peer_id,
             ..
-        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
-
-        db_tx.commit().await.unwrap();
+        } = load_cfd_row(&mut *conn, cfd.id()).await.unwrap();
 
         assert_eq!(
             "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1",
@@ -934,18 +920,15 @@ mod tests {
     #[tokio::test]
     async fn given_insert_cfd_without_peer_id_when_unknown_maker_then_no_peer_id_loaded() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await.unwrap();
-        let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let super::Cfd {
             counterparty_peer_id,
             ..
-        } = load_cfd_row(&mut db_tx, cfd.id()).await.unwrap();
-
-        db_tx.commit().await.unwrap();
+        } = load_cfd_row(&mut *conn, cfd.id()).await.unwrap();
 
         assert_eq!(None, counterparty_peer_id);
     }

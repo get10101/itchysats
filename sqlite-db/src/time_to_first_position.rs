@@ -74,11 +74,10 @@ impl Connection {
 #[allow(dead_code)]
 mod sqlx_test_utils {
     use super::*;
-    use sqlx::pool::PoolConnection;
-    use sqlx::Sqlite;
+    use sqlx::SqliteConnection;
 
     pub(crate) async fn load_first_seen_timestamp(
-        conn: &mut PoolConnection<Sqlite>,
+        conn: &mut SqliteConnection,
         taker_id: Identity,
     ) -> Result<Option<OffsetDateTime>> {
         let taker_id = models::Identity::from(taker_id);
@@ -109,7 +108,7 @@ mod sqlx_test_utils {
     }
 
     pub(crate) async fn load_first_position_timestamp(
-        conn: &mut PoolConnection<Sqlite>,
+        conn: &mut SqliteConnection,
         taker_id: Identity,
     ) -> Result<Option<OffsetDateTime>> {
         let taker_id = models::Identity::from(taker_id);
@@ -151,6 +150,7 @@ mod tests {
     async fn given_inserted_first_seen_when_trying_to_insert_second_seen_then_timestamp_does_not_change(
     ) {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let taker_id = dummy_identity();
 
@@ -159,8 +159,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut conn = db.inner.acquire().await.unwrap();
-        let first_loaded_timestamp = load_first_seen_timestamp(&mut conn, taker_id)
+        let first_loaded_timestamp = load_first_seen_timestamp(&mut *conn, taker_id)
             .await
             .unwrap();
 
@@ -169,7 +168,7 @@ mod tests {
             .await
             .unwrap();
 
-        let second_loaded_timestamp = load_first_seen_timestamp(&mut conn, taker_id)
+        let second_loaded_timestamp = load_first_seen_timestamp(&mut *conn, taker_id)
             .await
             .unwrap();
 
@@ -183,6 +182,7 @@ mod tests {
     async fn given_inserted_first_position_when_trying_to_insert_second_position_then_timestamp_does_not_change(
     ) {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let taker_id = dummy_identity();
 
@@ -195,8 +195,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut conn = db.inner.acquire().await.unwrap();
-        let first_loaded_timestamp = load_first_position_timestamp(&mut conn, taker_id)
+        let first_loaded_timestamp = load_first_position_timestamp(&mut *conn, taker_id)
             .await
             .unwrap();
 
@@ -205,7 +204,7 @@ mod tests {
             .await
             .unwrap();
 
-        let second_loaded_timestamp = load_first_position_timestamp(&mut conn, taker_id)
+        let second_loaded_timestamp = load_first_position_timestamp(&mut *conn, taker_id)
             .await
             .unwrap();
 

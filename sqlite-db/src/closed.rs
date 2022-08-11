@@ -50,10 +50,8 @@ use model::Timestamp;
 use model::SETTLEMENT_INTERVAL;
 use models::Payout;
 use models::Vout;
-use sqlx::pool::PoolConnection;
-use sqlx::Connection as _;
-use sqlx::Sqlite;
-use sqlx::Transaction;
+use sqlx::Acquire;
+use sqlx::SqliteConnection;
 use time::OffsetDateTime;
 
 /// A trait for building an aggregate based on a `ClosedCfd`.
@@ -550,7 +548,7 @@ struct ClosedCfdInput {
     contract_symbol: ContractSymbol,
 }
 
-async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInput) -> Result<()> {
+async fn insert_closed_cfd(conn: &mut SqliteConnection, cfd: ClosedCfdInput) -> Result<()> {
     let expiry_timestamp = cfd.expiry_timestamp.unix_timestamp();
 
     let counterparty_peer_id = match cfd.counterparty_peer_id {
@@ -618,7 +616,7 @@ async fn insert_closed_cfd(conn: &mut Transaction<'_, Sqlite>, cfd: ClosedCfdInp
 }
 
 async fn insert_settlement(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     settlement: Settlement,
 ) -> Result<()> {
@@ -630,7 +628,7 @@ async fn insert_settlement(
             price,
         } => {
             insert_collaborative_settlement(
-                conn,
+                &mut *conn,
                 id,
                 txid.into(),
                 vout.into(),
@@ -647,7 +645,7 @@ async fn insert_settlement(
             price,
         } => {
             insert_cet_settlement(
-                conn,
+                &mut *conn,
                 id,
                 commit_txid.into(),
                 txid.into(),
@@ -664,7 +662,7 @@ async fn insert_settlement(
             payout,
         } => {
             insert_refund_settlement(
-                conn,
+                &mut *conn,
                 id,
                 commit_txid.into(),
                 txid.into(),
@@ -679,7 +677,7 @@ async fn insert_settlement(
 }
 
 async fn insert_collaborative_settlement(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     txid: Txid,
     vout: Vout,
@@ -721,7 +719,7 @@ async fn insert_collaborative_settlement(
 }
 
 async fn insert_cet_settlement(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     commit_txid: Txid,
     txid: Txid,
@@ -729,7 +727,7 @@ async fn insert_cet_settlement(
     payout: Payout,
     price: models::Price,
 ) -> Result<()> {
-    insert_commit_tx(conn, id, commit_txid).await?;
+    insert_commit_tx(&mut *conn, id, commit_txid).await?;
 
     let id = models::OrderId::from(id);
 
@@ -766,14 +764,14 @@ async fn insert_cet_settlement(
 }
 
 async fn insert_refund_settlement(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     commit_txid: Txid,
     txid: Txid,
     vout: Vout,
     payout: Payout,
 ) -> Result<()> {
-    insert_commit_tx(conn, id, commit_txid).await?;
+    insert_commit_tx(&mut *conn, id, commit_txid).await?;
 
     let id = models::OrderId::from(id);
 
@@ -807,11 +805,7 @@ async fn insert_refund_settlement(
     Ok(())
 }
 
-async fn insert_commit_tx(
-    conn: &mut Transaction<'_, Sqlite>,
-    id: OrderId,
-    txid: Txid,
-) -> Result<()> {
+async fn insert_commit_tx(conn: &mut SqliteConnection, id: OrderId, txid: Txid) -> Result<()> {
     let id = models::OrderId::from(id);
 
     let query_result = sqlx::query!(
@@ -841,7 +835,7 @@ async fn insert_commit_tx(
 }
 
 async fn load_collaborative_settlement(
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
     let id = models::OrderId::from(id);
@@ -870,7 +864,7 @@ async fn load_collaborative_settlement(
 }
 
 async fn load_cet_settlement(
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
     let id = models::OrderId::from(id);
@@ -902,7 +896,7 @@ async fn load_cet_settlement(
 }
 
 async fn load_refund_settlement(
-    conn: &mut PoolConnection<Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
 ) -> Result<Option<Settlement>> {
     let id = models::OrderId::from(id);
@@ -933,7 +927,7 @@ async fn load_refund_settlement(
 }
 
 async fn insert_event_log(
-    conn: &mut Transaction<'_, Sqlite>,
+    conn: &mut SqliteConnection,
     id: OrderId,
     event_log: EventLog,
 ) -> Result<()> {
@@ -973,10 +967,7 @@ async fn insert_event_log(
 ///
 /// We use the timestamp of the first event for a particular CFD `id`
 /// in the `event_log` table.
-async fn load_creation_timestamp(
-    conn: &mut PoolConnection<Sqlite>,
-    id: OrderId,
-) -> Result<Timestamp> {
+async fn load_creation_timestamp(conn: &mut SqliteConnection, id: OrderId) -> Result<Timestamp> {
     let id = models::OrderId::from(id);
 
     let row = sqlx::query!(
@@ -1027,6 +1018,7 @@ mod tests {
     async fn given_confirmed_settlement_when_move_cfds_to_closed_table_then_can_load_cfd_as_closed()
     {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let (cfd, contract_setup_completed, collaborative_settlement_completed) =
             cfd_collaboratively_settled();
@@ -1046,10 +1038,7 @@ mod tests {
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
         let load_from_events = {
-            let mut conn = db.inner.acquire().await.unwrap();
-            let mut db_tx = conn.begin().await.unwrap();
-            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
-            db_tx.commit().await.unwrap();
+            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
 
             res
         };
@@ -1064,6 +1053,7 @@ mod tests {
     async fn given_settlement_not_confirmed_when_move_cfds_to_closed_table_then_cannot_load_cfd_as_closed(
     ) {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
 
         let (cfd, contract_setup_completed, collaborative_settlement_completed) =
             cfd_collaboratively_settled();
@@ -1080,10 +1070,7 @@ mod tests {
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
         let load_from_events = {
-            let mut conn = db.inner.acquire().await.unwrap();
-            let mut db_tx = conn.begin().await.unwrap();
-            let res = load_cfd_events(&mut db_tx, order_id, 0).await.unwrap();
-            db_tx.commit().await.unwrap();
+            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
 
             res
         };
@@ -1097,13 +1084,11 @@ mod tests {
     #[tokio::test]
     async fn insert_cet_roundtrip() {
         let db = memory().await.unwrap();
-
         let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let id = OrderId::default();
 
-        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+        insert_dummy_closed_cfd(&mut *conn, id).await.unwrap();
 
         let inserted = Settlement::Cet {
             commit_txid: bdk::bitcoin::Txid::default(),
@@ -1113,10 +1098,9 @@ mod tests {
             price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
-        insert_settlement(&mut db_tx, id, inserted).await.unwrap();
-        db_tx.commit().await.unwrap();
+        insert_settlement(&mut *conn, id, inserted).await.unwrap();
 
-        let loaded = load_cet_settlement(&mut conn, id).await.unwrap().unwrap();
+        let loaded = load_cet_settlement(&mut *conn, id).await.unwrap().unwrap();
 
         assert_eq!(inserted, loaded);
     }
@@ -1124,7 +1108,6 @@ mod tests {
     #[tokio::test]
     async fn given_inserting_different_settlements_then_we_can_load_them_again_correctly() {
         let db = memory().await.unwrap();
-
         let mut conn = db.inner.acquire().await.unwrap();
 
         let id_cet = OrderId::default();
@@ -1162,40 +1145,34 @@ mod tests {
             payout: Payout::new(Amount::ONE_BTC),
         };
 
-        let mut db_tx = conn.begin().await.unwrap();
-        insert_dummy_closed_cfd(&mut db_tx, id_cet).await.unwrap();
-        insert_settlement(&mut db_tx, id_cet, inserted_cet)
+        insert_dummy_closed_cfd(&mut *conn, id_cet).await.unwrap();
+        insert_settlement(&mut conn, id_cet, inserted_cet)
             .await
             .unwrap();
-        db_tx.commit().await.unwrap();
 
-        let mut db_tx = conn.begin().await.unwrap();
-        insert_dummy_closed_cfd(&mut db_tx, id_collab)
+        insert_dummy_closed_cfd(&mut *conn, id_collab)
             .await
             .unwrap();
-        insert_settlement(&mut db_tx, id_collab, inserted_collab_settlement)
+        insert_settlement(&mut conn, id_collab, inserted_collab_settlement)
             .await
             .unwrap();
-        db_tx.commit().await.unwrap();
 
-        let mut db_tx = conn.begin().await.unwrap();
-        insert_dummy_closed_cfd(&mut db_tx, id_refund)
+        insert_dummy_closed_cfd(&mut *conn, id_refund)
             .await
             .unwrap();
-        insert_settlement(&mut db_tx, id_refund, inserted_refund_settlement)
+        insert_settlement(&mut conn, id_refund, inserted_refund_settlement)
             .await
             .unwrap();
-        db_tx.commit().await.unwrap();
 
-        let loaded_cet = load_cet_settlement(&mut conn, id_cet)
+        let loaded_cet = load_cet_settlement(&mut *conn, id_cet)
             .await
             .unwrap()
             .unwrap();
-        let loaded_collab = load_collaborative_settlement(&mut conn, id_collab)
+        let loaded_collab = load_collaborative_settlement(&mut *conn, id_collab)
             .await
             .unwrap()
             .unwrap();
-        let loaded_refund = load_refund_settlement(&mut conn, id_refund)
+        let loaded_refund = load_refund_settlement(&mut *conn, id_refund)
             .await
             .unwrap()
             .unwrap();
@@ -1208,13 +1185,11 @@ mod tests {
     #[tokio::test]
     async fn insert_collaborative_settlement_tx_roundtrip() {
         let db = memory().await.unwrap();
-
         let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let id = OrderId::default();
 
-        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+        insert_dummy_closed_cfd(&mut *conn, id).await.unwrap();
 
         let inserted = Settlement::Collaborative {
             txid: bdk::bitcoin::Txid::default(),
@@ -1223,10 +1198,9 @@ mod tests {
             price: Price::new(dec!(40_000)).expect("To be valid price"),
         };
 
-        insert_settlement(&mut db_tx, id, inserted).await.unwrap();
-        db_tx.commit().await.unwrap();
+        insert_settlement(&mut conn, id, inserted).await.unwrap();
 
-        let loaded = load_collaborative_settlement(&mut conn, id)
+        let loaded = load_collaborative_settlement(&mut *conn, id)
             .await
             .unwrap()
             .unwrap();
@@ -1237,13 +1211,11 @@ mod tests {
     #[tokio::test]
     async fn insert_refund_tx_roundtrip() {
         let db = memory().await.unwrap();
-
         let mut conn = db.inner.acquire().await.unwrap();
-        let mut db_tx = conn.begin().await.unwrap();
 
         let id = OrderId::default();
 
-        insert_dummy_closed_cfd(&mut db_tx, id).await.unwrap();
+        insert_dummy_closed_cfd(&mut *conn, id).await.unwrap();
 
         let inserted = Settlement::Refund {
             commit_txid: bdk::bitcoin::Txid::default(),
@@ -1252,10 +1224,9 @@ mod tests {
             payout: Payout::new(Amount::ONE_BTC),
         };
 
-        insert_settlement(&mut db_tx, id, inserted).await.unwrap();
-        db_tx.commit().await.unwrap();
+        insert_settlement(&mut *conn, id, inserted).await.unwrap();
 
-        let loaded = load_refund_settlement(&mut conn, id)
+        let loaded = load_refund_settlement(&mut *conn, id)
             .await
             .unwrap()
             .unwrap();
@@ -1295,10 +1266,7 @@ mod tests {
         assert_eq!(creation_timestamp, Some(first_event_timestamp));
     }
 
-    async fn insert_dummy_closed_cfd(
-        conn: &mut Transaction<'_, Sqlite>,
-        id: OrderId,
-    ) -> Result<()> {
+    async fn insert_dummy_closed_cfd(conn: &mut SqliteConnection, id: OrderId) -> Result<()> {
         let cfd = ClosedCfdInput {
             id,
             offer_id: OfferId::default(),
@@ -1324,7 +1292,7 @@ mod tests {
             contract_symbol: ContractSymbol::BtcUsd,
         };
 
-        insert_closed_cfd(conn, cfd).await?;
+        insert_closed_cfd(&mut *conn, cfd).await?;
 
         Ok(())
     }

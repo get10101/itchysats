@@ -1,20 +1,16 @@
 use crate::models::OrderId;
 use anyhow::Context;
 use anyhow::Result;
-use sqlx::Sqlite;
-use sqlx::Transaction;
+use sqlx::SqliteConnection;
 
-pub(crate) async fn delete(
-    inner_transaction: &mut Transaction<'_, Sqlite>,
-    order_id: OrderId,
-) -> Result<()> {
+pub(crate) async fn delete(conn: &mut SqliteConnection, order_id: OrderId) -> Result<()> {
     sqlx::query!(
         r#"
             delete from rollover_completed_event_data where cfd_id = (select id from cfds where cfds.order_id = $1)
         "#,
         order_id
     )
-        .execute(&mut *inner_transaction)
+        .execute(&mut *conn)
         .await
         .with_context(|| format!("Failed to delete from rollover_completed_event_data for {order_id}"))?;
 
@@ -24,7 +20,7 @@ pub(crate) async fn delete(
         "#,
         order_id
     )
-        .execute(&mut *inner_transaction)
+        .execute(&mut *conn)
         .await
         .with_context(|| format!("Failed to delete from revoked_commit_transactions for {order_id}"))?;
 
@@ -34,7 +30,7 @@ pub(crate) async fn delete(
         "#,
         order_id
     )
-    .execute(&mut *inner_transaction)
+    .execute(&mut *conn)
     .await
     .with_context(|| format!("Failed to delete from open_cets for {order_id}"))?;
 

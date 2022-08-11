@@ -33,9 +33,7 @@ mod tests {
     use model::TxFeeRate;
     use model::Usd;
     use rust_decimal_macros::dec;
-    use sqlx::pool::PoolConnection;
-    use sqlx::Connection;
-    use sqlx::Sqlite;
+    use sqlx::SqliteConnection;
     use time::macros::datetime;
     use time::Duration;
     use time::OffsetDateTime;
@@ -64,6 +62,8 @@ mod tests {
     #[tokio::test]
     async fn test_insert_rollover_completed_event_data_should_not_error() {
         let db = memory().await.unwrap();
+        let mut conn = db.inner.acquire().await.unwrap();
+
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await.unwrap();
         let timestamp = Timestamp::now();
@@ -75,12 +75,11 @@ mod tests {
             event: event.clone(),
         };
 
-        let mut connection = db.inner.acquire().await.unwrap();
         db.append_event(rollover_completed.clone()).await.unwrap();
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event);
         overwrite(
-            &mut connection,
+            &mut *conn,
             1,
             cfd.id().into(),
             dlc,
@@ -90,7 +89,7 @@ mod tests {
         .await
         .unwrap();
 
-        let (rollovers, revokes, cets) = count_table_entries(connection).await;
+        let (rollovers, revokes, cets) = count_table_entries(&mut *conn).await;
         assert_eq!(rollovers, 1);
         assert_eq!(revokes, 2);
         assert_eq!(cets, 2);
@@ -99,6 +98,7 @@ mod tests {
     #[tokio::test]
     async fn repeatedly_insert_rollover_completed_event_data_should_not_error() -> Result<()> {
         let db = memory().await?;
+        let mut conn = db.inner.acquire().await?;
 
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await?;
@@ -115,12 +115,11 @@ mod tests {
         };
 
         // insert first rollovercompleted event
-        let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
         overwrite(
-            &mut connection,
+            &mut *conn,
             1,
             cfd.id().into(),
             dlc.clone(),
@@ -137,11 +136,10 @@ mod tests {
             datetime!(2021-06-01 10:00:00).assume_utc(),
             cfd.id(),
         )?;
-        let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
 
         overwrite(
-            &mut connection,
+            &mut *conn,
             2,
             cfd.id().into(),
             dlc,
@@ -150,7 +148,7 @@ mod tests {
         )
         .await?;
 
-        let (rollovers, revokes, cets) = count_table_entries(connection).await;
+        let (rollovers, revokes, cets) = count_table_entries(&mut *conn).await;
         assert_eq!(rollovers, 1);
         assert_eq!(revokes, 2);
         assert_eq!(cets, 2);
@@ -161,6 +159,7 @@ mod tests {
     #[tokio::test]
     async fn given_one_rollover_event_load_should_not_error() -> Result<()> {
         let db = memory().await?;
+        let mut conn = db.inner.acquire().await?;
 
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await?;
@@ -177,11 +176,10 @@ mod tests {
         };
 
         db.append_event(rollover_completed.clone()).await?;
-        let mut connection = db.inner.acquire().await?;
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
         overwrite(
-            &mut connection,
+            &mut *conn,
             1,
             cfd.id().into(),
             dlc.clone(),
@@ -193,17 +191,14 @@ mod tests {
         let order_id = models::OrderId::from(cfd.id());
 
         let cfd_row_id = sqlx::query!(r#"select id from cfds where order_id = $1"#, order_id)
-            .fetch_one(&mut connection)
+            .fetch_one(&mut *conn)
             .await?
             .id
             .unwrap();
 
-        let mut transaction = connection.begin().await?;
-
-        let (loaded_dlc, loaded_funding_fee, loaded_complete_fee) =
-            load(&mut transaction, cfd_row_id, 1)
-                .await?
-                .context("Expect to find data")?;
+        let (loaded_dlc, loaded_funding_fee, loaded_complete_fee) = load(&mut *conn, cfd_row_id, 1)
+            .await?
+            .context("Expect to find data")?;
 
         // dlc does not implement eq hence we only assert on the event id which is
         // sufficient because we only expect to have 1 item in the db
@@ -217,6 +212,8 @@ mod tests {
     #[tokio::test]
     async fn when_having_two_rollovers_should_load_last() -> Result<()> {
         let db = memory().await?;
+        let mut conn = db.inner.acquire().await?;
+
         let cfd = dummy_cfd();
         db.insert_cfd(&cfd).await?;
         let timestamp = Timestamp::now();
@@ -229,12 +226,11 @@ mod tests {
         };
 
         // insert first RolloverCompleted event data
-        let mut connection = db.inner.acquire().await?;
         db.append_event(rollover_completed.clone()).await?;
 
         let (dlc, funding_fee, complete_fee) = extract_rollover_completed_data(event.clone());
         overwrite(
-            &mut connection,
+            &mut *conn,
             1,
             cfd.id().into(),
             dlc,
@@ -250,7 +246,6 @@ mod tests {
             datetime!(2021-06-01 10:00:00).assume_utc(),
             cfd.id(),
         )?;
-        let mut connection = db.inner.acquire().await.unwrap();
         db.append_event(second_rollover_completed_event.clone())
             .await
             .unwrap();
@@ -258,7 +253,7 @@ mod tests {
         let (dlc, funding_fee, complete_fee) =
             extract_rollover_completed_data(second_rollover_completed_event.event.clone());
         overwrite(
-            &mut connection,
+            &mut *conn,
             2,
             cfd.id().into(),
             dlc.clone(),
@@ -270,16 +265,14 @@ mod tests {
         let order_id = models::OrderId::from(cfd.id());
 
         let cfd_row_id = sqlx::query!(r#"select id from cfds where order_id = $1"#, order_id)
-            .fetch_one(&mut connection)
+            .fetch_one(&mut *conn)
             .await?
             .id
             .unwrap();
 
-        let mut transaction = connection.begin().await?;
-        let (loaded_dlc, loaded_funding_fee, loaded_complete_fee) =
-            load(&mut transaction, cfd_row_id, 2)
-                .await?
-                .context("Expect to find data")?;
+        let (loaded_dlc, loaded_funding_fee, loaded_complete_fee) = load(&mut *conn, cfd_row_id, 2)
+            .await?
+            .context("Expect to find data")?;
 
         // dlc does not implement eq hence we only assert on the event id which is
         // sufficient because we only expect to have 1 item in the db
@@ -290,7 +283,7 @@ mod tests {
         Ok(())
     }
 
-    async fn count_table_entries(mut connection: PoolConnection<Sqlite>) -> (i32, i32, i32) {
+    async fn count_table_entries(conn: &mut SqliteConnection) -> (i32, i32, i32) {
         let row = sqlx::query!(
             r#"
             SELECT
@@ -303,7 +296,7 @@ mod tests {
                 open_cets;
             "#
         )
-        .fetch_one(&mut connection)
+        .fetch_one(&mut *conn)
         .await
         .unwrap();
         (
