@@ -13,8 +13,8 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
     xtra_libp2p_ping::PROTOCOL,
     identify::PROTOCOL,
     order::PROTOCOL,
-    rollover::v_1_0_0::PROTOCOL,
-    rollover::v_2_0_0::PROTOCOL,
+    rollover::deprecated::PROTOCOL,
+    rollover::PROTOCOL,
     collab_settlement::PROTOCOL,
 );
 
@@ -29,7 +29,7 @@ pub const REQUIRED_MAKER_LISTEN_PROTOCOLS: RequiredMakerListenProtocols =
         xtra_libp2p_ping::PROTOCOL,
         identify::PROTOCOL,
         order::PROTOCOL,
-        rollover::v_2_0_0::PROTOCOL,
+        rollover::PROTOCOL,
         collab_settlement::PROTOCOL,
     );
 
@@ -58,8 +58,8 @@ pub struct MakerListenProtocols {
     ping_v1: &'static str,
     identify_v1: &'static str,
     order_v1: &'static str,
-    rollover_v1: &'static str,
-    rollover_v2: &'static str,
+    rollover_deprecated: &'static str,
+    rollover: &'static str,
     collaborative_settlement_v1: &'static str,
 }
 
@@ -70,16 +70,16 @@ impl MakerListenProtocols {
         ping_v1: &'static str,
         identify_v1: &'static str,
         order_v1: &'static str,
-        rollover_v1: &'static str,
-        rollover_v2: &'static str,
+        rollover_deprecated: &'static str,
+        rollover: &'static str,
         collaborative_settlement_v1: &'static str,
     ) -> Self {
         Self {
             ping_v1,
             identify_v1,
             order_v1,
-            rollover_v1,
-            rollover_v2,
+            rollover_deprecated,
+            rollover,
             collaborative_settlement_v1,
         }
     }
@@ -93,25 +93,25 @@ impl MakerListenProtocols {
         ping_v1_handler: Address<pong::Actor>,
         identify_v1_handler: Address<identify::listener::Actor>,
         order_v1_handler: Address<order::maker::Actor>,
-        rollover_v1_handler: Address<
-            rollover::v_1_0_0::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R1>,
+        rollover_deprecated_handler: Address<
+            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R1>,
         >,
-        rollover_v2_handler: Address<
-            rollover::v_2_0_0::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R2>,
+        rollover_handler: Address<
+            rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R2>,
         >,
         collaborative_settlement_v1_handler: Address<collab_settlement::maker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     where
-        R1: rollover::v_1_0_0::protocol::GetRates + Send + Sync + Clone + 'static,
-        R2: rollover::v_2_0_0::protocol::GetRates + Send + Sync + Clone + 'static,
+        R1: rollover::deprecated::protocol::GetRates + Send + Sync + Clone + 'static,
+        R2: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
     {
         // We deconstruct to ensure that all protocols are being used
         let MakerListenProtocols {
             ping_v1,
             identify_v1,
             order_v1,
-            rollover_v1,
-            rollover_v2,
+            rollover_deprecated,
+            rollover,
             collaborative_settlement_v1,
         } = self;
 
@@ -119,8 +119,8 @@ impl MakerListenProtocols {
             (ping_v1, ping_v1_handler.into()),
             (identify_v1, identify_v1_handler.into()),
             (order_v1, order_v1_handler.into()),
-            (rollover_v1, rollover_v1_handler.into()),
-            (rollover_v2, rollover_v2_handler.into()),
+            (rollover_deprecated, rollover_deprecated_handler.into()),
+            (rollover, rollover_handler.into()),
             (
                 collaborative_settlement_v1,
                 collaborative_settlement_v1_handler.into(),
@@ -136,8 +136,8 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping_v1,
             identify_v1,
             order_v1,
-            rollover_v1,
-            rollover_v2,
+            rollover_deprecated,
+            rollover,
             collaborative_settlement_v1,
         } = maker;
 
@@ -145,8 +145,8 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping_v1.to_string(),
             identify_v1.to_string(),
             order_v1.to_string(),
-            rollover_v1.to_string(),
-            rollover_v2.to_string(),
+            rollover_deprecated.to_string(),
+            rollover.to_string(),
             collaborative_settlement_v1.to_string(),
         ])
     }

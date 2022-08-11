@@ -1,5 +1,5 @@
-use crate::v_2_0_0;
-use crate::v_2_0_0::protocol::*;
+use crate::current;
+use crate::current::protocol::*;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -81,7 +81,7 @@ impl<E, O> Actor<E, O> {
             .endpoint
             .send(OpenSubstream::single_protocol(
                 peer_id.inner(),
-                v_2_0_0::PROTOCOL,
+                current::PROTOCOL,
             ))
             .await
             .context("Endpoint is disconnected")?

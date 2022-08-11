@@ -938,8 +938,8 @@ impl RatesChannel {
 }
 
 #[async_trait]
-impl rollover::v_1_0_0::protocol::GetRates for RatesChannel {
-    async fn get_rates(&self) -> Result<rollover::v_1_0_0::protocol::Rates> {
+impl rollover::deprecated::protocol::GetRates for RatesChannel {
+    async fn get_rates(&self) -> Result<rollover::deprecated::protocol::Rates> {
         let MakerOffers {
             funding_rate_long,
             funding_rate_short,
@@ -954,7 +954,7 @@ impl rollover::v_1_0_0::protocol::GetRates for RatesChannel {
             .context("No up-to-date rates")?
             .clone();
 
-        Ok(rollover::v_1_0_0::protocol::Rates::new(
+        Ok(rollover::deprecated::protocol::Rates::new(
             funding_rate_long,
             funding_rate_short,
             tx_fee_rate,
@@ -963,11 +963,11 @@ impl rollover::v_1_0_0::protocol::GetRates for RatesChannel {
 }
 
 #[async_trait]
-impl rollover::v_2_0_0::protocol::GetRates for RatesChannel {
+impl rollover::protocol::GetRates for RatesChannel {
     async fn get_rates(
         &self,
         contract_symbol: ContractSymbol,
-    ) -> Result<rollover::v_2_0_0::protocol::Rates> {
+    ) -> Result<rollover::protocol::Rates> {
         let MakerOffers {
             funding_rate_long,
             funding_rate_short,
@@ -982,7 +982,7 @@ impl rollover::v_2_0_0::protocol::GetRates for RatesChannel {
             .context("No up-to-date rates")?
             .clone();
 
-        Ok(rollover::v_2_0_0::protocol::Rates::new(
+        Ok(rollover::protocol::Rates::new(
             funding_rate_long,
             funding_rate_short,
             tx_fee_rate,

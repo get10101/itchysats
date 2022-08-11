@@ -62,7 +62,7 @@ use time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-mod rollover_v_1_0_0;
+mod rollover_deprecated;
 
 pub const CET_TIMELOCK: u32 = 12;
 
