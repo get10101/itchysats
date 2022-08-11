@@ -12,7 +12,7 @@ anyhow = "1"
 atty = "0.2"
 bitmex-stream = { path = "../bitmex-stream" }
 clap = { version = "3", features = ["derive"] }
-console-subscriber = "0.1.6"
+console-subscriber = "0.1.7"
 daemon = { path = "../daemon" }
 http-api-problem = { version = "0.53.0", features = ["rocket"] }
 model = { path = "../model" }
