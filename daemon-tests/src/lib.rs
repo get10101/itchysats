@@ -442,7 +442,7 @@ impl FeeCalculator {
             );
         }
 
-        tracing::debug!("Opening fee: {}", self.opening_fee);
+        tracing::debug!("Opening fee: {}", self.opening_fee.to_inner());
 
         let mut maker_fee_account = FeeAccount::new(self.maker_position, Role::Maker)
             .add_opening_fee(self.opening_fee)

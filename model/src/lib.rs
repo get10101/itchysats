@@ -642,12 +642,6 @@ impl OpeningFee {
     }
 }
 
-impl fmt::Display for OpeningFee {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fee.as_sat().fmt(f)
-    }
-}
-
 impl str::FromStr for OpeningFee {
     type Err = anyhow::Error;
 
