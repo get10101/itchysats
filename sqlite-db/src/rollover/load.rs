@@ -17,11 +17,18 @@ use sqlx::SqliteConnection;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::str::FromStr;
+use tracing::instrument;
+use tracing::Instrument;
 
 /// Load RolloverCompleted event data
 ///
 /// Returns Ok(Some(..)) if one was found or Ok(None) if none was found.
 /// In error case, it returns Err(..)
+#[instrument(
+    name = "Load RolloverCompleted data",
+    skip(conn),
+    level = "trace"
+)]
 pub async fn load(
     conn: &mut SqliteConnection,
     cfd_row_id: i64,
@@ -66,6 +73,9 @@ pub async fn load(
         event_row_id,
     )
     .fetch_optional(&mut *conn)
+    .instrument(tracing::trace_span!(
+        "Fetch from rollover_completed_event_data table"
+    ))
     .await?;
 
     let row = match row {
@@ -112,6 +122,7 @@ pub async fn load(
     Ok(Some((dlc, funding_fee, complete_fee)))
 }
 
+#[instrument(skip(conn), level = "trace")]
 async fn load_revoked_commit_transactions(
     conn: &mut SqliteConnection,
     cfd_row_id: i64,
@@ -159,6 +170,7 @@ async fn load_revoked_commit_transactions(
     Ok(revoked_commit)
 }
 
+#[instrument(skip(conn), level = "trace")]
 async fn load_cets(
     conn: &mut SqliteConnection,
     cfd_row_id: i64,

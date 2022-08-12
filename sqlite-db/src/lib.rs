@@ -33,6 +33,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use time::Duration;
+use tracing::instrument;
+use tracing::Instrument;
+use tracing::Span;
 
 pub use closed::*;
 pub use failed::*;
@@ -291,6 +294,7 @@ impl Connection {
     }
 
     /// Load a CFD in its latest version from the database.
+    #[instrument(skip(self, args), fields(cached), err)]
     pub async fn load_open_cfd<C>(&self, id: OrderId, args: C::CtorArgs) -> Result<C, Error>
     where
         C: CfdAggregate,
@@ -305,12 +309,14 @@ impl Connection {
             None => {
                 // No cache entry? Load the CFD row. Version will be 0 because we haven't applied
                 // any events, thus all events will be loaded.
+                Span::current().record("cached", &false);
                 let cfd = load_cfd_row(&mut db_tx, id).await?;
 
                 C::new(args, cfd)
             }
             Some(cfd) => {
                 // Got a cache entry: Downcast it to the type at hand.
+                Span::current().record("cached", &true);
 
                 *cfd.downcast::<C>()
                     .expect("we index by type id, must be able to downcast")
@@ -331,7 +337,10 @@ impl Connection {
             .insert(cache_key, Box::new(cfd.clone()))
             .await;
 
-        db_tx.commit().await?;
+        db_tx
+            .commit()
+            .instrument(tracing::trace_span!("Commit db transaction"))
+            .await?;
 
         Ok(cfd)
     }
@@ -563,6 +572,7 @@ pub trait CfdAggregate: Clone + Send + Sync + 'static {
     fn version(&self) -> u32;
 }
 
+#[instrument(skip(conn), err)]
 async fn load_cfd_row(conn: &mut SqliteConnection, id: OrderId) -> Result<Cfd, Error> {
     let id = models::OrderId::from(id);
 
@@ -656,6 +666,7 @@ fn derive_known_peer_id(legacy_network_identity: Identity, role: Role) -> Option
 /// instance in version 3, we can avoid loading the first 3 events and only apply the ones after.
 ///
 /// Events will be sorted in chronological order.
+#[instrument(skip(conn), err)]
 async fn load_cfd_events(
     conn: &mut SqliteConnection,
     id: OrderId,
@@ -663,7 +674,7 @@ async fn load_cfd_events(
 ) -> Result<Vec<CfdEvent>> {
     let id = models::OrderId::from(id);
 
-    let mut events = sqlx::query!(
+    let rows = sqlx::query!(
         r#"
 
         select
@@ -686,30 +697,39 @@ async fn load_cfd_events(
         from_version
     )
     .fetch_all(&mut *conn)
-    .await?
-    .into_iter()
-    .map(|row| {
-        Ok((
-            row.cfd_row_id.context("CFD with id not found {id}")?,
-            row.event_row_id,
-            CfdEvent {
-                timestamp: row.created_at.into(),
-                id: id.into(),
-                event: EventKind::from_json(row.name, row.data)?,
-            },
-        ))
-    })
-    .collect::<Result<Vec<(i64, i64, CfdEvent)>>>()?;
+    .instrument(tracing::debug_span!("Fetch all events for CFD"))
+    .await?;
 
-    for (cfd_row_id, event_row_id, event) in events.iter_mut() {
-        if let RolloverCompleted { .. } = event.event {
-            if let Some((dlc, funding_fee, complete_fee)) =
-                rollover::load(&mut *conn, *cfd_row_id, *event_row_id).await?
-            {
-                event.event = RolloverCompleted {
-                    dlc: Some(dlc),
-                    funding_fee,
-                    complete_fee,
+    let mut events = tracing::debug_span!("Deserialize CFD events").in_scope(|| {
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    row.cfd_row_id.context("CFD with id not found {id}")?,
+                    row.event_row_id,
+                    CfdEvent {
+                        timestamp: row.created_at.into(),
+                        id: id.into(),
+                        event: EventKind::from_json(row.name, row.data)?,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<(i64, i64, CfdEvent)>>>()
+    })?;
+
+    {
+        let span = tracing::debug_span!("Load rollover data for CFD");
+        for (cfd_row_id, event_row_id, event) in events.iter_mut() {
+            if let RolloverCompleted { .. } = event.event {
+                if let Some((dlc, funding_fee, complete_fee)) =
+                    rollover::load(&mut *conn, *cfd_row_id, *event_row_id)
+                        .instrument(span.clone())
+                        .await?
+                {
+                    event.event = RolloverCompleted {
+                        dlc: Some(dlc),
+                        funding_fee,
+                        complete_fee,
+                    }
                 }
             }
         }
