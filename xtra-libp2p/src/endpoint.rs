@@ -530,10 +530,10 @@ impl Endpoint {
     async fn handle(
         &mut self,
         msg: OpenSubstream<Single>,
-        _: &mut Context<Self>,
+        ctx: &mut Context<Self>,
     ) -> Result<Pin<Box<dyn futures::Future<Output = Result<Substream, Error>> + Send>>, Error>
     {
-        let peer = msg.peer_id;
+        let peer_id = msg.peer_id;
         let protocols = msg.protocols;
 
         debug_assert!(
@@ -541,15 +541,29 @@ impl Endpoint {
             "Type-system enforces that we only try to negotiate one protocol"
         );
 
-        let (control, _) = self.controls.get(&peer).ok_or(Error::NoConnection(peer))?;
+        let (control, _) = self
+            .controls
+            .get(&peer_id)
+            .ok_or(Error::NoConnection(peer_id))?;
 
+        let this = ctx.address().expect("self to be alive");
         let fut = {
             let connection_timeout = self.connection_timeout;
             let control = control.clone();
             async move {
-                let (protocol, stream) =
-                    Self::open_substream(control, peer, protocols.clone(), connection_timeout)
-                        .await?;
+                let res =
+                    Self::open_substream(control, peer_id, protocols.clone(), connection_timeout)
+                        .await;
+
+                if let Err(Error::BadConnection(e)) = &res {
+                    tracing::debug!(
+                        %peer_id,
+                        "Disconnecting peer due to yamux connection error when opening substream: {e}"
+                    );
+                    let _ = this.send_async_next(Disconnect(peer_id)).await;
+                }
+
+                let (protocol, stream) = res?;
 
                 debug_assert!(
                     protocol == protocols[0],
