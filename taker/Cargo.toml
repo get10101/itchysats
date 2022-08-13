@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 shared-bin = { path = "../shared-bin" }
 sqlite-db = { path = "../sqlite-db" }
 strum = "0.24.1"
-strum_macros = "0.24.2"
+strum_macros = "0.24.3"
 time = "0.3.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "tracing"] }
 tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
