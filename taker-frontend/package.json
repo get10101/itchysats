@@ -30,7 +30,7 @@
     "axios": "^0.27.2",
     "chakra-react-select": "^4.1.4",
     "dayjs": "^1.11.4",
-    "eslint": "^8.21.0",
+    "eslint": "^8.22.0",
     "eslint-config-react-app": "^7.0.1",
     "framer-motion": "^7",
     "jest": "^27.5.1",
