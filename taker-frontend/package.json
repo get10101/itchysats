@@ -10,7 +10,7 @@
     "test": "vite-jest"
   },
   "dependencies": {
-    "@chakra-ui/icons": "^2.0.6",
+    "@chakra-ui/icons": "^2.0.8",
     "@chakra-ui/react": "^2.2.6",
     "@emotion/react": "^11.10.0",
     "@emotion/styled": "^11",
@@ -30,7 +30,7 @@
     "axios": "^0.27.2",
     "chakra-react-select": "^4.1.4",
     "dayjs": "^1.11.4",
-    "eslint": "^8.21.0",
+    "eslint": "^8.22.0",
     "eslint-config-react-app": "^7.0.1",
     "framer-motion": "^7",
     "jest": "^27.5.1",
