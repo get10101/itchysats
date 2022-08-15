@@ -26,7 +26,7 @@ xtras = { path = "../xtras" }
 
 [dev-dependencies]
 rust_decimal = "1.26"
-rust_decimal_macros = "1.25"
+rust_decimal_macros = "1.26"
 sluice = "0.5"
 time = { version = "0.3.13", features = ["macros"] }
 tokio = { version = "1", features = ["macros", "tracing"] }

@@ -17,7 +17,7 @@ otel-tests = { path = "../otel-tests", default-features = false }
 quiet-spans = { path = "../quiet-spans" }
 rand = "0.6"
 rust_decimal = "1.26"
-rust_decimal_macros = "1.25"
+rust_decimal_macros = "1.26"
 sqlite-db = { path = "../sqlite-db" }
 time = "0.3.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "tracing"] }
