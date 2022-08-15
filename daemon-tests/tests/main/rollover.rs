@@ -84,6 +84,9 @@ async fn maker_rejects_rollover_of_open_cfd() {
     let (mut maker, mut taker) = start_both().await;
     let order_id = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
 
+    let taker_commit_txid_after_contract_setup = taker.latest_commit_txid();
+    let maker_commit_txid_after_contract_setup = taker.latest_commit_txid();
+
     let is_accepting_rollovers = false;
     maker
         .system
@@ -96,6 +99,18 @@ async fn maker_rejects_rollover_of_open_cfd() {
         .await;
 
     wait_next_state!(order_id, maker, taker, CfdState::Open);
+
+    let taker_commit_txid_after_rejected_rollover = taker.latest_commit_txid();
+    assert_eq!(
+        taker_commit_txid_after_contract_setup,
+        taker_commit_txid_after_rejected_rollover
+    );
+
+    let maker_commit_txid_after_rejected_rollover = taker.latest_commit_txid();
+    assert_eq!(
+        maker_commit_txid_after_contract_setup,
+        maker_commit_txid_after_rejected_rollover
+    );
 }
 
 #[otel_test]
