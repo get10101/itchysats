@@ -1,7 +1,7 @@
+use crate::monitor::MonitorAfterContractSetup;
+use crate::monitor::MonitorAfterRollover;
 use crate::monitor::MonitorCetFinality;
 use crate::monitor::MonitorCollaborativeSettlement;
-use crate::monitor::MonitorParams;
-use crate::monitor::StartMonitoring;
 use crate::monitor::TransactionKind;
 use crate::monitor::TryBroadcastTransaction;
 use crate::oracle;
@@ -24,7 +24,8 @@ pub struct Actor {
     cfds_changed: MessageChannel<projection::CfdChanged, ()>,
     cfd_changed_metrics: MessageChannel<position_metrics::CfdChanged, ()>,
     try_broadcast_transaction: MessageChannel<TryBroadcastTransaction, Result<()>>,
-    start_monitoring: MessageChannel<StartMonitoring, ()>,
+    monitor_after_contract_setup: MessageChannel<MonitorAfterContractSetup, ()>,
+    monitor_after_rollover: MessageChannel<MonitorAfterRollover, ()>,
     monitor_cet_finality: MessageChannel<MonitorCetFinality, Result<()>>,
     monitor_collaborative_settlement: MessageChannel<MonitorCollaborativeSettlement, ()>,
     monitor_attestation: MessageChannel<oracle::MonitorAttestations, ()>,
@@ -46,7 +47,8 @@ impl Actor {
         cfds_changed: MessageChannel<projection::CfdChanged, ()>,
         cfd_changed_metrics: MessageChannel<position_metrics::CfdChanged, ()>,
         try_broadcast_transaction: MessageChannel<TryBroadcastTransaction, Result<()>>,
-        start_monitoring: MessageChannel<StartMonitoring, ()>,
+        monitor_after_contract_setup: MessageChannel<MonitorAfterContractSetup, ()>,
+        monitor_after_rollover: MessageChannel<MonitorAfterRollover, ()>,
         monitor_cet_finality: MessageChannel<MonitorCetFinality, Result<()>>,
         monitor_collaborative_settlement: MessageChannel<MonitorCollaborativeSettlement, ()>,
         monitor_attestation: MessageChannel<oracle::MonitorAttestations, ()>,
@@ -57,7 +59,8 @@ impl Actor {
             cfds_changed,
             cfd_changed_metrics,
             try_broadcast_transaction,
-            start_monitoring,
+            monitor_after_contract_setup,
+            monitor_after_rollover,
             monitor_cet_finality,
             monitor_collaborative_settlement,
             monitor_attestation,
@@ -88,11 +91,8 @@ impl Actor {
                     .instrument(span)
                     .await?;
 
-                self.start_monitoring
-                    .send_async_safe(StartMonitoring {
-                        id: event.id,
-                        params: MonitorParams::new(dlc.clone()),
-                    })
+                self.monitor_after_contract_setup
+                    .send_async_safe(MonitorAfterContractSetup::new(event.id, &dlc))
                     .await?;
 
                 self.monitor_attestation
@@ -179,11 +179,8 @@ impl Actor {
                     .await?;
             }
             RolloverCompleted { dlc: Some(dlc), .. } => {
-                self.start_monitoring
-                    .send_async_safe(StartMonitoring {
-                        id: event.id,
-                        params: MonitorParams::new(dlc.clone()),
-                    })
+                self.monitor_after_rollover
+                    .send_async_safe(MonitorAfterRollover::new(event.id, &dlc))
                     .await?;
 
                 self.monitor_attestation
