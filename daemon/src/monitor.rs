@@ -111,7 +111,6 @@ pub struct Sync;
 // TODO: Send messages to the projection actor upon finality events so we send out updates.
 //  -> Might as well just send out all events independent of sending to the cfd actor.
 pub struct Actor {
-    cfds: HashMap<OrderId, MonitorParams>,
     executor: command::Executor,
     client: bdk::electrum_client::Client,
     state: State<Event>,
@@ -332,7 +331,6 @@ impl Actor {
             .into();
 
         Ok(Self {
-            cfds: HashMap::new(),
             client,
             executor,
             state: State::new(latest_block),
@@ -675,7 +673,6 @@ impl Actor {
         self.monitor_commit_refund_timelock(params_argument, order_id);
         self.monitor_refund_finality(params_argument, order_id);
         self.monitor_revoked_commit_transactions(params_argument, order_id);
-        self.cfds.insert(id, params);
     }
 
     fn handle_collaborative_settlement(
@@ -750,8 +747,6 @@ impl Actor {
             monitor_collaborative_settlement_finality,
             monitor_cet_finality,
         } = msg;
-
-        self.cfds.insert(id, params.clone());
 
         if monitor_lock_finality {
             self.monitor_lock_finality(&params, id);
