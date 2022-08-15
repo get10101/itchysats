@@ -56,17 +56,6 @@ pub struct RolloverCompletedParams {
     pub funding_fee: FundingFee,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum DialerError {
-    #[error("Rollover got rejected")]
-    Rejected,
-    #[error("Rollover failed")]
-    Failed {
-        #[source]
-        source: anyhow::Error,
-    },
-}
-
 #[derive(Serialize, Deserialize)]
 pub(crate) enum DialerMessage {
     Propose(Propose),
