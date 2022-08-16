@@ -1,17 +1,24 @@
 use anyhow::bail;
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use bdk::bitcoin::blockdata::constants;
+use bdk::bitcoin::hashes::Hash;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
+use bdk::bitcoin::BlockHash;
+use bdk::bitcoin::Network;
 use bdk::bitcoin::OutPoint;
 use bdk::bitcoin::PublicKey;
 use bdk::bitcoin::Txid;
 use bdk::blockchain::Blockchain;
 use bdk::blockchain::ElectrumBlockchain;
 use bdk::database::BatchDatabase;
+use bdk::electrum_client;
+use bdk::electrum_client::ElectrumApi;
 use bdk::sled;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::AddressIndex;
@@ -102,8 +109,13 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
         db_path: PathBuf,
         wallet_name: String,
     ) -> Result<(xtra::Address<Self>, watch::Receiver<Option<WalletInfo>>)> {
-        let client = bdk::electrum_client::Client::new(electrum_rpc_url)
+        let client = electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
+
+        ensure!(
+            seed_and_rpc_on_same_network(&client, ext_priv_key.network)?,
+            "Wallet seed and Electrum RPC client on different networks."
+        );
 
         // Create a database (using default sled type) to store wallet data
         let db = sled::open(db_path)?;
@@ -442,6 +454,18 @@ impl LockedUtxos {
             .skip_while(|(locked_at, _)| now >= *locked_at + self.time_to_lock)
             .collect();
     }
+}
+
+/// Compare the hash of the genesis block of the electrum RPC endpoint to the expected network's
+/// genesis block hash. If they differ, the electrum RPC is not for the network that we expect.
+fn seed_and_rpc_on_same_network(rpc: &electrum_client::Client, network: Network) -> Result<bool> {
+    let network_hash = constants::genesis_block(network).block_hash();
+    let mut hash = rpc.server_features()?.genesis_hash;
+    hash.reverse(); // Sha256d hashes are displayed backwards
+    let rpc_hash = BlockHash::from_slice(&hash)
+        .context("Invalid genesis block hash returned by electrum RPC")?;
+
+    Ok(network_hash == rpc_hash)
 }
 
 #[cfg(test)]
