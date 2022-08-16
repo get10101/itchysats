@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use model::libp2p::PeerId;
 use model::olivia::BitMexPriceEventId;
+use model::CannotRollover;
 use model::OrderId;
 use rollover::v_2_0_0::taker::ProposeRollover;
 use sqlite_db;
@@ -95,21 +96,24 @@ impl Actor {
                     continue;
                 }
             };
-            let id = cfd.id();
+            let order_id = cfd.id();
             let maker_peer_id = cfd.counterparty_peer_id();
 
             match cfd.can_auto_rollover_taker(OffsetDateTime::now_utc()) {
                 Ok((from_commit_txid, from_settlement_event_id)) => {
                     this.send_async_next(Rollover {
-                        order_id: id,
+                        order_id,
                         maker_peer_id,
                         from_commit_txid,
                         from_settlement_event_id,
                     })
                     .await;
                 }
+                Err(CannotRollover::NoDlc) => {
+                    tracing::error!(%order_id, "Cannot auto-rollover CFD without a DLC");
+                }
                 Err(reason) => {
-                    tracing::trace!(order_id = %id, %reason, "CFD is not eligible for auto-rollover");
+                    tracing::trace!(%order_id, %reason, "CFD is not eligible for auto-rollover");
                 }
             }
         }
