@@ -4258,9 +4258,9 @@ form-data@^4.0.0:
     mime-types "^2.1.12"
 
 framer-motion@^7:
-  version "7.1.1"
-  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-7.1.1.tgz#4d56ed18a7cf2c6a1a4a1af5b57714f8e6b52d9e"
-  integrity sha512-ONFaG7as1GBBYYIqzX8ENVsfa4eh6f7/nSc3QCADAHOaCt1Lh3UdWbQ0+HVGOOORvEW2L99GlCr4wQc0GLddXg==
+  version "7.1.2"
+  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-7.1.2.tgz#4e37c50fc455df0201b36530eb0d470fead025d9"
+  integrity sha512-LuucRKoqV5kjLKjkv2cgaL6VSMd0zNwk8Lib6HZkusXDfQ00HS6IseAjs5yGuZdJHbt/jnaQIqw1gypGxSrO/A==
   dependencies:
     "@motionone/dom" "10.13.1"
     framesync "6.1.2"
