@@ -111,7 +111,8 @@ where
         listen_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
-        M: Handler<monitor::StartMonitoring, Return = ()>
+        M: Handler<monitor::MonitorAfterContractSetup, Return = ()>
+            + Handler<monitor::MonitorAfterRollover, Return = ()>
             + Handler<monitor::Sync, Return = ()>
             + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
             + Handler<monitor::TryBroadcastTransaction, Return = Result<()>>
@@ -137,6 +138,7 @@ where
             Role::Maker,
             projection_actor.clone().into(),
             position_metrics_actor.into(),
+            monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),

@@ -35,9 +35,14 @@ const COMMIT_FINALITY_CONFIRMATIONS: u32 = 1;
 const CET_FINALITY_CONFIRMATIONS: u32 = 3;
 const REFUND_FINALITY_CONFIRMATIONS: u32 = 3;
 
-pub struct StartMonitoring {
-    pub id: OrderId,
-    pub params: MonitorParams,
+pub struct MonitorAfterContractSetup {
+    order_id: OrderId,
+    transactions: TransactionsAfterContractSetup,
+}
+
+pub struct MonitorAfterRollover {
+    order_id: OrderId,
+    transactions: TransactionsAfterRollover,
 }
 
 pub struct MonitorCollaborativeSettlement {
@@ -48,16 +53,6 @@ pub struct MonitorCollaborativeSettlement {
 pub struct MonitorCetFinality {
     pub order_id: OrderId,
     pub cet: Transaction,
-}
-
-// TODO: The design of this struct causes a lot of marshalling und unmarshelling that is quite
-// unnecessary. Should be taken apart so we can handle all cases individually!
-#[derive(Clone)]
-pub struct MonitorParams {
-    lock: (Txid, Descriptor<PublicKey>),
-    commit: (Txid, Descriptor<PublicKey>),
-    refund: (Txid, Script, u32),
-    revoked_commits: Vec<(Txid, Script)>,
 }
 
 pub struct TryBroadcastTransaction {
@@ -111,7 +106,6 @@ pub struct Sync;
 // TODO: Send messages to the projection actor upon finality events so we send out updates.
 //  -> Might as well just send out all events independent of sending to the cfd actor.
 pub struct Actor {
-    cfds: HashMap<OrderId, MonitorParams>,
     executor: command::Executor,
     client: bdk::electrum_client::Client,
     state: State<Event>,
@@ -122,16 +116,13 @@ pub struct Actor {
 #[derive(Clone)]
 struct Cfd {
     id: OrderId,
-    params: Option<MonitorParams>,
 
-    monitor_lock_finality: bool,
-    monitor_commit_finality: bool,
+    monitor_lock_finality: Option<Lock>,
+    monitor_commit_finality: Option<Commit>,
     monitor_cet_timelock: bool,
     monitor_refund_timelock: bool,
-    monitor_refund_finality: bool,
-    monitor_revoked_commit_transactions: bool,
-
-    // Ideally, all of the above would be like this.
+    monitor_refund_finality: Option<Refund>,
+    monitor_revoked_commit_transactions: Vec<RevokedCommit>,
     monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
     monitor_cet_finality: Option<(Txid, Script)>,
 
@@ -149,13 +140,12 @@ impl sqlite_db::CfdAggregate for Cfd {
     fn new(_: Self::CtorArgs, cfd: sqlite_db::Cfd) -> Self {
         Self {
             id: cfd.id,
-            params: None,
-            monitor_lock_finality: false,
-            monitor_commit_finality: false,
+            monitor_lock_finality: None,
+            monitor_commit_finality: None,
             monitor_cet_timelock: false,
             monitor_refund_timelock: false,
-            monitor_refund_finality: false,
-            monitor_revoked_commit_transactions: false,
+            monitor_refund_finality: None,
+            monitor_revoked_commit_transactions: Vec::new(),
             monitor_collaborative_settlement_finality: None,
             monitor_cet_finality: None,
             lock_tx: None,
@@ -188,30 +178,41 @@ impl Cfd {
 
         use EventKind::*;
         match event.event {
-            ContractSetupCompleted { dlc, .. } => Self {
-                params: dlc.clone().map(MonitorParams::new),
-                monitor_lock_finality: true,
-                monitor_commit_finality: true,
-                monitor_cet_timelock: true,
-                monitor_refund_timelock: true,
-                monitor_refund_finality: true,
-                monitor_revoked_commit_transactions: false,
-                monitor_collaborative_settlement_finality: None,
-                lock_tx: dlc.map(|dlc| dlc.lock.0),
-                cet: None,
-                commit_tx: None,
-                ..self
-            },
-            RolloverCompleted { dlc, .. } => {
+            ContractSetupCompleted { dlc: Some(dlc), .. } => {
+                let TransactionsAfterContractSetup {
+                    lock,
+                    commit,
+                    refund,
+                } = TransactionsAfterContractSetup::new(&dlc);
+
                 Self {
-                    params: dlc.map(MonitorParams::new),
-                    monitor_lock_finality: false, // Lock is already final after rollover.
-                    monitor_commit_finality: true,
+                    monitor_lock_finality: Some(lock),
+                    monitor_commit_finality: Some(commit),
                     monitor_cet_timelock: true,
                     monitor_refund_timelock: true,
-                    monitor_refund_finality: true,
-                    monitor_revoked_commit_transactions: true, /* After rollover, the other party
-                                                                * might publish old states. */
+                    monitor_refund_finality: Some(refund),
+                    monitor_revoked_commit_transactions: Vec::new(),
+                    monitor_collaborative_settlement_finality: None,
+                    lock_tx: Some(dlc.lock.0),
+                    cet: None,
+                    commit_tx: None,
+                    ..self
+                }
+            }
+            RolloverCompleted { dlc: Some(dlc), .. } => {
+                let TransactionsAfterRollover {
+                    commit,
+                    refund,
+                    revoked_commits,
+                } = TransactionsAfterRollover::new(&dlc);
+
+                Self {
+                    monitor_lock_finality: None,
+                    monitor_commit_finality: Some(commit),
+                    monitor_cet_timelock: true,
+                    monitor_refund_timelock: true,
+                    monitor_refund_finality: Some(refund),
+                    monitor_revoked_commit_transactions: revoked_commits,
                     monitor_collaborative_settlement_finality: None,
                     lock_tx: None,
                     cet: self.cet,
@@ -223,20 +224,19 @@ impl Cfd {
                 spend_tx, script, ..
             } => {
                 Self {
-                    monitor_lock_finality: false, // Lock is already final if we collab settle.
-                    lock_tx: None,
-                    monitor_commit_finality: true, // The other party might still want to race us.
                     monitor_collaborative_settlement_finality: Some((spend_tx.txid(), script)),
+                    monitor_lock_finality: None, // Lock is already final if we collab settle.
+                    lock_tx: None,
                     ..self
                 }
             }
             ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => Self {
-                monitor_lock_finality: false,
-                monitor_commit_finality: false,
+                monitor_lock_finality: None,
+                monitor_commit_finality: None,
                 monitor_cet_timelock: false,
                 monitor_refund_timelock: false,
-                monitor_refund_finality: false,
-                monitor_revoked_commit_transactions: false,
+                monitor_refund_finality: None,
+                monitor_revoked_commit_transactions: Vec::new(),
                 monitor_collaborative_settlement_finality: None,
                 lock_tx: None,
                 cet: None,
@@ -244,23 +244,23 @@ impl Cfd {
                 ..self
             },
             LockConfirmed | LockConfirmedAfterFinality => Self {
-                monitor_lock_finality: false,
+                monitor_lock_finality: None,
                 lock_tx: None,
                 ..self
             },
             CommitConfirmed => Self {
-                monitor_commit_finality: false,
+                monitor_commit_finality: None,
                 commit_tx: None,
                 ..self
             },
             // final states, don't monitor anything
             CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self {
-                monitor_lock_finality: false,
-                monitor_commit_finality: false,
+                monitor_lock_finality: None,
+                monitor_commit_finality: None,
                 monitor_cet_timelock: false,
                 monitor_refund_timelock: false,
-                monitor_refund_finality: false,
-                monitor_revoked_commit_transactions: false,
+                monitor_refund_finality: None,
+                monitor_revoked_commit_transactions: Vec::new(),
                 monitor_collaborative_settlement_finality: None,
                 monitor_cet_finality: None,
                 lock_tx: None,
@@ -287,7 +287,9 @@ impl Cfd {
                 monitor_cet_finality: cet_txid_and_script(cet),
                 ..self
             },
-            RolloverStarted { .. }
+            ContractSetupCompleted { dlc: None, .. }
+            | RolloverCompleted { dlc: None, .. }
+            | RolloverStarted { .. }
             | RolloverAccepted
             | RolloverFailed
             | ManualCommit { .. }
@@ -332,7 +334,6 @@ impl Actor {
             .into();
 
         Ok(Self {
-            cfds: HashMap::new(),
             client,
             executor,
             state: State::new(latest_block),
@@ -342,25 +343,25 @@ impl Actor {
 }
 
 impl Actor {
-    fn monitor_lock_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
+    fn monitor_lock_finality(&mut self, order_id: OrderId, Lock { txid, descriptor }: Lock) {
         self.state.monitor(
-            params.lock.0,
-            params.lock.1.script_pubkey(),
+            txid,
+            descriptor.script_pubkey(),
             ScriptStatus::with_confirmations(LOCK_FINALITY_CONFIRMATIONS),
             Event::LockFinality(order_id),
         )
     }
 
-    fn monitor_commit_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
+    fn monitor_commit_finality(&mut self, order_id: OrderId, Commit { txid, descriptor }: Commit) {
         self.state.monitor(
-            params.commit.0,
-            params.commit.1.script_pubkey(),
+            txid,
+            descriptor.script_pubkey(),
             ScriptStatus::with_confirmations(COMMIT_FINALITY_CONFIRMATIONS),
             Event::CommitFinality(order_id),
         )
     }
 
-    fn monitor_close_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
+    fn monitor_close_finality(&mut self, order_id: OrderId, close_params: (Txid, Script)) {
         self.state.monitor(
             close_params.0,
             close_params.1,
@@ -369,7 +370,7 @@ impl Actor {
         );
     }
 
-    fn monitor_cet_finality(&mut self, close_params: (Txid, Script), order_id: OrderId) {
+    fn monitor_cet_finality(&mut self, order_id: OrderId, close_params: (Txid, Script)) {
         self.state.monitor(
             close_params.0,
             close_params.1,
@@ -378,38 +379,63 @@ impl Actor {
         );
     }
 
-    fn monitor_commit_cet_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
+    fn monitor_commit_cet_timelock(
+        &mut self,
+        order_id: OrderId,
+        Commit { txid, descriptor }: Commit,
+    ) {
         self.state.monitor(
-            params.commit.0,
-            params.commit.1.script_pubkey(),
+            txid,
+            descriptor.script_pubkey(),
             ScriptStatus::with_confirmations(CET_TIMELOCK),
             Event::CetTimelockExpired(order_id),
         );
     }
 
-    fn monitor_commit_refund_timelock(&mut self, params: &MonitorParams, order_id: OrderId) {
+    fn monitor_commit_refund_timelock(
+        &mut self,
+        order_id: OrderId,
+        Commit { txid, descriptor }: Commit,
+        refund_timelock: u32,
+    ) {
         self.state.monitor(
-            params.commit.0,
-            params.commit.1.script_pubkey(),
-            ScriptStatus::with_confirmations(params.refund.2),
+            txid,
+            descriptor.script_pubkey(),
+            ScriptStatus::with_confirmations(refund_timelock),
             Event::RefundTimelockExpired(order_id),
         );
     }
 
-    fn monitor_refund_finality(&mut self, params: &MonitorParams, order_id: OrderId) {
+    fn monitor_refund_finality(
+        &mut self,
+        order_id: OrderId,
+        Refund {
+            txid,
+            script_pubkey,
+            ..
+        }: Refund,
+    ) {
         self.state.monitor(
-            params.refund.0,
-            params.refund.1.clone(),
+            txid,
+            script_pubkey,
             ScriptStatus::with_confirmations(REFUND_FINALITY_CONFIRMATIONS),
             Event::RefundFinality(order_id),
         );
     }
 
-    fn monitor_revoked_commit_transactions(&mut self, params: &MonitorParams, order_id: OrderId) {
-        for revoked_commit_tx in params.revoked_commits.iter() {
+    fn monitor_revoked_commit_transactions(
+        &mut self,
+        order_id: OrderId,
+        revoked_commits: Vec<RevokedCommit>,
+    ) {
+        for RevokedCommit {
+            txid,
+            script_pubkey,
+        } in revoked_commits.into_iter()
+        {
             self.state.monitor(
-                revoked_commit_tx.0,
-                revoked_commit_tx.1.clone(),
+                txid,
+                script_pubkey,
                 ScriptStatus::InMempool,
                 Event::RevokedTransactionFound(order_id),
             )
@@ -498,13 +524,13 @@ impl Actor {
 
     async fn invoke_cfd_command(
         &self,
-        id: OrderId,
+        order_id: OrderId,
         handler: impl FnOnce(model::Cfd) -> Result<Option<CfdEvent>>,
     ) {
-        match self.executor.execute(id, handler).await {
+        match self.executor.execute(order_id, handler).await {
             Ok(()) => {}
             Err(e) => {
-                tracing::warn!(order_id = %id, "Failed to update state of CFD: {e:#}");
+                tracing::warn!(%order_id, "Failed to update state of CFD: {e:#}");
             }
         }
     }
@@ -520,26 +546,6 @@ enum Event {
     RefundTimelockExpired(OrderId),
     RefundFinality(OrderId),
     RevokedTransactionFound(OrderId),
-}
-
-impl MonitorParams {
-    pub fn new(dlc: Dlc) -> Self {
-        // this is used for the refund transaction, and we can assume
-        // that both addresses will be present since both parties
-        // should have put up coins
-        let script_pubkey = dlc.maker_address.script_pubkey();
-        let lock_tx = dlc.lock.0;
-        MonitorParams {
-            lock: (lock_tx.txid(), dlc.lock.1),
-            commit: (dlc.commit.0.txid(), dlc.commit.2),
-            refund: (dlc.refund.0.txid(), script_pubkey, dlc.refund_timelock),
-            revoked_commits: dlc
-                .revoked_commit
-                .iter()
-                .map(|rev_commit| (rev_commit.txid, rev_commit.script_pubkey.clone()))
-                .collect(),
-        }
-    }
 }
 
 #[async_trait]
@@ -570,7 +576,6 @@ impl xtra::Actor for Actor {
                             commit_tx,
                             lock_tx,
                             id,
-                            params,
                             monitor_lock_finality,
                             monitor_commit_finality,
                             monitor_cet_timelock,
@@ -629,14 +634,8 @@ impl xtra::Actor for Actor {
                             }
                         }
 
-                        let params = match params {
-                            None => continue,
-                            Some(params) => params,
-                        };
-
                         this.send(ReinitMonitoring {
                             id,
-                            params,
                             monitor_lock_finality,
                             monitor_commit_finality,
                             monitor_cet_timelock,
@@ -663,19 +662,40 @@ impl xtra::Actor for Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_start_monitoring(&mut self, msg: StartMonitoring) {
-        let StartMonitoring { id, params } = msg;
+    async fn handle_monitor_after_contract_setup(&mut self, msg: MonitorAfterContractSetup) {
+        let MonitorAfterContractSetup {
+            order_id,
+            transactions:
+                TransactionsAfterContractSetup {
+                    lock,
+                    commit,
+                    refund,
+                },
+        } = msg;
 
-        let params_argument = &params;
-        let order_id = id;
+        self.monitor_lock_finality(order_id, lock);
+        self.monitor_commit_finality(order_id, commit.clone());
+        self.monitor_commit_cet_timelock(order_id, commit.clone());
+        self.monitor_commit_refund_timelock(order_id, commit, refund.timelock);
+        self.monitor_refund_finality(order_id, refund);
+    }
 
-        self.monitor_lock_finality(params_argument, order_id);
-        self.monitor_commit_finality(params_argument, order_id);
-        self.monitor_commit_cet_timelock(params_argument, order_id);
-        self.monitor_commit_refund_timelock(params_argument, order_id);
-        self.monitor_refund_finality(params_argument, order_id);
-        self.monitor_revoked_commit_transactions(params_argument, order_id);
-        self.cfds.insert(id, params);
+    async fn handle_monitor_after_rollover(&mut self, msg: MonitorAfterRollover) {
+        let MonitorAfterRollover {
+            order_id,
+            transactions:
+                TransactionsAfterRollover {
+                    commit,
+                    refund,
+                    revoked_commits,
+                },
+        } = msg;
+
+        self.monitor_commit_finality(order_id, commit.clone());
+        self.monitor_commit_cet_timelock(order_id, commit.clone());
+        self.monitor_commit_refund_timelock(order_id, commit, refund.timelock);
+        self.monitor_refund_finality(order_id, refund);
+        self.monitor_revoked_commit_transactions(order_id, revoked_commits)
     }
 
     fn handle_collaborative_settlement(
@@ -683,8 +703,8 @@ impl Actor {
         collaborative_settlement: MonitorCollaborativeSettlement,
     ) {
         self.monitor_close_finality(
-            collaborative_settlement.tx,
             collaborative_settlement.order_id,
+            collaborative_settlement.tx,
         );
     }
 
@@ -740,7 +760,6 @@ impl Actor {
     async fn handle_reinit_monitoring(&mut self, msg: ReinitMonitoring) {
         let ReinitMonitoring {
             id,
-            params,
             monitor_lock_finality,
             monitor_commit_finality,
             monitor_cet_timelock,
@@ -751,38 +770,38 @@ impl Actor {
             monitor_cet_finality,
         } = msg;
 
-        self.cfds.insert(id, params.clone());
-
-        if monitor_lock_finality {
-            self.monitor_lock_finality(&params, id);
+        if let Some(lock) = monitor_lock_finality {
+            self.monitor_lock_finality(id, lock);
         }
 
-        if monitor_commit_finality {
-            self.monitor_commit_finality(&params, id)
+        if let Some(commit) = &monitor_commit_finality {
+            self.monitor_commit_finality(id, commit.clone());
+
+            if monitor_cet_timelock {
+                self.monitor_commit_cet_timelock(id, commit.clone());
+            }
         }
 
-        if monitor_cet_timelock {
-            self.monitor_commit_cet_timelock(&params, id);
+        if let Some(refund) = &monitor_refund_finality {
+            self.monitor_refund_finality(id, refund.clone());
         }
 
-        if monitor_refund_timelock {
-            self.monitor_commit_refund_timelock(&params, id);
+        if let (Some(commit), Some(refund), true) = (
+            monitor_commit_finality,
+            monitor_refund_finality,
+            monitor_refund_timelock,
+        ) {
+            self.monitor_commit_refund_timelock(id, commit, refund.timelock);
         }
 
-        if monitor_refund_finality {
-            self.monitor_refund_finality(&params, id);
-        }
-
-        if monitor_revoked_commit_transactions {
-            self.monitor_revoked_commit_transactions(&params, id);
-        }
+        self.monitor_revoked_commit_transactions(id, monitor_revoked_commit_transactions);
 
         if let Some(params) = monitor_collaborative_settlement_finality {
-            self.monitor_close_finality(params, id);
+            self.monitor_close_finality(id, params);
         }
 
         if let Some(params) = monitor_cet_finality {
-            self.monitor_cet_finality(params, id);
+            self.monitor_cet_finality(id, params);
         }
     }
 
@@ -796,26 +815,146 @@ impl Actor {
             .script_pubkey
             .clone();
 
-        self.monitor_cet_finality((txid, script), msg.order_id);
+        self.monitor_cet_finality(msg.order_id, (txid, script));
 
         Ok(())
     }
 }
 
-// TODO: Re-model this by tearing apart `MonitorParams`.
+impl MonitorAfterContractSetup {
+    pub fn new(order_id: OrderId, dlc: &Dlc) -> Self {
+        Self {
+            order_id,
+            transactions: TransactionsAfterContractSetup::new(dlc),
+        }
+    }
+}
+
+impl MonitorAfterRollover {
+    pub fn new(order_id: OrderId, dlc: &Dlc) -> Self {
+        Self {
+            order_id,
+            transactions: TransactionsAfterRollover::new(dlc),
+        }
+    }
+}
+
+struct TransactionsAfterContractSetup {
+    lock: Lock,
+    commit: Commit,
+    refund: Refund,
+}
+
+impl TransactionsAfterContractSetup {
+    pub fn new(dlc: &Dlc) -> Self {
+        let (lock_tx, lock_descriptor) = &dlc.lock;
+
+        let (commit_tx, _, commit_descriptor) = &dlc.commit;
+
+        // We can assume that either one of the two addresses will be present since both parties
+        // should have put up coins to create the CFD
+        let refund_script_pubkey = dlc.maker_address.script_pubkey();
+        let refund_txid = dlc.refund.0.txid();
+        let refund_timelock = dlc.refund_timelock;
+
+        Self {
+            lock: Lock {
+                txid: lock_tx.txid(),
+                descriptor: lock_descriptor.clone(),
+            },
+            commit: Commit {
+                txid: commit_tx.txid(),
+                descriptor: commit_descriptor.clone(),
+            },
+            refund: Refund {
+                txid: refund_txid,
+                script_pubkey: refund_script_pubkey,
+                timelock: refund_timelock,
+            },
+        }
+    }
+}
+
+struct TransactionsAfterRollover {
+    commit: Commit,
+    refund: Refund,
+    revoked_commits: Vec<RevokedCommit>,
+}
+
+impl TransactionsAfterRollover {
+    pub fn new(dlc: &Dlc) -> Self {
+        let (commit_tx, _, commit_descriptor) = &dlc.commit;
+
+        // We can assume that either one of the two addresses will be present since both parties
+        // should have put up coins to create the CFD
+        let refund_script_pubkey = dlc.maker_address.script_pubkey();
+        let refund_txid = dlc.refund.0.txid();
+        let refund_timelock = dlc.refund_timelock;
+
+        let revoked_commits = dlc
+            .revoked_commit
+            .iter()
+            .map(
+                |model::RevokedCommit {
+                     txid,
+                     script_pubkey,
+                     ..
+                 }| RevokedCommit {
+                    txid: *txid,
+                    script_pubkey: script_pubkey.clone(),
+                },
+            )
+            .collect();
+
+        Self {
+            commit: Commit {
+                txid: commit_tx.txid(),
+                descriptor: commit_descriptor.clone(),
+            },
+            refund: Refund {
+                txid: refund_txid,
+                script_pubkey: refund_script_pubkey,
+                timelock: refund_timelock,
+            },
+            revoked_commits,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Lock {
+    txid: Txid,
+    descriptor: Descriptor<PublicKey>,
+}
+
+#[derive(Clone)]
+struct Commit {
+    txid: Txid,
+    descriptor: Descriptor<PublicKey>,
+}
+
+#[derive(Clone)]
+struct Refund {
+    txid: Txid,
+    script_pubkey: Script,
+    timelock: u32,
+}
+
+#[derive(Clone)]
+struct RevokedCommit {
+    txid: Txid,
+    script_pubkey: Script,
+}
+
 struct ReinitMonitoring {
     id: OrderId,
 
-    params: MonitorParams,
-
-    monitor_lock_finality: bool,
-    monitor_commit_finality: bool,
+    monitor_lock_finality: Option<Lock>,
+    monitor_commit_finality: Option<Commit>,
     monitor_cet_timelock: bool,
     monitor_refund_timelock: bool,
-    monitor_refund_finality: bool,
-    monitor_revoked_commit_transactions: bool,
-
-    // Ideally, all of the above would be like this.
+    monitor_refund_finality: Option<Refund>,
+    monitor_revoked_commit_transactions: Vec<RevokedCommit>,
     monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
     monitor_cet_finality: Option<(Txid, Script)>,
 }

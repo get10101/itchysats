@@ -145,7 +145,8 @@ where
         environment: Environment,
     ) -> Result<Self>
     where
-        M: Handler<monitor::StartMonitoring, Return = ()>
+        M: Handler<monitor::MonitorAfterContractSetup, Return = ()>
+            + Handler<monitor::MonitorAfterRollover, Return = ()>
             + Handler<monitor::Sync, Return = ()>
             + Handler<monitor::MonitorCollaborativeSettlement, Return = ()>
             + Handler<monitor::MonitorCetFinality, Return = Result<()>>
@@ -172,6 +173,7 @@ where
             Role::Taker,
             projection_actor.clone().into(),
             position_metrics_actor.into(),
+            monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),
             monitor_addr.clone().into(),

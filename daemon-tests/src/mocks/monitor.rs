@@ -35,7 +35,9 @@ impl xtra::Actor for MonitorActor {
 impl MonitorActor {
     async fn handle(&mut self, _: monitor::Sync) {}
 
-    async fn handle(&mut self, _: monitor::StartMonitoring) {}
+    async fn handle(&mut self, _: monitor::MonitorAfterContractSetup) {}
+
+    async fn handle(&mut self, _: monitor::MonitorAfterRollover) {}
 
     async fn handle(&mut self, _: monitor::MonitorCollaborativeSettlement) {}
 
