@@ -95,10 +95,6 @@ pub struct Actor<B, DB> {
     sender: watch::Sender<Option<WalletInfo>>,
 }
 
-#[derive(thiserror::Error, Debug, Clone, Copy)]
-#[error("The transaction is already in the blockchain")]
-pub struct TransactionAlreadyInBlockchain;
-
 impl Actor<ElectrumBlockchain, sled::Tree> {
     pub fn spawn(
         electrum_rpc_url: &str,
