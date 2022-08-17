@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drop connection to peer if we get a `yamux::ConnectionError` when opening a substream to them.
   Dropping the connection should lead to a reconnect on the `taker`, which should fix problems where the `taker` has a broken connection to the `maker` for a long time.
 
+### Fixed
+
+- Ensure that rollover data is saved to the database atomically.
+  This fixes bugs related to accessing rollover data that is incomplete, either because the insertion hadn't finished yet or because part of the insertion had failed.
+
 ## [0.5.4] - 2022-08-05
 
 ### Added
