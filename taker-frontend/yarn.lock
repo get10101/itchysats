@@ -2672,10 +2672,10 @@
   resolved "https://registry.yarnpkg.com/@types/minimist/-/minimist-1.2.2.tgz#ee771e2ba4b3dc5b372935d549fd9617bf345b8c"
   integrity sha512-jhuKLIRrhvCPLqwPcx6INqmKeiA5EWrsCOPhrlFSrbrmU4ZMPjj5Ul/oLCMDO98XRUIwVm78xICz4EPCektzeQ==
 
-"@types/node@*", "@types/node@^18.7.5":
-  version "18.7.5"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.7.5.tgz#f1c1d4b7d8231c0278962347163656f9c36f3e83"
-  integrity sha512-NcKK6Ts+9LqdHJaW6HQmgr7dT/i3GOHG+pt6BiWv++5SnjtRd4NXeiuN2kA153SjhXPR/AhHIPHPbrsbpUVOww==
+"@types/node@*", "@types/node@^18.7.6":
+  version "18.7.6"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-18.7.6.tgz#31743bc5772b6ac223845e18c3fc26f042713c83"
+  integrity sha512-EdxgKRXgYsNITy5mjjXjVE/CS8YENSdhiagGrLqjG0pvA2owgJ6i4l7wy/PFZGC0B1/H20lWKN7ONVDNYDZm7A==
 
 "@types/normalize-package-data@^2.4.0":
   version "2.4.1"
@@ -4258,9 +4258,9 @@ form-data@^4.0.0:
     mime-types "^2.1.12"
 
 framer-motion@^7:
-  version "7.1.1"
-  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-7.1.1.tgz#4d56ed18a7cf2c6a1a4a1af5b57714f8e6b52d9e"
-  integrity sha512-ONFaG7as1GBBYYIqzX8ENVsfa4eh6f7/nSc3QCADAHOaCt1Lh3UdWbQ0+HVGOOORvEW2L99GlCr4wQc0GLddXg==
+  version "7.2.0"
+  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-7.2.0.tgz#1abc8090e185eaac8a3b3729e2529154d2edcb17"
+  integrity sha512-D24ZHtbtdpiaByamNYiVXafVU6JfBxjrVlR1beyNupJL80haaDE23xS4dR0b/Qb64frtw/Mpdd9VYwSCv+UtSw==
   dependencies:
     "@motionone/dom" "10.13.1"
     framesync "6.1.2"
