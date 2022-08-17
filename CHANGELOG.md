@@ -10,12 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - New `/itchysats/offer/2.0.0` protocol, which supports any contract symbol.
+- New dynamic route for maker `PUT /<contract_symbol>/offer/`.
+  This allows the creation of offers with `<contract_symbol>`.
 
 ### Changed
 
 - Dropped support for all legacy network protocols.
 - Deprecate the `/itchysats/offer/1.0.0` protocol.
   The taker will no longer support this version protocol and the maker will run it until at least the next application version.
+
+### Fixed
+
+- Prevent liquidation intervals from overlapping in qunato payout curves.
+- Ensure that the short liquidation interval of inverse payout curves goes up to the maximum price Olivia can attest to.
+- Do not monitor for mined-long-ago lock transactions after rolling over a CFD.
+
+## [0.5.5] - 2022-08-17
+
+### Added
+
+- Drop connection to peer if we get a `yamux::ConnectionError` when opening a substream to them.
+  Dropping the connection should lead to a reconnect on the `taker`, which should fix problems where the `taker` has a broken connection to the `maker` for a long time.
+
+### Fixed
+
+- Ensure that rollover data is saved to the database atomically.
+  This fixes bugs related to accessing rollover data that is incomplete, either because the insertion hadn't finished yet or because part of the insertion had failed.
 
 ## [0.5.4] - 2022-08-05
 
@@ -290,7 +310,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.4...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.5...HEAD
+[0.5.5]: https://github.com/itchysats/itchysats/compare/0.5.4...0.5.5
 [0.5.4]: https://github.com/itchysats/itchysats/compare/0.5.3...0.5.4
 [0.5.3]: https://github.com/itchysats/itchysats/compare/0.5.2...0.5.3
 [0.5.2]: https://github.com/itchysats/itchysats/compare/0.5.1...0.5.2
