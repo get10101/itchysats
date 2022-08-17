@@ -354,7 +354,10 @@ impl Endpoint {
             },
         );
 
-        self.controls.insert(peer_id, (control, tasks));
+        if self.controls.insert(peer_id, (control, tasks)).is_some() {
+            tracing::warn!(%peer_id, "Missed drop event, replacing old connection")
+        }
+
         self.notify_connection_established(peer_id).await;
     }
 
