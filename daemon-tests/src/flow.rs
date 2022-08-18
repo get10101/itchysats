@@ -3,7 +3,6 @@ use anyhow::Result;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
 use daemon::projection::MakerOffers;
-use daemon::projection::OffersFeed;
 use model::ContractSymbol;
 use model::OrderId;
 use std::time::Duration;
@@ -14,21 +13,23 @@ const NEXT_WAIT_TIME: Duration = Duration::from_secs(if cfg!(debug_assertions) {
 
 /// Wait and return next non-empty maker offers with `contract_symbol`
 pub async fn next_maker_offers(
-    rx_a: &mut OffersFeed,
-    rx_b: &mut OffersFeed,
+    rx_a: &mut watch::Receiver<MakerOffers>,
+    rx_b: &mut watch::Receiver<MakerOffers>,
     contract_symbol: &ContractSymbol,
 ) -> Result<(MakerOffers, MakerOffers)> {
-    let (mut rx_a, mut rx_b) = match contract_symbol {
-        ContractSymbol::BtcUsd => (rx_a.btc_usd.clone(), rx_b.btc_usd.clone()),
-        ContractSymbol::EthUsd => (rx_a.eth_usd.clone(), rx_b.eth_usd.clone()),
-    };
+    let mut rx_a = rx_a.clone();
+    let mut rx_b = rx_b.clone();
 
-    let non_empty_offer = |offer: MakerOffers| {
-        if offer.long.is_some() && offer.short.is_some() {
-            Some(offer)
-        } else {
-            None
+    let non_empty_offer = |offers: MakerOffers| match &offers {
+        MakerOffers {
+            short: Some(short),
+            long: Some(long),
+        } if &short.contract_symbol == contract_symbol
+            && &long.contract_symbol == contract_symbol =>
+        {
+            Some(offers)
         }
+        _ => None,
     };
 
     let wait_until_a = next_with(&mut rx_a, non_empty_offer);
@@ -39,15 +40,8 @@ pub async fn next_maker_offers(
     Ok((a?, b?))
 }
 
-pub async fn is_next_offers_none(
-    rx: &mut OffersFeed,
-    contract_symbol: &ContractSymbol,
-) -> Result<bool> {
-    let mut rx = match contract_symbol {
-        ContractSymbol::BtcUsd => rx.btc_usd.clone(),
-        ContractSymbol::EthUsd => rx.eth_usd.clone(),
-    };
-    let maker_offers = next(&mut rx).await?;
+pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Result<bool> {
+    let maker_offers = next(rx).await?;
     Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
 }
 

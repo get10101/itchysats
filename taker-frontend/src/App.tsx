@@ -119,11 +119,21 @@ export const App = () => {
         void fetchDaemonVersion(setDaemonVersion);
     }, []);
 
-    const [source, isConnected] = useEventSource(`/api/${symbol}/feed`);
+    const [source, isConnected] = useEventSource(`/api/feed`);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
-    const makerLong = useLatestEvent<MakerOffer>(source, daemon_long_offer, intoMakerOffer);
-    const makerShort = useLatestEvent<MakerOffer>(source, daemon_short_offer, intoMakerOffer);
+    const makerLong = useLatestEvent<MakerOffer>(
+        source,
+        daemon_long_offer,
+        intoMakerOffer,
+        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
+    );
+    const makerShort = useLatestEvent<MakerOffer>(
+        source,
+        daemon_short_offer,
+        intoMakerOffer,
+        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
+    );
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
 

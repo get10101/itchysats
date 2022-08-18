@@ -13,12 +13,7 @@ use otel_tests::otel_test;
 async fn taker_receives_offer_from_maker_on_publication() {
     let (mut maker, mut taker) = start_both().await;
 
-    assert!(
-        is_next_offers_none(taker.offers_feed(), &ContractSymbol::BtcUsd)
-            .await
-            .unwrap()
-    );
-
+    assert!(is_next_offers_none(taker.offers_feed()).await.unwrap());
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;

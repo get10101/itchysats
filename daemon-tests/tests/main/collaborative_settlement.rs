@@ -27,7 +27,7 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    let mut quote_receiver = taker.quote_feed().btc_usd.clone();
+    let mut quote_receiver = taker.quote_feed().clone();
     next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
     taker.system.propose_settlement(order_id).await.unwrap();
@@ -53,7 +53,7 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
 
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    let mut quote_receiver = taker.quote_feed().btc_usd.clone();
+    let mut quote_receiver = taker.quote_feed().clone();
     next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
     taker.system.propose_settlement(order_id).await.unwrap();
@@ -85,7 +85,7 @@ async fn collaboratively_close_an_open_cfd(position_maker: Position) {
     .await;
     taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
     maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    let mut quote_receiver = taker.quote_feed().btc_usd.clone();
+    let mut quote_receiver = taker.quote_feed().clone();
     next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
 
     taker.system.propose_settlement(order_id).await.unwrap();

@@ -63,14 +63,24 @@ export default function App() {
     const [symbol, setSymbol] = useState("btcusd");
     let symbolDefaults = Defaults[symbol];
 
-    let source = useEventSource({ source: `/api/${symbol}/feed`, options: { withCredentials: true } });
+    let source = useEventSource({ source: `/api/feed`, options: { withCredentials: true } });
 
     let [leverages, setLeverages] = useState(["1", "2", "3"]);
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    const makerLongOrder = useLatestEvent<MakerOffer>(source, "long_offer");
-    const makerShortOrder = useLatestEvent<MakerOffer>(source, "short_offer");
+    const makerLongOrder = useLatestEvent<MakerOffer>(
+        source,
+        "long_offer",
+        undefined,
+        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
+    );
+    const makerShortOrder = useLatestEvent<MakerOffer>(
+        source,
+        "short_offer",
+        undefined,
+        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
+    );
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 

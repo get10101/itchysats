@@ -240,10 +240,7 @@ impl Actor {
 
         // 2. Notify UI via feed
         self.projection
-            .send(projection::Update((
-                msg.contract_symbol,
-                Some(maker_offers.clone()),
-            )))
+            .send(projection::Update(Some(maker_offers.clone())))
             .await?;
 
         if let Err(e) = self
