@@ -1,11 +1,10 @@
 use crate::bitcoin::secp256k1::SecretKey;
 use crate::bitcoin::PublicKey;
+use crate::order::protocol::Msg0;
+use crate::order::protocol::Msg1;
+use crate::order::protocol::Msg2;
+use crate::order::protocol::Msg3;
 use crate::wallet;
-use crate::wire::Msg0;
-use crate::wire::Msg1;
-use crate::wire::Msg2;
-use crate::wire::Msg3;
-use crate::wire::SetupMsg;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -48,6 +47,8 @@ use tokio_extras::FutureExt;
 use tracing::instrument;
 use tracing::Instrument;
 use xtra::prelude::MessageChannel;
+
+use super::protocol::SetupMsg;
 
 /// How long contract setup protocol waits for the next message before giving up
 ///

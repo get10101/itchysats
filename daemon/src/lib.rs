@@ -64,16 +64,8 @@ pub mod position_metrics;
 pub mod process_manager;
 pub mod projection;
 pub mod seed;
-pub mod setup_contract;
-// TODO: Remove setup_contract_deprecated module after phasing out legacy networking
-pub mod setup_contract_deprecated;
 pub mod taker_cfd;
 pub mod wallet;
-pub mod wire;
-
-/// Duration between the heartbeats sent by the maker, used by the taker to
-/// determine whether the maker is online.
-pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Duration between the restart attempts after a supervised actor has quit with
 /// a failure.

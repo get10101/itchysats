@@ -10,7 +10,6 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::wallet;
 use daemon::wallet::MAKER_WALLET_ID;
-use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use maker::routes;
 use maker::ActorSystem;
@@ -149,8 +148,6 @@ async fn main() -> Result<()> {
         N_PAYOUTS,
         projection_actor.clone(),
         identities,
-        HEARTBEAT_INTERVAL,
-        p2p_socket,
         endpoint_listen,
     )?;
 

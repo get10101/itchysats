@@ -1,14 +1,14 @@
 use crate::command;
 use crate::oracle;
 use crate::oracle::NoAnnouncement;
+use crate::order::contract_setup;
 use crate::order::protocol;
 use crate::order::protocol::MakerMessage;
+use crate::order::protocol::SetupMsg;
 use crate::order::protocol::TakerMessage;
 use crate::process_manager;
 use crate::projection;
-use crate::setup_contract;
 use crate::wallet;
-use crate::wire::SetupMsg;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -255,7 +255,7 @@ impl Actor {
                     .send(oracle::GetAnnouncements(vec![oracle_event_id]))
                     .await??;
 
-                let dlc = setup_contract::new(
+                let dlc = contract_setup::new(
                     sink.with(|msg| future::ok(MakerMessage::ContractSetupMsg(Box::new(msg)))),
                     Box::pin(stream.filter_map(|msg| async move {
                         let msg = match msg {

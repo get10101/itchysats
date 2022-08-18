@@ -26,7 +26,6 @@ use daemon::projection::QuoteFeed;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::Environment;
-use daemon::HEARTBEAT_INTERVAL;
 use daemon::N_PAYOUTS;
 use maia::OliviaData;
 use maker::cfd::OfferParams;
@@ -526,7 +525,6 @@ pub async fn start_both() -> (Maker, Taker) {
 pub struct MakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
-    pub heartbeat_interval: Duration,
     n_payouts: usize,
     dedicated_libp2p_port: Option<u16>,
 }
@@ -545,7 +543,6 @@ impl Default for MakerConfig {
         Self {
             oracle_pk: oracle_pk(),
             seed: RandomSeed::default(),
-            heartbeat_interval: HEARTBEAT_INTERVAL,
             n_payouts: N_PAYOUTS,
             dedicated_libp2p_port: None,
         }
@@ -686,8 +683,6 @@ impl Maker {
             config.n_payouts,
             projection_actor,
             identities.clone(),
-            config.heartbeat_interval,
-            address,
             endpoint_listen.clone(),
         )
         .unwrap();

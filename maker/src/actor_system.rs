@@ -1,5 +1,4 @@
 use crate::cfd;
-use crate::connection;
 use crate::metrics::time_to_first_position;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -36,7 +35,6 @@ use model::Role;
 use model::TxFeeRate;
 use model::Usd;
 use std::collections::HashSet;
-use std::net::SocketAddr;
 use std::time::Duration;
 use tokio_extras::Tasks;
 use xtra::Actor;
@@ -51,7 +49,6 @@ use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
-use xtras::HandlerTimeoutExt;
 
 const ENDPOINT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(20);
 const PING_INTERVAL: Duration = Duration::from_secs(30);
@@ -61,8 +58,9 @@ const PING_INTERVAL: Duration = Duration::from_secs(30);
 pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 
 pub struct ActorSystem<O: 'static, W: 'static> {
-    pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
+    pub cfd_actor: Address<cfd::Actor>,
     wallet_actor: Address<W>,
+
     pub rollover_actor: Address<
         rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, cfd::RatesChannel>,
     >,
@@ -73,6 +71,7 @@ pub struct ActorSystem<O: 'static, W: 'static> {
             cfd::RatesChannel,
         >,
     >,
+    _oracle_actor: Address<O>,
     _archive_closed_cfds_actor: Address<archive_closed_cfds::Actor>,
     _archive_failed_cfds_actor: Address<archive_failed_cfds::Actor>,
     executor: command::Executor,
@@ -102,8 +101,6 @@ where
         n_payouts: usize,
         projection_actor: Address<projection::Actor>,
         identity: Identities,
-        heartbeat_interval: Duration,
-        p2p_socket: SocketAddr,
         listen_multiaddr: Multiaddr,
     ) -> Result<Self>
     where
@@ -117,7 +114,6 @@ where
     {
         let (monitor_addr, monitor_ctx) = Context::new(None);
         let (oracle_addr, oracle_ctx) = Context::new(None);
-        let (inc_conn_addr, inc_conn_ctx) = Context::new(None);
         let (process_manager_addr, process_manager_ctx) = Context::new(None);
         let (time_to_first_position_addr, time_to_first_position_ctx) = Context::new(None);
 
@@ -153,7 +149,7 @@ where
         let (order_supervisor, order) = Supervisor::new({
             let oracle = oracle_addr.clone();
             let db = db.clone();
-            let process_manager = process_manager_addr.clone();
+            let process_manager = process_manager_addr;
             let wallet = wallet_addr.clone();
             let projection = projection_actor.clone();
             let maker_offer_address = maker_offer_address.clone();
@@ -178,16 +174,9 @@ where
         tasks.add(collab_settlement_supervisor.run_log_summary());
 
         let cfd_actor_addr = cfd::Actor::new(
-            db.clone(),
-            wallet_addr.clone(),
             settlement_interval,
-            oracle_pk,
             projection_actor,
-            process_manager_addr,
-            inc_conn_addr,
-            oracle_addr.clone(),
             time_to_first_position_addr,
-            n_payouts,
             libp2p_collab_settlement_addr.clone(),
             maker_offer_address.clone(),
             order.clone(),
@@ -213,7 +202,7 @@ where
 
         let (rollover_supervisor, rollover_addr) = Supervisor::new({
             let executor = executor.clone();
-            let oracle_addr = oracle_addr;
+            let oracle_addr = oracle_addr.clone();
             let cfd_actor_addr = cfd_actor_addr.clone();
             move || {
                 rollover::maker::Actor::new(
@@ -295,19 +284,6 @@ where
         tasks.add(identify_listener_supervisor.run_log_summary());
         tasks.add(identify_dialer_supervisor.run_log_summary());
 
-        tasks.add(
-            inc_conn_ctx
-                .with_handler_timeout(Duration::from_secs(120))
-                .run(connection::Actor::new(
-                    cfd_actor_addr.clone().into(),
-                    cfd_actor_addr.clone().into(),
-                    cfd_actor_addr.clone().into(),
-                    identity.identity_sk,
-                    heartbeat_interval,
-                    p2p_socket,
-                )),
-        );
-
         tasks.add(monitor_ctx.run(monitor_constructor(executor.clone())?));
 
         tasks.add(oracle_ctx.run(oracle_constructor(executor.clone())));
@@ -332,6 +308,7 @@ where
             _archive_closed_cfds_actor: archive_closed_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             executor,
+            _oracle_actor: oracle_addr,
             _tasks: tasks,
             _pong_actor: pong_address,
         })
@@ -392,20 +369,6 @@ where
     pub async fn reject_settlement(&self, order_id: OrderId) -> Result<()> {
         self.cfd_actor
             .send(cfd::RejectSettlement { order_id })
-            .await??;
-        Ok(())
-    }
-
-    pub async fn accept_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor
-            .send(cfd::AcceptRollover { order_id })
-            .await??;
-        Ok(())
-    }
-
-    pub async fn reject_rollover(&self, order_id: OrderId) -> Result<()> {
-        self.cfd_actor
-            .send(cfd::RejectRollover { order_id })
             .await??;
         Ok(())
     }
