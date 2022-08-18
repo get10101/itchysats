@@ -1,6 +1,5 @@
-use crate::protocol;
-use crate::MakerOffers;
-use crate::PROTOCOL;
+use crate::current::protocol;
+use crate::current::PROTOCOL;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -16,7 +15,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     endpoint: xtra::Address<Endpoint>,
     connected_peers: HashSet<PeerId>,
-    latest_offers: Option<MakerOffers>,
+    latest_offers: Vec<model::Offer>,
 }
 
 impl Actor {
@@ -24,7 +23,7 @@ impl Actor {
         Self {
             endpoint,
             connected_peers: HashSet::default(),
-            latest_offers: None,
+            latest_offers: Vec::new(),
         }
     }
 
@@ -39,13 +38,22 @@ impl Actor {
                 .await??
                 .await?;
 
-            protocol::send(stream, offers).await?;
+            protocol::send(stream, offers.into()).await?;
 
             anyhow::Ok(())
         };
 
-        let err_handler =
-            move |e| async move { tracing::warn!(%peer_id, "Failed to send offers: {e:#}") };
+        let err_handler = move |e: anyhow::Error| async move {
+            if let Some(xtra_libp2p::Error::NegotiationFailed(
+                xtra_libp2p::NegotiationError::Failed,
+            )) = e.downcast_ref::<xtra_libp2p::Error>()
+            {
+                // It's normal to disagree on the protocols now that we broadcast on both versions
+                // to _all_ our peers
+            } else {
+                tracing::warn!(%peer_id, "Failed to send offers: {e:#}")
+            }
+        };
 
         let this = ctx.address().expect("self to be alive");
         spawn_fallible(&this, task.instrument(span), err_handler);
@@ -67,8 +75,8 @@ impl Actor {
         }
     }
 
-    async fn handle(&mut self, _: GetLatestOffers) -> Option<model::MakerOffers> {
-        self.latest_offers.clone().map(|offer| offer.into())
+    async fn handle(&mut self, _: GetLatestOffers) -> Vec<model::Offer> {
+        self.latest_offers.clone()
     }
 }
 
@@ -92,10 +100,10 @@ impl Actor {
 
 /// Instruct the `offer::maker::Actor` to broadcast to all
 /// connected peers an update to the current offers.
-pub struct NewOffers(pub Option<MakerOffers>);
+pub struct NewOffers(Vec<model::Offer>);
 
 impl NewOffers {
-    pub fn new(offers: Option<MakerOffers>) -> Self {
+    pub fn new(offers: Vec<model::Offer>) -> Self {
         Self(offers)
     }
 }

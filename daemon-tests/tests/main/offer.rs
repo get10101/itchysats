@@ -1,7 +1,6 @@
-use daemon::bdk::bitcoin::Amount;
 use daemon::projection::CfdOffer;
 use daemon::projection::MakerOffers;
-use daemon_tests::flow::is_next_offers_none;
+use daemon_tests::flow::ensure_null_next_offers;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::start_both;
 use daemon_tests::OfferParamsBuilder;
@@ -13,9 +12,15 @@ use otel_tests::otel_test;
 async fn taker_receives_offer_from_maker_on_publication() {
     let (mut maker, mut taker) = start_both().await;
 
-    assert!(is_next_offers_none(taker.offers_feed()).await.unwrap());
+    ensure_null_next_offers(taker.offers_feed()).await.unwrap();
+
+    let leverage = Leverage::TWO;
     maker
-        .set_offer_params(OfferParamsBuilder::new().build())
+        .set_offer_params(
+            OfferParamsBuilder::new()
+                .leverage_choices(vec![leverage])
+                .build(),
+        )
         .await;
 
     let (published, received) = next_maker_offers(
@@ -30,50 +35,50 @@ async fn taker_receives_offer_from_maker_on_publication() {
 }
 
 fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
-    match (published.long, received.long) {
-        (None, None) => (),
-        (Some(published), Some(received)) => assert_eq_offer(published, received),
-        (None, Some(_)) => panic!("Long offers did not match: Published None, received Some "),
-        (Some(_), None) => panic!("Long offers did not match: Published Some, received None "),
-    }
-
-    match (published.short, received.short) {
-        (None, None) => (),
-        (Some(published), Some(received)) => assert_eq_offer(published, received),
-        (None, Some(_)) => panic!("Short offers did not match: Published None, received Some "),
-        (Some(_), None) => panic!("Short offers did not match: Published Some, received None "),
-    }
+    assert_eq_offer(published.btcusd_long, received.btcusd_long);
+    assert_eq_offer(published.btcusd_short, received.btcusd_short);
+    assert_eq_offer(published.ethusd_long, received.ethusd_long);
+    assert_eq_offer(published.ethusd_short, received.ethusd_short);
 }
 
-fn assert_eq_offer(mut published: CfdOffer, received: CfdOffer) {
-    // we fix the leverage to TWO for our test
-    let fixed_leverage = Leverage::TWO;
+/// Helper function to compare a maker's `CfdOffer` against the taker's corresponding `CfdOffer`.
+///
+/// Unfortunately, we cannot simply use `assert_eq!` because part of the `CfdOffer` is
+/// position-depedent.
+fn assert_eq_offer(published: Option<CfdOffer>, received: Option<CfdOffer>) {
+    let (mut published, mut received) = match (published, received) {
+        (None, None) => return,
+        (Some(published), Some(received)) => (published, received),
+        (published, received) => {
+            panic!("Offer mismatch. Maker published {published:?}, taker received {received:?}")
+        }
+    };
 
-    // make sure that the initial funding fee per lot is flipped
-    // note: we publish as maker and receive as taker, the funding fee is to be received by one
-    // party and paid by the other
-
-    assert_eq!(
-        published
+    // Comparing `LeverageDetails` straight up will fail because the values in them depend on each
+    // party's position. Therefore, we need to assert against things carefully
+    {
+        for (leverage_details_published_i, leverage_details_received_i) in published
             .leverage_details
             .iter()
-            .find(|l| l.leverage == fixed_leverage)
-            .unwrap()
-            .initial_funding_fee_per_lot,
-        received
-            .leverage_details
-            .iter()
-            .find(|l| l.leverage == fixed_leverage)
-            .unwrap()
-            .initial_funding_fee_per_lot
-            * -1
-    );
-    // align leverage details so we can assert on the offer
-    published.leverage_details = received.leverage_details.clone();
+            .zip(received.leverage_details.iter())
+        {
+            // We can expect the absolute values of the initial funding fee per lot to be the same
+            // per leverage for both parties
+            let initial_funding_fee_per_lot_maker =
+                leverage_details_published_i.initial_funding_fee_per_lot;
+            let initial_funding_fee_per_lot_taker =
+                leverage_details_received_i.initial_funding_fee_per_lot;
+            assert_eq!(
+                initial_funding_fee_per_lot_maker.abs(),
+                initial_funding_fee_per_lot_taker.abs()
+            );
+        }
+
+        // As a last step, we delete the data from `leverage_details` for both parties so that the
+        // final assertion on the entire `CfdOffer` has a chance of succeeding
+        published.leverage_details = Vec::new();
+        received.leverage_details = Vec::new();
+    }
 
     assert_eq!(published, received);
-
-    // Hard-coded to match the dummy_new_offer()
-    assert_eq!(received.opening_fee.unwrap(), Amount::from_sat(2));
-    assert_eq!(received.funding_rate_hourly_percent, "0.00100");
 }

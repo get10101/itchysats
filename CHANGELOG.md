@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New dynamic route for maker `PUT /<contract_symbol>/offer/`. This allows the creation of offers with `<contract_symbol>`.
+- New `/itchysats/offer/2.0.0` protocol, which supports any contract symbol.
 
 ### Changed
 
 - Dropped support for all legacy network protocols.
+- Deprecate the `/itchysats/offer/1.0.0` protocol.
+  The taker will no longer support this version protocol and the maker will run it until at least the next application version.
 
 ## [0.5.4] - 2022-08-05
 

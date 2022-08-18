@@ -1,6 +1,6 @@
-use crate::protocol;
-use crate::MakerOffers;
-use crate::PROTOCOL;
+use crate::deprecated;
+use crate::deprecated::protocol;
+use crate::deprecated::protocol::MakerOffers;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -35,7 +35,10 @@ impl Actor {
         let span = tracing::debug_span!("Send offers", %peer_id).or_current();
         let task = async move {
             let stream = endpoint
-                .send(OpenSubstream::single_protocol(peer_id, PROTOCOL))
+                .send(OpenSubstream::single_protocol(
+                    peer_id,
+                    deprecated::PROTOCOL,
+                ))
                 .await??
                 .await?;
 
@@ -44,8 +47,17 @@ impl Actor {
             anyhow::Ok(())
         };
 
-        let err_handler =
-            move |e| async move { tracing::warn!(%peer_id, "Failed to send offers: {e:#}") };
+        let err_handler = move |e: anyhow::Error| async move {
+            if let Some(xtra_libp2p::Error::NegotiationFailed(
+                xtra_libp2p::NegotiationError::Failed,
+            )) = e.downcast_ref::<xtra_libp2p::Error>()
+            {
+                // It's normal to disagree on the protocols now that we broadcast on both versions
+                // to _all_ our peers
+            } else {
+                tracing::warn!(%peer_id, "Failed to send offers: {e:#}")
+            }
+        };
 
         let this = ctx.address().expect("self to be alive");
         spawn_fallible(&this, task.instrument(span), err_handler);
@@ -55,7 +67,7 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewOffers, ctx: &mut xtra::Context<Self>) {
-        self.latest_offers = msg.0;
+        self.latest_offers = MakerOffers::new(msg.0);
 
         let quiet = quiet_spans::sometimes_quiet_children();
         for peer_id in self.connected_peers.iter().copied() {
@@ -65,10 +77,6 @@ impl Actor {
                 }))
                 .await
         }
-    }
-
-    async fn handle(&mut self, _: GetLatestOffers) -> Option<model::MakerOffers> {
-        self.latest_offers.clone().map(|offer| offer.into())
     }
 }
 
@@ -92,16 +100,13 @@ impl Actor {
 
 /// Instruct the `offer::maker::Actor` to broadcast to all
 /// connected peers an update to the current offers.
-pub struct NewOffers(pub Option<MakerOffers>);
+pub struct NewOffers(Vec<model::Offer>);
 
 impl NewOffers {
-    pub fn new(offers: Option<MakerOffers>) -> Self {
+    pub fn new(offers: Vec<model::Offer>) -> Self {
         Self(offers)
     }
 }
-
-#[derive(Clone, Copy)]
-pub struct GetLatestOffers;
 
 #[async_trait]
 impl xtra::Actor for Actor {

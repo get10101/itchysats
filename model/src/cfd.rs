@@ -117,58 +117,6 @@ impl From<OrderId> for Uuid {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
-pub struct MakerOffers {
-    pub long: Option<Offer>,
-    pub short: Option<Offer>,
-
-    pub tx_fee_rate: TxFeeRate,
-    pub funding_rate_long: FundingRate,
-    pub funding_rate_short: FundingRate,
-}
-
-impl fmt::Debug for MakerOffers {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("MakerOffers")
-            .field("long_order_id", &self.long.as_ref().map(|o| o.id))
-            .field("short_order_id", &self.short.as_ref().map(|o| o.id))
-            .field("tx_fee_rate", &self.tx_fee_rate)
-            .field("funding_rate_long", &self.funding_rate_long)
-            .field("funding_rate_short", &self.funding_rate_short)
-            .finish()
-    }
-}
-
-impl MakerOffers {
-    /// Picks the order to take if available
-    ///
-    /// Returns the order to take without removing it.
-    pub fn pick_offer_to_take(&self, id: OfferId) -> Option<Offer> {
-        if let Some(long) = &self.long {
-            if long.id == id {
-                return Some(long.clone());
-            }
-        }
-        if let Some(short) = &self.short {
-            if short.id == id {
-                return Some(short.clone());
-            }
-        }
-        None
-    }
-
-    /// Update the orders after one of them got taken.
-    pub fn replicate(&self) -> MakerOffers {
-        MakerOffers {
-            long: self.long.as_ref().map(|order| order.replicate()),
-            short: self.short.as_ref().map(|order| order.replicate()),
-            tx_fee_rate: self.tx_fee_rate,
-            funding_rate_long: self.funding_rate_long,
-            funding_rate_short: self.funding_rate_short,
-        }
-    }
-}
-
 /// Origin of the order
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Origin {
@@ -197,15 +145,9 @@ impl From<Origin> for Role {
 pub struct Offer {
     pub id: OfferId,
 
-    #[serde(rename = "trading_pair")]
     pub contract_symbol: ContractSymbol,
 
     /// The maker's position
-    ///
-    /// Since the maker is the creator of this order this always reflects the maker's position.
-    /// When we create a Cfd we change it to be the position as seen by each party, i.e. flip the
-    /// position for the taker.
-    #[serde(rename = "position")]
     pub position_maker: Position,
 
     pub price: Price,
@@ -213,24 +155,14 @@ pub struct Offer {
     pub min_quantity: Usd,
     pub max_quantity: Usd,
 
-    /// The taker leverage that the maker allows for the taker
-    ///
-    /// This is needed for backwards compatibility reasons.
-    #[deprecated(since = "0.4.13", note = "please use `leverage_choices` instead")]
-    #[serde(rename = "leverage")]
-    pub leverage_taker: Leverage,
-
     /// A selection of leverages that the maker allows for the taker
     pub leverage_choices: Vec<Leverage>,
 
     /// The creation timestamp as set by the maker
-    #[serde(rename = "creation_timestamp")]
     pub creation_timestamp_maker: Timestamp,
 
     /// The duration that will be used for calculating the settlement timestamp
     pub settlement_interval: Duration,
-
-    pub origin: Origin,
 
     /// The id of the event to be used for price attestation
     ///
@@ -249,8 +181,6 @@ impl Offer {
         price: Price,
         min_quantity: Usd,
         max_quantity: Usd,
-        origin: Origin,
-        oracle_event_id: BitMexPriceEventId,
         settlement_interval: Duration,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
@@ -258,43 +188,24 @@ impl Offer {
         leverage_choices: Vec<Leverage>,
         contract_symbol: ContractSymbol,
     ) -> Self {
-        // allowing deprecated use of field `leverage_taker` here for backwards compatibility.
-        #[allow(deprecated)]
+        let oracle_event_id =
+            olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval);
+
         Offer {
             id: OfferId::default(),
             price,
             min_quantity,
             max_quantity,
-            leverage_taker: Leverage::TWO,
             leverage_choices,
             contract_symbol,
             position_maker,
             creation_timestamp_maker: Timestamp::now(),
             settlement_interval,
-            origin,
             oracle_event_id,
             tx_fee_rate,
             funding_rate,
             opening_fee,
         }
-    }
-
-    /// Replicates the order with a new ID
-    pub fn replicate(&self) -> Self {
-        Self::new(
-            self.position_maker,
-            self.price,
-            self.min_quantity,
-            self.max_quantity,
-            self.origin,
-            self.oracle_event_id,
-            self.settlement_interval,
-            self.tx_fee_rate,
-            self.funding_rate,
-            self.opening_fee,
-            self.leverage_choices.clone(),
-            self.contract_symbol,
-        )
     }
 
     /// Defines when we consider an order to be outdated
@@ -4104,9 +4015,7 @@ mod tests {
     }
 
     impl Cfd {
-        fn taker_long_from_order(mut offer: Offer, quantity: Usd, leverage: Leverage) -> Self {
-            offer.origin = Origin::Theirs;
-
+        fn taker_long_from_order(offer: Offer, quantity: Usd, leverage: Leverage) -> Self {
             Cfd::from_order(
                 OrderId::default(),
                 &offer,
@@ -4388,8 +4297,6 @@ mod tests {
                 Price::new(dec!(1000)).unwrap(),
                 Usd::new(dec!(100)),
                 Usd::new(dec!(1000)),
-                Origin::Ours,
-                dummy_event_id(),
                 time::Duration::hours(24),
                 TxFeeRate::default(),
                 FundingRate::default(),

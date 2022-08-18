@@ -56,30 +56,6 @@ export enum Symbol {
     ethusd = "ethusd",
 }
 
-const parseSymbol = (symbol: Symbol) => {
-    switch (symbol) {
-        case undefined: {
-            // falling through to default
-        }
-        // eslint-disable-next-line no-fallthrough
-        case Symbol.ethusd: {
-            // TODO: falling through because unimplemented at the moment
-        }
-        // eslint-disable-next-line no-fallthrough
-        case Symbol.btcusd: {
-            // falling through to default
-        }
-        // eslint-disable-next-line no-fallthrough
-        default:
-            return {
-                bitmexStream: "wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT",
-                // TODO: make offer events symbol dependent becase we only want subscribe to those offers we are currently interested in.
-                daemon_long_offer: "long_offer",
-                daemon_short_offer: "short_offer",
-            };
-    }
-};
-
 export const App = () => {
     const toast = useToast();
     const navigate = useNavigate();
@@ -92,8 +68,6 @@ export const App = () => {
         symbol = Symbol.ethusd;
     }
 
-    let { bitmexStream, daemon_long_offer, daemon_short_offer } = parseSymbol(symbol);
-
     let [referencePrice, setReferencePrice] = useState<number>();
     let [showExtraInfo, setExtraInfo] = useState(false);
     const [githubVersion, setGithubVersion] = useState<SemVer | null>();
@@ -104,7 +78,7 @@ export const App = () => {
         outdated = githubVersion > daemonVersion;
     }
 
-    useWebSocket(bitmexStream, {
+    useWebSocket(bitmexWebSocketURL(symbol), {
         shouldReconnect: () => true,
         onMessage: (message) => {
             const data: BXBTData[] = JSON.parse(message.data).data;
@@ -122,17 +96,16 @@ export const App = () => {
     const [source, isConnected] = useEventSource(`/api/feed`);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
+    let { long_offer, short_offer } = offer_event_names(symbol);
     const makerLong = useLatestEvent<MakerOffer>(
         source,
-        daemon_long_offer,
+        long_offer,
         intoMakerOffer,
-        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
     );
     const makerShort = useLatestEvent<MakerOffer>(
         source,
-        daemon_short_offer,
+        short_offer,
         intoMakerOffer,
-        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
     );
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
@@ -303,4 +276,31 @@ export const App = () => {
             </Route>
         </Routes>
     );
+};
+
+const offer_event_names = (symbol: Symbol) => {
+    switch (symbol) {
+        case Symbol.ethusd: {
+            return {
+                long_offer: "ethusd_long_offer",
+                short_offer: "ethusd_short_offer",
+            };
+        }
+        case Symbol.btcusd:
+        default:
+            return {
+                long_offer: "btcusd_long_offer",
+                short_offer: "btcusd_short_offer",
+            };
+    }
+};
+
+const bitmexWebSocketURL = (symbol: Symbol) => {
+    switch (symbol) {
+        case Symbol.ethusd:
+            return "wss://www.bitmex.com/realtime?subscribe=instrument:.BETH";
+        case Symbol.btcusd:
+        default:
+            return "wss://www.bitmex.com/realtime?subscribe=instrument:.BXBT";
+    }
 };

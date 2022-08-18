@@ -18,7 +18,7 @@ function OrderTile(
             <VStack>
                 <Box bg="blue.800" w="100%">
                     <Text padding={2} color={"white"} fontWeight={"bold"}>
-                        Current CFD {maker_offer.position} Offer
+                        {maker_offer.contract_symbol} {maker_offer.position} Offer
                     </Text>
                 </Box>
                 <Grid gridTemplateColumns="max-content auto" padding={5} rowGap={2}>

@@ -1,3 +1,4 @@
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 use daemon::projection::Cfd;
@@ -22,13 +23,21 @@ pub async fn next_maker_offers(
 
     let non_empty_offer = |offers: MakerOffers| match &offers {
         MakerOffers {
-            short: Some(short),
-            long: Some(long),
-        } if &short.contract_symbol == contract_symbol
-            && &long.contract_symbol == contract_symbol =>
-        {
-            Some(offers)
-        }
+            btcusd_long: Some(_),
+            ..
+        } if contract_symbol == &ContractSymbol::BtcUsd => Some(offers),
+        MakerOffers {
+            btcusd_long: Some(_),
+            ..
+        } if contract_symbol == &ContractSymbol::BtcUsd => Some(offers),
+        MakerOffers {
+            ethusd_long: Some(_),
+            ..
+        } if contract_symbol == &ContractSymbol::EthUsd => Some(offers),
+        MakerOffers {
+            ethusd_long: Some(_),
+            ..
+        } if contract_symbol == &ContractSymbol::EthUsd => Some(offers),
         _ => None,
     };
 
@@ -40,9 +49,17 @@ pub async fn next_maker_offers(
     Ok((a?, b?))
 }
 
-pub async fn is_next_offers_none(rx: &mut watch::Receiver<MakerOffers>) -> Result<bool> {
+pub async fn ensure_null_next_offers(rx: &mut watch::Receiver<MakerOffers>) -> Result<()> {
     let maker_offers = next(rx).await?;
-    Ok(maker_offers.long.is_none() && maker_offers.short.is_none())
+
+    ensure!(
+        maker_offers.btcusd_long.is_none()
+            && maker_offers.btcusd_short.is_none()
+            && maker_offers.ethusd_long.is_none()
+            && maker_offers.ethusd_short.is_none()
+    );
+
+    Ok(())
 }
 
 /// Returns watch channel value upon change

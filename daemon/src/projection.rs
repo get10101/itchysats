@@ -1,4 +1,3 @@
-use crate::Offer;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -34,7 +33,6 @@ use model::FundingRate;
 use model::Leverage;
 use model::OfferId;
 use model::OrderId;
-use model::Origin;
 use model::Position;
 use model::Price;
 use model::Role;
@@ -79,6 +77,7 @@ pub struct Actor {
     state: State,
     price_feed:
         MessageChannel<xtra_bitmex_price_feed::LatestQuote, Option<xtra_bitmex_price_feed::Quote>>,
+    role: Role,
 }
 
 pub struct Feeds {
@@ -95,13 +94,10 @@ impl Actor {
             xtra_bitmex_price_feed::LatestQuote,
             Option<xtra_bitmex_price_feed::Quote>,
         >,
+        role: Role,
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
-
-        let (tx_offer, rx_offer) = watch::channel(MakerOffers {
-            long: None,
-            short: None,
-        });
+        let (tx_offer, rx_offer) = watch::channel(MakerOffers::default());
         let (tx_quote, rx_quote) = watch::channel(None);
 
         let actor = Self {
@@ -113,6 +109,7 @@ impl Actor {
             },
             state: State::new(network),
             price_feed,
+            role,
         };
         let feeds = Feeds {
             cfds: rx_cfds,
@@ -789,8 +786,10 @@ impl Tx {
         let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
-    fn send_offer_update(&self, offer: MakerOffers) {
-        self.offer.send(offer).unwrap_or_default();
+    fn send_offer_update(&self, offers: MakerOffers) -> Result<()> {
+        self.offer.send(offers)?;
+
+        Ok(())
     }
 }
 
@@ -798,6 +797,7 @@ impl Tx {
 struct State {
     network: Network,
     quote: Option<xtra_bitmex_price_feed::Quote>,
+    offers: MakerOffers,
     /// All hydrated CFDs.
     cfds: Option<HashMap<OrderId, Cfd>>,
 }
@@ -1046,6 +1046,7 @@ impl State {
             network,
             quote: None,
             cfds: None,
+            offers: MakerOffers::default(),
         }
     }
 
@@ -1064,6 +1065,33 @@ impl State {
 
     fn update_quote(&mut self, quote: Option<xtra_bitmex_price_feed::Quote>) {
         self.quote = quote;
+    }
+
+    fn update_offers(&mut self, new_offers: Vec<CfdOffer>) {
+        for new_offer in new_offers.into_iter() {
+            match &new_offer {
+                CfdOffer {
+                    contract_symbol: ContractSymbol::BtcUsd,
+                    position_maker: Position::Long,
+                    ..
+                } => self.offers.btcusd_long = Some(new_offer),
+                CfdOffer {
+                    contract_symbol: ContractSymbol::BtcUsd,
+                    position_maker: Position::Short,
+                    ..
+                } => self.offers.btcusd_short = Some(new_offer),
+                CfdOffer {
+                    contract_symbol: ContractSymbol::EthUsd,
+                    position_maker: Position::Long,
+                    ..
+                } => self.offers.ethusd_long = Some(new_offer),
+                CfdOffer {
+                    contract_symbol: ContractSymbol::EthUsd,
+                    position_maker: Position::Short,
+                    ..
+                } => self.offers.ethusd_short = Some(new_offer),
+            }
+        }
     }
 }
 
@@ -1112,8 +1140,24 @@ impl Actor {
         );
     }
 
-    fn handle(&mut self, msg: Update<Option<model::MakerOffers>>) {
-        self.tx.send_offer_update(msg.0.into());
+    fn handle(&mut self, msg: Update<Vec<model::Offer>>) {
+        let new_offers = msg
+            .0
+            .into_iter()
+            .filter_map(|offer| match CfdOffer::new(offer, self.role) {
+                Ok(offer) => Some(offer),
+                Err(e) => {
+                    tracing::warn!("Failed to build CfdOffer from model::Offer: {e:#}");
+                    None
+                }
+            })
+            .collect_vec();
+
+        self.state.update_offers(new_offers);
+
+        if let Err(e) = self.tx.send_offer_update(self.state.offers.clone()) {
+            tracing::error!("Failed to propagate offer update: {e:#}");
+        }
     }
 
     fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {
@@ -1194,46 +1238,12 @@ impl From<xtra_bitmex_price_feed::Quote> for Quote {
     }
 }
 
-/// Maker offers represents the offers as created by the maker
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct MakerOffers {
-    /// The offer where the maker's position is long
-    pub long: Option<CfdOffer>,
-    /// The offer where the maker's position is short
-    pub short: Option<CfdOffer>,
-}
-
-impl From<Option<model::MakerOffers>> for MakerOffers {
-    fn from(offers: Option<model::MakerOffers>) -> Self {
-        let (long, short) = match offers {
-            None => (None, None),
-            Some(offers) => {
-                let projection_long =
-                    offers
-                        .long
-                        .and_then(|long| match TryInto::<CfdOffer>::try_into(long) {
-                            Ok(projection_long) => Some(projection_long),
-                            Err(e) => {
-                                tracing::warn!("Unable to convert long offer: {e:#}");
-                                None
-                            }
-                        });
-
-                let projection_short =
-                    offers
-                        .short
-                        .and_then(|short| match TryInto::<CfdOffer>::try_into(short) {
-                            Ok(projection_short) => Some(projection_short),
-                            Err(e) => {
-                                tracing::warn!("Unable to convert short offer: {e:#}");
-                                None
-                            }
-                        });
-                (projection_long, projection_short)
-            }
-        };
-        MakerOffers { long, short }
-    }
+    pub btcusd_long: Option<CfdOffer>,
+    pub btcusd_short: Option<CfdOffer>,
+    pub ethusd_long: Option<CfdOffer>,
+    pub ethusd_short: Option<CfdOffer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1306,18 +1316,13 @@ pub struct LeverageDetails {
     pub initial_funding_fee_per_lot: SignedAmount,
 }
 
-impl TryFrom<Offer> for CfdOffer {
-    type Error = anyhow::Error;
-
-    fn try_from(offer: Offer) -> std::result::Result<Self, Self::Error> {
+impl CfdOffer {
+    fn new(offer: model::Offer, role: Role) -> Result<Self> {
         let lot_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
 
-        let role = offer.origin.into();
-        let own_position = match offer.origin {
-            // we are the maker, the order's position is our position
-            Origin::Ours => offer.position_maker,
-            // we are the taker, the order's position is our counter-position
-            Origin::Theirs => offer.position_maker.counter_position(),
+        let own_position = match role {
+            Role::Maker => offer.position_maker,
+            Role::Taker => offer.position_maker.counter_position(),
         };
 
         let leverage_details = offer

@@ -1,7 +1,7 @@
 use daemon::projection::CfdState;
 use daemon_tests::confirm;
 use daemon_tests::flow::cfd_with_state;
-use daemon_tests::flow::is_next_offers_none;
+use daemon_tests::flow::ensure_null_next_offers;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
@@ -22,7 +22,7 @@ use rust_decimal_macros::dec;
 async fn taker_places_order_and_maker_rejects() {
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
@@ -36,7 +36,7 @@ async fn taker_places_order_and_maker_rejects() {
     .await
     .unwrap();
 
-    let offer_id = received.short.unwrap().id;
+    let offer_id = received.btcusd_short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
@@ -57,7 +57,7 @@ async fn taker_places_order_and_maker_rejects() {
 async fn taker_places_order_and_maker_accepts_and_contract_setup() {
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
@@ -71,7 +71,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup() {
     .await
     .unwrap();
 
-    let offer_id = received.short.unwrap().id;
+    let offer_id = received.btcusd_short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;
@@ -89,7 +89,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup() {
 async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     let (mut maker, mut taker) = start_both().await;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
     maker
         .set_offer_params(OfferParamsBuilder::new().build())
@@ -103,7 +103,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     .await
     .unwrap();
 
-    let offer_id = received.short.unwrap().id;
+    let offer_id = received.btcusd_short.unwrap().id;
 
     taker.mocks.mock_oracle_announcement().await;
     maker.mocks.mock_oracle_announcement().await;

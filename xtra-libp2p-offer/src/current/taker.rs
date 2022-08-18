@@ -1,4 +1,4 @@
-use crate::protocol;
+use crate::current::protocol;
 use async_trait::async_trait;
 use tracing::Instrument;
 use xtra::prelude::MessageChannel;
@@ -6,11 +6,11 @@ use xtra_libp2p::NewInboundSubstream;
 use xtra_productivity::xtra_productivity;
 
 pub struct Actor {
-    maker_offers: MessageChannel<LatestMakerOffers, ()>,
+    maker_offers: MessageChannel<LatestOffers, ()>,
 }
 
 impl Actor {
-    pub fn new(maker_offers: MessageChannel<LatestMakerOffers, ()>) -> Self {
+    pub fn new(maker_offers: MessageChannel<LatestOffers, ()>) -> Self {
         Self { maker_offers }
     }
 }
@@ -25,9 +25,12 @@ impl Actor {
 
         let task = async move {
             let offers = protocol::recv(stream).await?;
-            let span = tracing::debug_span!("Received new offers from maker", %peer_id, ?offers);
+
+            tracing::debug!(?offers, "Received offers");
+
+            let span = tracing::debug_span!("Received new offers from maker", %peer_id);
             maker_offers
-                .send(LatestMakerOffers(offers.map(model::MakerOffers::from)))
+                .send(LatestOffers(offers.into()))
                 .instrument(span)
                 .await?;
 
@@ -44,7 +47,7 @@ impl Actor {
 
 /// Message used to inform other actors about the maker's latest
 /// offers.
-pub struct LatestMakerOffers(pub Option<model::MakerOffers>);
+pub struct LatestOffers(pub Vec<model::Offer>);
 
 #[async_trait]
 impl xtra::Actor for Actor {

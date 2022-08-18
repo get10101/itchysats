@@ -4,17 +4,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use daemon::order;
 use daemon::projection;
-use model::olivia;
-use model::olivia::BitMexPriceEventId;
 use model::ContractSymbol;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
-use model::MakerOffers;
-use model::Offer;
 use model::OpeningFee;
 use model::OrderId;
-use model::Origin;
 use model::Position;
 use model::Price;
 use model::Timestamp;
@@ -62,7 +57,7 @@ pub struct TakerDisconnected {
 }
 
 #[derive(Clone, Copy)]
-pub struct GetOffers;
+pub struct GetRolloverParams;
 
 #[derive(Clone, Debug)]
 pub struct OfferParams {
@@ -79,56 +74,57 @@ pub struct OfferParams {
 }
 
 impl OfferParams {
-    fn pick_oracle_event_id(settlement_interval: Duration) -> BitMexPriceEventId {
-        olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval)
-    }
+    fn into_offers(self, settlement_interval: Duration) -> Vec<model::Offer> {
+        let Self {
+            price_long,
+            price_short,
+            min_quantity,
+            max_quantity,
+            tx_fee_rate,
+            funding_rate_long,
+            funding_rate_short,
+            opening_fee,
+            leverage_choices,
+            contract_symbol,
+        } = self;
 
-    pub fn create_long_order(&self, settlement_interval: Duration) -> Option<Offer> {
-        self.price_long.map(|price_long| {
-            Offer::new(
+        let mut offers = Vec::new();
+
+        if let Some(price_long) = price_long {
+            let long = model::Offer::new(
                 Position::Long,
                 price_long,
-                self.min_quantity,
-                self.max_quantity,
-                Origin::Ours,
-                Self::pick_oracle_event_id(settlement_interval),
+                min_quantity,
+                max_quantity,
                 settlement_interval,
-                self.tx_fee_rate,
-                self.funding_rate_long,
-                self.opening_fee,
-                self.leverage_choices.clone(),
-                self.contract_symbol,
-            )
-        })
-    }
+                tx_fee_rate,
+                funding_rate_long,
+                opening_fee,
+                leverage_choices.clone(),
+                contract_symbol,
+            );
 
-    pub fn create_short_order(&self, settlement_interval: Duration) -> Option<Offer> {
-        self.price_short.map(|price_short| {
-            Offer::new(
+            offers.push(long);
+        }
+
+        if let Some(price_short) = price_short {
+            let short = model::Offer::new(
                 Position::Short,
                 price_short,
-                self.min_quantity,
-                self.max_quantity,
-                Origin::Ours,
-                Self::pick_oracle_event_id(settlement_interval),
+                min_quantity,
+                max_quantity,
                 settlement_interval,
-                self.tx_fee_rate,
-                self.funding_rate_short,
-                self.opening_fee,
-                self.leverage_choices.clone(),
-                self.contract_symbol,
-            )
-        })
-    }
-}
+                tx_fee_rate,
+                funding_rate_short,
+                opening_fee,
+                leverage_choices,
+                contract_symbol,
+            );
 
-fn create_maker_offers(offer_params: OfferParams, settlement_interval: Duration) -> MakerOffers {
-    MakerOffers {
-        long: offer_params.create_long_order(settlement_interval),
-        short: offer_params.create_short_order(settlement_interval),
-        tx_fee_rate: offer_params.tx_fee_rate,
-        funding_rate_long: offer_params.funding_rate_long,
-        funding_rate_short: offer_params.funding_rate_short,
+            offers.push(short);
+        }
+
+        offers
     }
 }
 
@@ -139,13 +135,20 @@ struct RolloverProposal {
     pub timestamp: Timestamp,
 }
 
+#[derive(Default, Clone)]
+pub struct RolloverParams {
+    funding_rates: HashMap<(ContractSymbol, Position), FundingRate>,
+    tx_fee_rate: TxFeeRate,
+}
+
 pub struct Actor {
     settlement_interval: Duration,
     projection: xtra::Address<projection::Actor>,
-    current_offers: HashMap<ContractSymbol, MakerOffers>,
+    rollover_params: RolloverParams,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
     libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
+    libp2p_offer_deprecated: xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
     order: xtra::Address<order::maker::Actor>,
 }
 
@@ -155,16 +158,20 @@ impl Actor {
         projection: xtra::Address<projection::Actor>,
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
-        libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
+        (libp2p_offer, libp2p_offer_deprecated): (
+            xtra::Address<xtra_libp2p_offer::maker::Actor>,
+            xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
+        ),
         order: xtra::Address<order::maker::Actor>,
     ) -> Self {
         Self {
             settlement_interval,
             projection,
-            current_offers: HashMap::new(),
+            rollover_params: RolloverParams::default(),
             time_to_first_position,
             libp2p_collab_settlement,
             libp2p_offer,
+            libp2p_offer_deprecated,
             order,
         }
     }
@@ -225,29 +232,45 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle(&mut self, _: GetOffers) -> HashMap<ContractSymbol, MakerOffers> {
-        self.current_offers.clone()
+    async fn handle(&mut self, _: GetRolloverParams) -> RolloverParams {
+        self.rollover_params.clone()
     }
 }
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_offer_params(&mut self, msg: OfferParams) -> Result<()> {
-        // 1. Update actor state to current order
-        let maker_offers = create_maker_offers(msg.clone(), self.settlement_interval);
-        self.current_offers
-            .insert(msg.contract_symbol, maker_offers.clone());
+    async fn handle_offer_params(&mut self, offer_params: OfferParams) -> Result<()> {
+        // 1. Update internal state for rollovers
+        self.rollover_params.funding_rates.insert(
+            (offer_params.contract_symbol, Position::Long),
+            offer_params.funding_rate_long,
+        );
+        self.rollover_params.funding_rates.insert(
+            (offer_params.contract_symbol, Position::Short),
+            offer_params.funding_rate_short,
+        );
+
+        self.rollover_params.tx_fee_rate = offer_params.tx_fee_rate;
+
+        let offers = offer_params.into_offers(self.settlement_interval);
 
         // 2. Notify UI via feed
         self.projection
-            .send(projection::Update(Some(maker_offers.clone())))
+            .send(projection::Update(offers.clone()))
             .await?;
 
+        // 3. Broadcast to all peers via offer actors
         if let Err(e) = self
             .libp2p_offer
-            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(Some(
-                maker_offers.into(),
-            )))
+            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(offers.clone()))
+            .await
+        {
+            tracing::warn!("{e:#}");
+        }
+
+        if let Err(e) = self
+            .libp2p_offer_deprecated
+            .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(offers))
             .await
         {
             tracing::warn!("{e:#}");
@@ -267,10 +290,10 @@ impl Actor {
 
 /// Source of offer rates used for rolling over CFDs.
 #[derive(Clone)]
-pub struct RatesChannel(MessageChannel<GetOffers, HashMap<ContractSymbol, MakerOffers>>);
+pub struct RatesChannel(MessageChannel<GetRolloverParams, RolloverParams>);
 
 impl RatesChannel {
-    pub fn new(channel: MessageChannel<GetOffers, HashMap<ContractSymbol, MakerOffers>>) -> Self {
+    pub fn new(channel: MessageChannel<GetRolloverParams, RolloverParams>) -> Self {
         Self(channel)
     }
 }
@@ -278,19 +301,22 @@ impl RatesChannel {
 #[async_trait]
 impl rollover::deprecated::protocol::GetRates for RatesChannel {
     async fn get_rates(&self) -> Result<rollover::deprecated::protocol::Rates> {
-        let MakerOffers {
-            funding_rate_long,
-            funding_rate_short,
+        let RolloverParams {
+            funding_rates,
             tx_fee_rate,
-            ..
         } = self
             .0
-            .send(GetOffers)
+            .send(GetRolloverParams)
             .await
-            .context("CFD actor disconnected")?
-            .get(&ContractSymbol::BtcUsd)
-            .context("No up-to-date rates")?
-            .clone();
+            .context("CFD actor disconnected")?;
+
+        let funding_rate_long = *funding_rates
+            .get(&(ContractSymbol::BtcUsd, Position::Long))
+            .context("Missing BTCUSD long funding rate")?;
+
+        let funding_rate_short = *funding_rates
+            .get(&(ContractSymbol::BtcUsd, Position::Short))
+            .context("Missing BTCUSD short funding rate")?;
 
         Ok(rollover::deprecated::protocol::Rates::new(
             funding_rate_long,
@@ -306,19 +332,22 @@ impl rollover::protocol::GetRates for RatesChannel {
         &self,
         contract_symbol: ContractSymbol,
     ) -> Result<rollover::protocol::Rates> {
-        let MakerOffers {
-            funding_rate_long,
-            funding_rate_short,
+        let RolloverParams {
+            funding_rates,
             tx_fee_rate,
-            ..
         } = self
             .0
-            .send(GetOffers)
+            .send(GetRolloverParams)
             .await
-            .context("CFD actor disconnected")?
-            .get(&contract_symbol)
-            .context("No up-to-date rates")?
-            .clone();
+            .context("CFD actor disconnected")?;
+
+        let funding_rate_long = *funding_rates
+            .get(&(contract_symbol, Position::Long))
+            .with_context(|| format!("Missing {contract_symbol} long funding rate"))?;
+
+        let funding_rate_short = *funding_rates
+            .get(&(contract_symbol, Position::Short))
+            .with_context(|| format!("Missing {contract_symbol} short funding rate"))?;
 
         Ok(rollover::protocol::Rates::new(
             funding_rate_long,

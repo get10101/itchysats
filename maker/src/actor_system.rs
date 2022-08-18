@@ -140,6 +140,12 @@ where
 
         let (endpoint_addr, endpoint_context) = Context::new(None);
 
+        let (supervisor, maker_offer_address_deprecated) = Supervisor::new({
+            let endpoint_addr = endpoint_addr.clone();
+            move || xtra_libp2p_offer::deprecated::maker::Actor::new(endpoint_addr.clone())
+        });
+        tasks.add(supervisor.run_log_summary());
+
         let (supervisor, maker_offer_address) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             move || xtra_libp2p_offer::maker::Actor::new(endpoint_addr.clone())
@@ -178,7 +184,10 @@ where
             projection_actor,
             time_to_first_position_addr,
             libp2p_collab_settlement_addr.clone(),
-            maker_offer_address.clone(),
+            (
+                maker_offer_address.clone(),
+                maker_offer_address_deprecated.clone(),
+            ),
             order.clone(),
         )
         .create(None)
@@ -265,11 +274,13 @@ where
                 vec![
                     ping_address.clone().into(),
                     maker_offer_address.clone().into(),
+                    maker_offer_address_deprecated.clone().into(),
                     identify_dialer_actor.clone().into(),
                 ],
                 vec![
                     ping_address.into(),
                     maker_offer_address.into(),
+                    maker_offer_address_deprecated.into(),
                     identify_dialer_actor.into(),
                 ],
                 vec![],
