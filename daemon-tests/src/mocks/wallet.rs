@@ -93,7 +93,7 @@ fn dummy_wallet_info() -> Result<WalletInfo> {
 
 pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {
     let mut rng = thread_rng();
-    let wallet = new_test_wallet(&mut rng, Amount::from_btc(0.4).unwrap(), 5).unwrap();
+    let wallet = new_test_wallet(&mut rng, Amount::from_btc(1.4).unwrap(), 5).unwrap();
 
     let mut builder = wallet.build_tx();
 

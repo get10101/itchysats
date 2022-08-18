@@ -8,6 +8,7 @@ use time::ext::NumericalDuration;
 
 pub mod olivia {
     use super::btc;
+    use super::eth;
     use super::OliviaData;
 
     pub fn btc_example_0() -> OliviaData {
@@ -25,6 +26,16 @@ pub mod olivia {
             btc::PRICE_1,
             &btc::NONCE_PKS_1,
             &btc::ATTESTATIONS_1,
+        )
+    }
+
+    // TODO: Use real-world ETH oracle data.
+    pub fn eth_example_0() -> OliviaData {
+        OliviaData::example(
+            eth::EVENT_ID_0,
+            btc::PRICE_0,
+            &btc::NONCE_PKS_0,
+            &btc::ATTESTATIONS_0,
         )
     }
 }
@@ -211,4 +222,8 @@ mod btc {
         "d65a4c71062fc0b0210bb3e239f60d826a37d28caadfc52edd7afde6e91ff818",
         "ea5dfd972784808a15543f850c7bc86bff2b51cff81ec68fc4c3977d5e7d38de",
     ];
+}
+
+mod eth {
+    pub const EVENT_ID_0: &str = "/x/BitMEX/BETH/2022-08-24T01:08:00.price?n=20";
 }

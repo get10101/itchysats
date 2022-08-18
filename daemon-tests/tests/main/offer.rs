@@ -9,7 +9,18 @@ use model::Leverage;
 use otel_tests::otel_test;
 
 #[otel_test]
-async fn taker_receives_offer_from_maker_on_publication() {
+async fn taker_receives_btc_usd_offer_from_maker_on_publication() {
+    taker_receives_offer_from_maker_on_publication(ContractSymbol::BtcUsd).await;
+}
+
+#[otel_test]
+async fn taker_receives_eth_usd_offer_from_maker_on_publication() {
+    taker_receives_offer_from_maker_on_publication(ContractSymbol::EthUsd).await;
+}
+
+// TODO: Potentially create a test where we send out both and ensure we receive as expected
+
+async fn taker_receives_offer_from_maker_on_publication(contract_symbol: ContractSymbol) {
     let (mut maker, mut taker) = start_both().await;
 
     ensure_null_next_offers(taker.offers_feed()).await.unwrap();
@@ -18,18 +29,16 @@ async fn taker_receives_offer_from_maker_on_publication() {
     maker
         .set_offer_params(
             OfferParamsBuilder::new()
+                .contract_symbol(contract_symbol)
                 .leverage_choices(vec![leverage])
                 .build(),
         )
         .await;
 
-    let (published, received) = next_maker_offers(
-        maker.offers_feed(),
-        taker.offers_feed(),
-        &ContractSymbol::BtcUsd,
-    )
-    .await
-    .unwrap();
+    let (published, received) =
+        next_maker_offers(maker.offers_feed(), taker.offers_feed(), &contract_symbol)
+            .await
+            .unwrap();
 
     assert_eq_offers(published, received);
 }

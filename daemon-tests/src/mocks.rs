@@ -1,10 +1,12 @@
 use crate::dummy_latest_quotes;
 use crate::maia::olivia::btc_example_0;
+use crate::maia::olivia::eth_example_0;
 use crate::mocks::monitor::MockMonitor;
 use crate::mocks::oracle::MockOracle;
 use crate::mocks::price_feed::MockPriceFeed;
 use crate::mocks::wallet::MockWallet;
 use model::olivia;
+use model::ContractSymbol;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
@@ -60,8 +62,12 @@ impl Mocks {
             .returning(|sign_msg| Ok(sign_msg.psbt));
     }
 
-    pub async fn mock_oracle_announcement(&mut self) {
-        self.mock_oracle_announcement_with(btc_example_0().announcements())
+    pub async fn mock_oracle_announcement(&mut self, symbol: ContractSymbol) {
+        let oracle_data = match symbol {
+            ContractSymbol::BtcUsd => btc_example_0(),
+            ContractSymbol::EthUsd => eth_example_0(),
+        };
+        self.mock_oracle_announcement_with(oracle_data.announcements())
             .await;
     }
 
