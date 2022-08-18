@@ -82,19 +82,9 @@ pub struct Actor {
 }
 
 pub struct Feeds {
-    pub quote: QuoteFeed,
-    pub offers: OffersFeed,
+    pub quote: watch::Receiver<Option<Quote>>,
+    pub offers: watch::Receiver<MakerOffers>,
     pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
-}
-
-pub struct QuoteFeed {
-    pub btc_usd: watch::Receiver<Option<Quote>>,
-    pub eth_usd: watch::Receiver<Option<Quote>>,
-}
-
-pub struct OffersFeed {
-    pub btc_usd: watch::Receiver<MakerOffers>,
-    pub eth_usd: watch::Receiver<MakerOffers>,
 }
 
 impl Actor {
@@ -108,43 +98,26 @@ impl Actor {
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
 
-        let (tx_order_btc_usd, rx_order_btc_usd) = watch::channel(MakerOffers {
+        let (tx_offer, rx_offer) = watch::channel(MakerOffers {
             long: None,
             short: None,
         });
-        let (tx_quote_btc_usd, rx_quote_btc_usd) = watch::channel(None);
-        let (tx_order_eth_usd, rx_order_eth_usd) = watch::channel(MakerOffers {
-            long: None,
-            short: None,
-        });
-        let (tx_quote_eth_usd, rx_quote_eth_usd) = watch::channel(None);
+        let (tx_quote, rx_quote) = watch::channel(None);
 
         let actor = Self {
             db,
             tx: Tx {
                 cfds: tx_cfds,
-                order: OrderSenders {
-                    btc_usd: tx_order_btc_usd,
-                    eth_usd: tx_order_eth_usd,
-                },
-                quote: QuoteSenders {
-                    btc_usd: tx_quote_btc_usd,
-                    eth_usd: tx_quote_eth_usd,
-                },
+                offer: tx_offer,
+                quote: tx_quote,
             },
             state: State::new(network),
             price_feed,
         };
         let feeds = Feeds {
             cfds: rx_cfds,
-            offers: OffersFeed {
-                btc_usd: rx_order_btc_usd,
-                eth_usd: rx_order_eth_usd,
-            },
-            quote: QuoteFeed {
-                btc_usd: rx_quote_btc_usd,
-                eth_usd: rx_quote_eth_usd,
-            },
+            offers: rx_offer,
+            quote: rx_quote,
         };
 
         (actor, feeds)
@@ -788,18 +761,8 @@ impl Cfd {
 /// Internal struct to keep all the senders around in one place
 struct Tx {
     cfds: watch::Sender<Option<Vec<Cfd>>>,
-    pub order: OrderSenders,
-    pub quote: QuoteSenders,
-}
-
-pub struct OrderSenders {
-    pub btc_usd: watch::Sender<MakerOffers>,
-    pub eth_usd: watch::Sender<MakerOffers>,
-}
-
-pub struct QuoteSenders {
-    pub btc_usd: watch::Sender<Option<Quote>>,
-    pub eth_usd: watch::Sender<Option<Quote>>,
+    pub offer: watch::Sender<MakerOffers>,
+    pub quote: watch::Sender<Option<Quote>>,
 }
 
 impl Tx {
@@ -823,20 +786,11 @@ impl Tx {
     }
 
     fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
-        // TODO: make xtra_bitmex_price_feed::Quote symbol dependent
-
-        let _ = self.quote.btc_usd.send(quote.map(|q| q.into()));
+        let _ = self.quote.send(quote.map(|q| q.into()));
     }
 
-    fn send_order_update(&self, symbol: ContractSymbol, offer: MakerOffers) {
-        match symbol {
-            ContractSymbol::BtcUsd => {
-                self.order.btc_usd.send(offer).unwrap_or_default();
-            }
-            ContractSymbol::EthUsd => {
-                self.order.eth_usd.send(offer).unwrap_or_default();
-            }
-        }
+    fn send_offer_update(&self, offer: MakerOffers) {
+        self.offer.send(offer).unwrap_or_default();
     }
 }
 
@@ -1158,8 +1112,8 @@ impl Actor {
         );
     }
 
-    fn handle(&mut self, msg: Update<(ContractSymbol, Option<model::MakerOffers>)>) {
-        self.tx.send_order_update(msg.0 .0, msg.0 .1.into());
+    fn handle(&mut self, msg: Update<Option<model::MakerOffers>>) {
+        self.tx.send_offer_update(msg.0.into());
     }
 
     fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {

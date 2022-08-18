@@ -13,7 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Introduce path param to SSE event route for both maker and taker. The new route is `/<contract_symbol>/feed`.
 - Dropped support for all legacy network protocols.
 
 ## [0.5.4] - 2022-08-05

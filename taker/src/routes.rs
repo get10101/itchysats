@@ -22,7 +22,6 @@ use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
-use rocket::request::FromParam;
 use rocket::response::stream::Event;
 use rocket::response::stream::EventStream;
 use rocket::response::Responder;
@@ -57,37 +56,9 @@ pub struct IdentityInfo {
     pub(crate) taker_peer_id: String,
 }
 
-#[derive(Debug, Copy, Clone, strum_macros::Display)]
-pub enum ContractSymbol {
-    BtcUsd,
-    EthUsd,
-}
-
-impl From<ContractSymbol> for model::ContractSymbol {
-    fn from(symbol: ContractSymbol) -> Self {
-        match symbol {
-            ContractSymbol::BtcUsd => model::ContractSymbol::BtcUsd,
-            ContractSymbol::EthUsd => model::ContractSymbol::EthUsd,
-        }
-    }
-}
-
-impl<'r> FromParam<'r> for ContractSymbol {
-    type Error = anyhow::Error;
-
-    fn from_param(param: &'r str) -> Result<Self, Self::Error> {
-        match param.to_lowercase().as_str() {
-            "btcusd" => Ok(ContractSymbol::BtcUsd),
-            "ethusd" => Ok(ContractSymbol::EthUsd),
-            _ => anyhow::bail!("Unknown contract symbol provided: {param}"),
-        }
-    }
-}
-
-#[rocket::get("/<symbol>/feed")]
-#[instrument(name = "GET /<symbol>/feed", skip_all)]
+#[rocket::get("/feed")]
+#[instrument(name = "GET /feed", skip_all)]
 pub async fn feed(
-    symbol: ContractSymbol,
     rx: &State<Feeds>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
@@ -97,10 +68,8 @@ pub async fn feed(
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
-    let (mut rx_offers, mut rx_quote) = match symbol {
-        ContractSymbol::BtcUsd => (rx.offers.btc_usd.clone(), rx.quote.btc_usd.clone()),
-        ContractSymbol::EthUsd => (rx.offers.eth_usd.clone(), rx.quote.eth_usd.clone()),
-    };
+    let mut rx_offers = rx.offers.clone();
+    let mut rx_quote = rx.quote.clone();
 
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
