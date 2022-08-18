@@ -268,8 +268,8 @@ where
                 pong_address.clone(),
                 identify_listener_actor,
                 order,
-                rollover_deprecated_addr.clone(),
                 rollover_addr.clone(),
+                rollover_deprecated_addr.clone(),
                 libp2p_collab_settlement_addr,
             ),
             endpoint::Subscribers::new(

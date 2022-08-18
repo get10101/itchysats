@@ -13,8 +13,8 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
     xtra_libp2p_ping::PROTOCOL,
     identify::PROTOCOL,
     order::PROTOCOL,
-    rollover::deprecated::PROTOCOL,
     rollover::PROTOCOL,
+    rollover::deprecated::PROTOCOL,
     collab_settlement::PROTOCOL,
 );
 
@@ -58,8 +58,8 @@ pub struct MakerListenProtocols {
     ping: &'static str,
     identify: &'static str,
     order: &'static str,
-    rollover_deprecated: &'static str,
     rollover: &'static str,
+    rollover_deprecated: &'static str,
     collaborative_settlement: &'static str,
 }
 
@@ -70,16 +70,16 @@ impl MakerListenProtocols {
         ping: &'static str,
         identify: &'static str,
         order: &'static str,
-        rollover_deprecated: &'static str,
         rollover: &'static str,
+        rollover_deprecated: &'static str,
         collaborative_settlement: &'static str,
     ) -> Self {
         Self {
             ping,
             identify,
             order,
-            rollover_deprecated,
             rollover,
+            rollover_deprecated,
             collaborative_settlement,
         }
     }
@@ -88,30 +88,30 @@ impl MakerListenProtocols {
     ///
     /// This is used so that the `Endpoint` knows who to delegate to
     /// when receiving new inbound substreams.
-    pub fn inbound_substream_handlers<R1, R2>(
+    pub fn inbound_substream_handlers<R, RD>(
         &self,
         ping_handler: Address<pong::Actor>,
         identify_handler: Address<identify::listener::Actor>,
         order_handler: Address<order::maker::Actor>,
-        rollover_deprecated_handler: Address<
-            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R1>,
-        >,
         rollover_handler: Address<
-            rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R2>,
+            rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>,
+        >,
+        rollover_deprecated_handler: Address<
+            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
         >,
         collaborative_settlement_handler: Address<collab_settlement::maker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     where
-        R1: rollover::deprecated::protocol::GetRates + Send + Sync + Clone + 'static,
-        R2: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
+        R: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
+        RD: rollover::deprecated::protocol::GetRates + Send + Sync + Clone + 'static,
     {
         // We deconstruct to ensure that all protocols are being used
         let MakerListenProtocols {
             ping,
             identify,
             order,
-            rollover_deprecated,
             rollover,
+            rollover_deprecated,
             collaborative_settlement,
         } = self;
 
@@ -119,8 +119,8 @@ impl MakerListenProtocols {
             (ping, ping_handler.into()),
             (identify, identify_handler.into()),
             (order, order_handler.into()),
-            (rollover_deprecated, rollover_deprecated_handler.into()),
             (rollover, rollover_handler.into()),
+            (rollover_deprecated, rollover_deprecated_handler.into()),
             (
                 collaborative_settlement,
                 collaborative_settlement_handler.into(),
@@ -136,8 +136,8 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping,
             identify,
             order,
-            rollover_deprecated,
             rollover,
+            rollover_deprecated,
             collaborative_settlement,
         } = maker;
 
@@ -145,8 +145,8 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping.to_string(),
             identify.to_string(),
             order.to_string(),
-            rollover_deprecated.to_string(),
             rollover.to_string(),
+            rollover_deprecated.to_string(),
             collaborative_settlement.to_string(),
         ])
     }
