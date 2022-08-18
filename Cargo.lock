@@ -914,7 +914,6 @@ dependencies = [
  "reqwest",
  "rust_decimal",
  "rust_decimal_macros",
- "semver",
  "serde",
  "serde_json",
  "serde_test",
@@ -925,7 +924,6 @@ dependencies = [
  "sqlx",
  "statrs",
  "strum",
- "test-case",
  "thiserror",
  "time",
  "tokio",
@@ -2109,7 +2107,6 @@ dependencies = [
  "rocket-basicauth",
  "rust-embed",
  "rust-embed-rocket",
- "semver",
  "serde",
  "shared-bin",
  "sqlite-db",
@@ -3978,9 +3975,6 @@ name = "semver"
 version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93f6841e709003d68bb2deee8c343572bf446003ec20a583e76f7b15cebf3711"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "serde"
@@ -4620,28 +4614,6 @@ name = "termtree"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13a4ec180a2de59b57434704ccfad967f789b12737738798fa08798cd5824c16"
-
-[[package]]
-name = "test-case"
-version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07aea929e9488998b64adc414c29fe5620398f01c2e3f58164122b17e567a6d5"
-dependencies = [
- "test-case-macros",
-]
-
-[[package]]
-name = "test-case-macros"
-version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c95968eedc6fc4f5c21920e0f4264f78ec5e4c56bb394f319becc1a5830b3e54"
-dependencies = [
- "cfg-if",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "textwrap"
