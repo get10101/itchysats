@@ -63,15 +63,11 @@ pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
 pub struct ActorSystem<O: 'static, W: 'static> {
     pub cfd_actor: Address<cfd::Actor<O, connection::Actor, W>>,
     wallet_actor: Address<W>,
-    pub rollover_actor_v_2_0_0: Address<
-        rollover::v_2_0_0::maker::Actor<
-            command::Executor,
-            oracle::AnnouncementsChannel,
-            cfd::RatesChannel,
-        >,
+    pub rollover_actor: Address<
+        rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, cfd::RatesChannel>,
     >,
-    pub rollover_actor_v_1_0_0: Address<
-        rollover::v_1_0_0::maker::Actor<
+    pub rollover_actor_deprecated: Address<
+        rollover::deprecated::maker::Actor<
             command::Executor,
             oracle::AnnouncementsChannel,
             cfd::RatesChannel,
@@ -199,12 +195,12 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let (rollover_supervisor_v_1_0_0, rollover_v_1_0_0_addr) = Supervisor::new({
+        let (rollover_deprecated_supervisor, rollover_deprecated_addr) = Supervisor::new({
             let executor = executor.clone();
             let oracle_addr = oracle_addr.clone();
             let cfd_actor_addr = cfd_actor_addr.clone();
             move || {
-                rollover::v_1_0_0::maker::Actor::new(
+                rollover::deprecated::maker::Actor::new(
                     executor.clone(),
                     oracle_pk,
                     oracle::AnnouncementsChannel::new(oracle_addr.clone().into()),
@@ -213,14 +209,14 @@ where
                 )
             }
         });
-        tasks.add(rollover_supervisor_v_1_0_0.run_log_summary());
+        tasks.add(rollover_deprecated_supervisor.run_log_summary());
 
-        let (rollover_supervisor_v_2_0_0, rollover_v_2_0_0_addr) = Supervisor::new({
+        let (rollover_supervisor, rollover_addr) = Supervisor::new({
             let executor = executor.clone();
             let oracle_addr = oracle_addr;
             let cfd_actor_addr = cfd_actor_addr.clone();
             move || {
-                rollover::v_2_0_0::maker::Actor::new(
+                rollover::maker::Actor::new(
                     executor.clone(),
                     oracle_pk,
                     oracle::AnnouncementsChannel::new(oracle_addr.clone().into()),
@@ -229,7 +225,7 @@ where
                 )
             }
         });
-        tasks.add(rollover_supervisor_v_2_0_0.run_log_summary());
+        tasks.add(rollover_supervisor.run_log_summary());
 
         let (ping_supervisor, ping_address) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
@@ -272,8 +268,8 @@ where
                 pong_address.clone(),
                 identify_listener_actor,
                 order,
-                rollover_v_1_0_0_addr.clone(),
-                rollover_v_2_0_0_addr.clone(),
+                rollover_addr.clone(),
+                rollover_deprecated_addr.clone(),
                 libp2p_collab_settlement_addr,
             ),
             endpoint::Subscribers::new(
@@ -331,8 +327,8 @@ where
         Ok(Self {
             cfd_actor: cfd_actor_addr,
             wallet_actor: wallet_addr,
-            rollover_actor_v_2_0_0: rollover_v_2_0_0_addr,
-            rollover_actor_v_1_0_0: rollover_v_1_0_0_addr,
+            rollover_actor: rollover_addr,
+            rollover_actor_deprecated: rollover_deprecated_addr,
             _archive_closed_cfds_actor: archive_closed_cfds_actor,
             _archive_failed_cfds_actor: archive_failed_cfds_actor,
             executor,
@@ -443,13 +439,13 @@ where
     }
 
     pub async fn update_rollover_configuration(&self, is_accepting_rollovers: bool) -> Result<()> {
-        self.rollover_actor_v_1_0_0
-            .send(rollover::v_1_0_0::maker::UpdateConfiguration::new(
+        self.rollover_actor_deprecated
+            .send(rollover::deprecated::maker::UpdateConfiguration::new(
                 is_accepting_rollovers,
             ))
             .await?;
-        self.rollover_actor_v_2_0_0
-            .send(rollover::v_2_0_0::maker::UpdateConfiguration::new(
+        self.rollover_actor
+            .send(rollover::maker::UpdateConfiguration::new(
                 is_accepting_rollovers,
             ))
             .await?;

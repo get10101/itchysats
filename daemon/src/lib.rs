@@ -238,7 +238,7 @@ where
             let executor = executor.clone();
             let oracle_addr = oracle_addr.clone();
             move || {
-                rollover::v_2_0_0::taker::Actor::new(
+                rollover::taker::Actor::new(
                     endpoint_addr.clone(),
                     executor.clone(),
                     oracle_pk,

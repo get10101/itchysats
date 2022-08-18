@@ -426,7 +426,7 @@ impl AnnouncementsChannel {
 }
 
 #[async_trait]
-impl rollover::v_1_0_0::protocol::GetAnnouncements for AnnouncementsChannel {
+impl rollover::deprecated::protocol::GetAnnouncements for AnnouncementsChannel {
     async fn get_announcements(
         &self,
         events: Vec<BitMexPriceEventId>,
@@ -443,7 +443,7 @@ impl rollover::v_1_0_0::protocol::GetAnnouncements for AnnouncementsChannel {
 }
 
 #[async_trait]
-impl rollover::v_2_0_0::protocol::GetAnnouncements for AnnouncementsChannel {
+impl rollover::protocol::GetAnnouncements for AnnouncementsChannel {
     async fn get_announcements(
         &self,
         events: Vec<BitMexPriceEventId>,

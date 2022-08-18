@@ -13,8 +13,8 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
     xtra_libp2p_ping::PROTOCOL,
     identify::PROTOCOL,
     order::PROTOCOL,
-    rollover::v_1_0_0::PROTOCOL,
-    rollover::v_2_0_0::PROTOCOL,
+    rollover::PROTOCOL,
+    rollover::deprecated::PROTOCOL,
     collab_settlement::PROTOCOL,
 );
 
@@ -29,7 +29,7 @@ pub const REQUIRED_MAKER_LISTEN_PROTOCOLS: RequiredMakerListenProtocols =
         xtra_libp2p_ping::PROTOCOL,
         identify::PROTOCOL,
         order::PROTOCOL,
-        rollover::v_2_0_0::PROTOCOL,
+        rollover::PROTOCOL,
         collab_settlement::PROTOCOL,
     );
 
@@ -55,32 +55,32 @@ pub fn does_maker_satisfy_taker_needs(
 /// The set of protocols that the maker's `Endpoint` is listening for.
 #[derive(Clone, Copy)]
 pub struct MakerListenProtocols {
-    ping_v1: &'static str,
-    identify_v1: &'static str,
-    order_v1: &'static str,
-    rollover_v1: &'static str,
-    rollover_v2: &'static str,
-    collaborative_settlement_v1: &'static str,
+    ping: &'static str,
+    identify: &'static str,
+    order: &'static str,
+    rollover: &'static str,
+    rollover_deprecated: &'static str,
+    collaborative_settlement: &'static str,
 }
 
 impl MakerListenProtocols {
     pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 6;
 
     pub const fn new(
-        ping_v1: &'static str,
-        identify_v1: &'static str,
-        order_v1: &'static str,
-        rollover_v1: &'static str,
-        rollover_v2: &'static str,
-        collaborative_settlement_v1: &'static str,
+        ping: &'static str,
+        identify: &'static str,
+        order: &'static str,
+        rollover: &'static str,
+        rollover_deprecated: &'static str,
+        collaborative_settlement: &'static str,
     ) -> Self {
         Self {
-            ping_v1,
-            identify_v1,
-            order_v1,
-            rollover_v1,
-            rollover_v2,
-            collaborative_settlement_v1,
+            ping,
+            identify,
+            order,
+            rollover,
+            rollover_deprecated,
+            collaborative_settlement,
         }
     }
 
@@ -88,42 +88,42 @@ impl MakerListenProtocols {
     ///
     /// This is used so that the `Endpoint` knows who to delegate to
     /// when receiving new inbound substreams.
-    pub fn inbound_substream_handlers<R1, R2>(
+    pub fn inbound_substream_handlers<R, RD>(
         &self,
-        ping_v1_handler: Address<pong::Actor>,
-        identify_v1_handler: Address<identify::listener::Actor>,
-        order_v1_handler: Address<order::maker::Actor>,
-        rollover_v1_handler: Address<
-            rollover::v_1_0_0::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R1>,
+        ping_handler: Address<pong::Actor>,
+        identify_handler: Address<identify::listener::Actor>,
+        order_handler: Address<order::maker::Actor>,
+        rollover_handler: Address<
+            rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>,
         >,
-        rollover_v2_handler: Address<
-            rollover::v_2_0_0::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R2>,
+        rollover_deprecated_handler: Address<
+            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
         >,
-        collaborative_settlement_v1_handler: Address<collab_settlement::maker::Actor>,
+        collaborative_settlement_handler: Address<collab_settlement::maker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     where
-        R1: rollover::v_1_0_0::protocol::GetRates + Send + Sync + Clone + 'static,
-        R2: rollover::v_2_0_0::protocol::GetRates + Send + Sync + Clone + 'static,
+        R: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
+        RD: rollover::deprecated::protocol::GetRates + Send + Sync + Clone + 'static,
     {
         // We deconstruct to ensure that all protocols are being used
         let MakerListenProtocols {
-            ping_v1,
-            identify_v1,
-            order_v1,
-            rollover_v1,
-            rollover_v2,
-            collaborative_settlement_v1,
+            ping,
+            identify,
+            order,
+            rollover,
+            rollover_deprecated,
+            collaborative_settlement,
         } = self;
 
         [
-            (ping_v1, ping_v1_handler.into()),
-            (identify_v1, identify_v1_handler.into()),
-            (order_v1, order_v1_handler.into()),
-            (rollover_v1, rollover_v1_handler.into()),
-            (rollover_v2, rollover_v2_handler.into()),
+            (ping, ping_handler.into()),
+            (identify, identify_handler.into()),
+            (order, order_handler.into()),
+            (rollover, rollover_handler.into()),
+            (rollover_deprecated, rollover_deprecated_handler.into()),
             (
-                collaborative_settlement_v1,
-                collaborative_settlement_v1_handler.into(),
+                collaborative_settlement,
+                collaborative_settlement_handler.into(),
             ),
         ]
     }
@@ -133,21 +133,21 @@ impl From<MakerListenProtocols> for HashSet<String> {
     fn from(maker: MakerListenProtocols) -> Self {
         // We deconstruct to ensure that all protocols are being used
         let MakerListenProtocols {
-            ping_v1,
-            identify_v1,
-            order_v1,
-            rollover_v1,
-            rollover_v2,
-            collaborative_settlement_v1,
+            ping,
+            identify,
+            order,
+            rollover,
+            rollover_deprecated,
+            collaborative_settlement,
         } = maker;
 
         HashSet::from([
-            ping_v1.to_string(),
-            identify_v1.to_string(),
-            order_v1.to_string(),
-            rollover_v1.to_string(),
-            rollover_v2.to_string(),
-            collaborative_settlement_v1.to_string(),
+            ping.to_string(),
+            identify.to_string(),
+            order.to_string(),
+            rollover.to_string(),
+            rollover_deprecated.to_string(),
+            collaborative_settlement.to_string(),
         ])
     }
 }
@@ -205,23 +205,19 @@ impl From<RequiredMakerListenProtocols> for HashSet<String> {
 /// The set of protocols that the taker's `Endpoint` is listening for.
 #[derive(Clone, Copy)]
 pub struct TakerListenProtocols {
-    ping_v1: &'static str,
-    identify_v1: &'static str,
-    offer_v1: &'static str,
+    ping: &'static str,
+    identify: &'static str,
+    offer: &'static str,
 }
 
 impl TakerListenProtocols {
     const NR_OF_SUPPORTED_PROTOCOLS: usize = 3;
 
-    pub const fn new(
-        ping_v1: &'static str,
-        identify_v1: &'static str,
-        offer_v1: &'static str,
-    ) -> Self {
+    pub const fn new(ping: &'static str, identify: &'static str, offer: &'static str) -> Self {
         Self {
-            ping_v1,
-            identify_v1,
-            offer_v1,
+            ping,
+            identify,
+            offer,
         }
     }
 
@@ -231,22 +227,22 @@ impl TakerListenProtocols {
     /// when receiving new inbound substreams.
     pub fn inbound_substream_handlers(
         &self,
-        ping_v1_handler: Address<pong::Actor>,
-        identify_v1_handler: Address<identify::listener::Actor>,
-        offer_v1_handler: Address<xtra_libp2p_offer::taker::Actor>,
+        ping_handler: Address<pong::Actor>,
+        identify_handler: Address<identify::listener::Actor>,
+        offer_handler: Address<xtra_libp2p_offer::taker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     {
         // We deconstruct to ensure that all protocols are being used
         let TakerListenProtocols {
-            ping_v1,
-            identify_v1,
-            offer_v1,
+            ping,
+            identify,
+            offer,
         } = self;
 
         [
-            (ping_v1, ping_v1_handler.into()),
-            (identify_v1, identify_v1_handler.into()),
-            (offer_v1, offer_v1_handler.into()),
+            (ping, ping_handler.into()),
+            (identify, identify_handler.into()),
+            (offer, offer_handler.into()),
         ]
     }
 }
@@ -255,16 +251,12 @@ impl From<TakerListenProtocols> for HashSet<String> {
     fn from(protocols: TakerListenProtocols) -> Self {
         // We deconstruct to ensure that all protocols are being used
         let TakerListenProtocols {
-            ping_v1,
-            identify_v1,
-            offer_v1,
+            ping,
+            identify,
+            offer,
         } = protocols;
 
-        HashSet::from_iter([
-            ping_v1.to_string(),
-            identify_v1.to_string(),
-            offer_v1.to_string(),
-        ])
+        HashSet::from_iter([ping.to_string(), identify.to_string(), offer.to_string()])
     }
 }
 

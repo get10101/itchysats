@@ -1,4 +1,4 @@
-use crate::v_1_0_0::protocol::*;
+use crate::deprecated::protocol::*;
 use anyhow::Context;
 use async_trait::async_trait;
 use asynchronous_codec::Framed;
