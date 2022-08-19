@@ -14,12 +14,12 @@ use futures::StreamExt;
 use itertools::Itertools;
 use maia_core::TransactionExt;
 use model::calculate_long_liquidation_price;
-use model::calculate_margin;
 use model::calculate_profit;
 use model::calculate_profit_at_price;
 use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::market_closing_price;
+use model::payout_curve::inverse;
 use model::CfdEvent;
 use model::ClosedCfd;
 use model::ContractSymbol;
@@ -344,8 +344,9 @@ impl Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = inverse::calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty =
+            inverse::calculate_margin(initial_price, quantity, counterparty_leverage);
 
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
@@ -846,8 +847,9 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = inverse::calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty =
+            inverse::calculate_margin(initial_price, quantity, counterparty_leverage);
 
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
@@ -989,8 +991,9 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = inverse::calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty =
+            inverse::calculate_margin(initial_price, quantity, counterparty_leverage);
 
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
@@ -1348,7 +1351,8 @@ impl CfdOffer {
                     Position::Short => calculate_short_liquidation_price(*leverage, offer.price),
                 };
                 // Margin per lot price is dependent on one's own leverage
-                let margin_per_lot = calculate_margin(offer.price, lot_size.into(), *leverage);
+                let margin_per_lot =
+                    inverse::calculate_margin(offer.price, lot_size.into(), *leverage);
 
                 let (long_leverage, short_leverage) =
                     long_and_short_leverage(*leverage, role, own_position);

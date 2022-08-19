@@ -33,7 +33,7 @@ mod contract_setup;
 pub mod hex_transaction;
 pub mod libp2p;
 pub mod olivia;
-mod payout_curve;
+pub mod payout_curve;
 mod rollover;
 pub mod shared_protocol;
 pub mod transaction_ext;
@@ -697,9 +697,9 @@ impl FundingFee {
         }
 
         let margin = if funding_rate.short_pays_long() {
-            calculate_margin(price, quantity, long_leverage)
+            payout_curve::inverse::calculate_margin(price, quantity, long_leverage)
         } else {
-            calculate_margin(price, quantity, short_leverage)
+            payout_curve::inverse::calculate_margin(price, quantity, short_leverage)
         };
 
         let fraction_of_funding_period =

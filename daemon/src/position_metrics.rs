@@ -3,7 +3,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Amount;
 use futures::StreamExt;
-use model::calculate_margin;
+use model::payout_curve::inverse;
 use model::CfdEvent;
 use model::ClosedCfd;
 use model::ContractSymbol;
@@ -161,9 +161,9 @@ impl sqlite_db::CfdAggregate for Cfd {
             Role::Taker => (cfd.taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(cfd.initial_price, cfd.quantity, our_leverage);
+        let margin = inverse::calculate_margin(cfd.initial_price, cfd.quantity, our_leverage);
         let margin_counterparty =
-            calculate_margin(cfd.initial_price, cfd.quantity, counterparty_leverage);
+            inverse::calculate_margin(cfd.initial_price, cfd.quantity, counterparty_leverage);
 
         Self {
             id: cfd.id,
@@ -302,8 +302,9 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = inverse::calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty =
+            inverse::calculate_margin(initial_price, quantity, counterparty_leverage);
 
         Self {
             id,
@@ -343,8 +344,9 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = inverse::calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty =
+            inverse::calculate_margin(initial_price, quantity, counterparty_leverage);
 
         Self {
             id,

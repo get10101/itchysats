@@ -3,6 +3,7 @@ use crate::hex_transaction;
 use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
+use crate::payout_curve::inverse;
 use crate::payout_curve::Payouts;
 use crate::rollover;
 use crate::rollover::BaseDlcParams;
@@ -656,10 +657,10 @@ impl Cfd {
     fn margin(&self) -> Amount {
         match self.position {
             Position::Long => {
-                calculate_margin(self.initial_price, self.quantity, self.long_leverage)
+                inverse::calculate_margin(self.initial_price, self.quantity, self.long_leverage)
             }
             Position::Short => {
-                calculate_margin(self.initial_price, self.quantity, self.short_leverage)
+                inverse::calculate_margin(self.initial_price, self.quantity, self.short_leverage)
             }
         }
     }
@@ -667,10 +668,10 @@ impl Cfd {
     fn counterparty_margin(&self) -> Amount {
         match self.position {
             Position::Long => {
-                calculate_margin(self.initial_price, self.quantity, self.short_leverage)
+                inverse::calculate_margin(self.initial_price, self.quantity, self.short_leverage)
             }
             Position::Short => {
-                calculate_margin(self.initial_price, self.quantity, self.long_leverage)
+                inverse::calculate_margin(self.initial_price, self.quantity, self.long_leverage)
             }
         }
     }
@@ -1810,14 +1811,6 @@ pub fn market_closing_price(bid: Price, ask: Price, role: Role, position: Positi
     }
 }
 
-/// Calculates the margin in BTC
-///
-/// The initial margin represents the collateral both parties have to come up with
-/// to satisfy the contract.
-pub fn calculate_margin(price: Price, quantity: Contracts, leverage: Leverage) -> Amount {
-    quantity / (price * leverage)
-}
-
 pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
     price * leverage / (leverage + 1)
 }
@@ -1898,7 +1891,7 @@ pub fn calculate_profit_at_price(
         //          0 if xc >= b
         //     }
         Position::Long => {
-            let long_margin = calculate_margin(opening_price, quantity, long_leverage)
+            let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage)
                 .to_signed()
                 .context("Unable to compute long margin")?;
 
@@ -1909,10 +1902,10 @@ pub fn calculate_profit_at_price(
             (long_margin, payout)
         }
         Position::Short => {
-            let long_margin = calculate_margin(opening_price, quantity, long_leverage)
+            let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage)
                 .to_signed()
                 .context("Unable to compute long margin")?;
-            let short_margin = calculate_margin(opening_price, quantity, short_leverage)
+            let short_margin = inverse::calculate_margin(opening_price, quantity, short_leverage)
                 .to_signed()
                 .context("Unable to compute long margin")?;
 
@@ -2503,7 +2496,7 @@ mod tests {
         let quantity = Contracts::new(40000);
         let leverage = Leverage::new(1).unwrap();
 
-        let long_margin = calculate_margin(price, quantity, leverage);
+        let long_margin = inverse::calculate_margin(price, quantity, leverage);
 
         assert_eq!(long_margin, Amount::ONE_BTC);
     }
@@ -2514,7 +2507,7 @@ mod tests {
         let quantity = Contracts::new(40000);
         let leverage = Leverage::new(10).unwrap();
 
-        let long_margin = calculate_margin(price, quantity, leverage);
+        let long_margin = inverse::calculate_margin(price, quantity, leverage);
 
         assert_eq!(long_margin, Amount::from_btc(0.1).unwrap());
     }
@@ -2526,7 +2519,7 @@ mod tests {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Contracts::new(40000);
 
-        let short_margin = calculate_margin(price, quantity, Leverage::ONE);
+        let short_margin = inverse::calculate_margin(price, quantity, Leverage::ONE);
 
         assert_eq!(short_margin, Amount::ONE_BTC);
     }
@@ -2536,7 +2529,7 @@ mod tests {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Contracts::new(20000);
 
-        let short_margin = calculate_margin(price, quantity, Leverage::ONE);
+        let short_margin = inverse::calculate_margin(price, quantity, Leverage::ONE);
 
         assert_eq!(short_margin, Amount::from_btc(0.5).unwrap());
     }
@@ -2546,7 +2539,7 @@ mod tests {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Contracts::new(80000);
 
-        let short_margin = calculate_margin(price, quantity, Leverage::ONE);
+        let short_margin = inverse::calculate_margin(price, quantity, Leverage::ONE);
 
         assert_eq!(short_margin, Amount::from_btc(2.0).unwrap());
     }
@@ -2761,10 +2754,10 @@ mod tests {
         let leverage = Leverage::TWO;
         let counterpart_leverage = Leverage::ONE;
 
-        let long_margin = calculate_margin(initial_price, quantity, leverage)
+        let long_margin = inverse::calculate_margin(initial_price, quantity, leverage)
             .to_signed()
             .unwrap();
-        let short_margin = calculate_margin(initial_price, quantity, Leverage::ONE)
+        let short_margin = inverse::calculate_margin(initial_price, quantity, Leverage::ONE)
             .to_signed()
             .unwrap();
         let pool_amount = SignedAmount::ONE_BTC;
