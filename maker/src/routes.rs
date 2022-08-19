@@ -60,8 +60,10 @@ pub async fn maker_feed(
         yield wallet_info.to_sse_event();
 
         let offers = rx_offers.borrow().clone();
-        yield Event::json(&offers.long).event("long_offer");
-        yield Event::json(&offers.short).event("short_offer");
+        yield Event::json(&offers.btcusd_long).event("btcusd_long_offer");
+        yield Event::json(&offers.btcusd_short).event("btcusd_short_offer");
+        yield Event::json(&offers.ethusd_long).event("ethusd_long_offer");
+        yield Event::json(&offers.ethusd_short).event("ethusd_short_offer");
 
         let quote = rx_quote.borrow().clone();
         yield quote.to_sse_event();
@@ -79,8 +81,10 @@ pub async fn maker_feed(
                 },
                 Ok(()) = rx_offers.changed() => {
                     let offers = rx_offers.borrow().clone();
-                    yield Event::json(&offers.long).event("long_offer");
-                    yield Event::json(&offers.short).event("short_offer");
+                    yield Event::json(&offers.btcusd_long).event("btcusd_long_offer");
+                    yield Event::json(&offers.btcusd_short).event("btcusd_short_offer");
+                    yield Event::json(&offers.ethusd_long).event("ethusd_long_offer");
+                    yield Event::json(&offers.ethusd_short).event("ethusd_short_offer");
                 }
                 Ok(()) = rx_cfds.changed() => {
                     let cfds = rx_cfds.borrow().clone();

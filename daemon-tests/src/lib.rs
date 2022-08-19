@@ -1,4 +1,4 @@
-use crate::flow::is_next_offers_none;
+use crate::flow::ensure_null_next_offers;
 use crate::flow::next_maker_offers;
 use crate::flow::next_with;
 use crate::flow::one_cfd_with_state;
@@ -280,6 +280,7 @@ impl Default for OpenCfdArgs {
 /// This allows callers to use it as a starting point for their test.
 pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -> OrderId {
     let offer_params = args.offer_params();
+    let contract_symbol = offer_params.contract_symbol;
     let OpenCfdArgs {
         oracle_data,
         position_maker,
@@ -288,7 +289,7 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
         ..
     } = args;
 
-    is_next_offers_none(taker.offers_feed()).await.unwrap();
+    ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
     tracing::debug!("Sending {offer_params:?}");
     maker.set_offer_params(offer_params).await;
@@ -305,9 +306,11 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
 
     mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
 
-    let offer_to_take = match position_maker {
-        Position::Short => received.short,
-        Position::Long => received.long,
+    let offer_to_take = match (contract_symbol, position_maker) {
+        (ContractSymbol::BtcUsd, Position::Long) => received.btcusd_long,
+        (ContractSymbol::BtcUsd, Position::Short) => received.btcusd_short,
+        (ContractSymbol::EthUsd, Position::Long) => received.ethusd_long,
+        (ContractSymbol::EthUsd, Position::Short) => received.ethusd_short,
     }
     .context("Order for expected position not set")
     .unwrap();
@@ -442,7 +445,7 @@ impl FeeCalculator {
             );
         }
 
-        tracing::debug!("Opening fee: {}", self.opening_fee);
+        tracing::debug!("Opening fee: {}", self.opening_fee.to_inner());
 
         let mut maker_fee_account = FeeAccount::new(self.maker_position, Role::Maker)
             .add_opening_fee(self.opening_fee)
@@ -692,7 +695,7 @@ impl Maker {
         );
 
         let (proj_actor, feeds) =
-            projection::Actor::new(db, Network::Testnet, price_feed_addr.into());
+            projection::Actor::new(db, Network::Testnet, price_feed_addr.into(), Role::Maker);
         tasks.add(projection_context.run(proj_actor));
 
         Self {
@@ -889,6 +892,7 @@ impl Taker {
             db.clone(),
             Network::Testnet,
             taker.price_feed_actor.clone().into(),
+            Role::Taker,
         );
         tasks.add(projection_context.run(proj_actor));
 

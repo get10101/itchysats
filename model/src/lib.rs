@@ -56,9 +56,9 @@ pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 #[derive(thiserror::Error, Debug, Clone, Copy)]
 pub enum Error {
-    #[error("Price of zero is not allowed.")]
+    #[error("Price of zero is not allowed")]
     ZeroPrice,
-    #[error("Negative Price is unimplemented.")]
+    #[error("Negative Price is unimplemented")]
     NegativePrice,
 }
 
@@ -462,7 +462,7 @@ pub enum ContractSymbol {
     EthUsd,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Position {
     Long,
     Short,
@@ -639,12 +639,6 @@ impl OpeningFee {
 
     pub fn to_inner(self) -> Amount {
         self.fee
-    }
-}
-
-impl fmt::Display for OpeningFee {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fee.as_sat().fmt(f)
     }
 }
 

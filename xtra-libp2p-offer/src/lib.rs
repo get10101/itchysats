@@ -1,172 +1,21 @@
-use model::olivia::BitMexPriceEventId;
-use model::ContractSymbol;
-use model::FundingRate;
-use model::Leverage;
-use model::OfferId;
-use model::OpeningFee;
-use model::Origin;
-use model::Position;
-use model::Price;
-use model::Timestamp;
-use model::TxFeeRate;
-use model::Usd;
-use serde::Deserialize;
-use serde::Serialize;
-use std::fmt;
-use time::Duration;
+mod current;
+pub mod deprecated;
 
-pub mod maker;
-mod protocol;
-pub mod taker;
-
-pub const PROTOCOL: &str = "/itchysats/offer/1.0.0";
-
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
-pub struct MakerOffers {
-    pub long: Option<Offer>,
-    pub short: Option<Offer>,
-    pub tx_fee_rate: TxFeeRate,
-    pub funding_rate_long: FundingRate,
-    pub funding_rate_short: FundingRate,
-}
-
-impl fmt::Debug for MakerOffers {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("MakerOffers")
-            .field("long_order_id", &self.long.as_ref().map(|o| o.id))
-            .field("short_order_id", &self.short.as_ref().map(|o| o.id))
-            .field("tx_fee_rate", &self.tx_fee_rate)
-            .field("funding_rate_long", &self.funding_rate_long)
-            .field("funding_rate_short", &self.funding_rate_short)
-            .finish()
-    }
-}
-
-/// A concrete order created by a maker for a taker
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Offer {
-    pub id: OfferId,
-
-    #[serde(rename = "trading_pair")]
-    pub contract_symbol: ContractSymbol,
-
-    /// The maker's position
-    ///
-    /// Since the maker is the creator of this order this always reflects the maker's position.
-    /// When we create a Cfd we change it to be the position as seen by each party, i.e. flip the
-    /// position for the taker.
-    #[serde(rename = "position")]
-    pub position_maker: Position,
-
-    pub price: Price,
-
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
-
-    /// A selection of leverages that the maker allows for the taker
-    pub leverage_choices: Vec<Leverage>,
-
-    /// The creation timestamp as set by the maker
-    #[serde(rename = "creation_timestamp")]
-    pub creation_timestamp_maker: Timestamp,
-
-    /// The duration that will be used for calculating the settlement timestamp
-    pub settlement_interval: Duration,
-
-    pub origin: Origin,
-
-    /// The id of the event to be used for price attestation
-    ///
-    /// The maker includes this into the Order based on the Oracle announcement to be used.
-    pub oracle_event_id: BitMexPriceEventId,
-
-    pub tx_fee_rate: TxFeeRate,
-    pub funding_rate: FundingRate,
-    pub opening_fee: OpeningFee,
-}
-
-impl From<MakerOffers> for model::MakerOffers {
-    fn from(maker_offers: MakerOffers) -> Self {
-        model::MakerOffers {
-            long: maker_offers.long.map(|offer| offer.into()),
-            short: maker_offers.short.map(|offer| offer.into()),
-            tx_fee_rate: maker_offers.tx_fee_rate,
-            funding_rate_long: maker_offers.funding_rate_long,
-            funding_rate_short: maker_offers.funding_rate_short,
-        }
-    }
-}
-
-#[allow(deprecated)] // allowing for backwards compatible conversion
-impl From<Offer> for model::Offer {
-    fn from(offer: Offer) -> Self {
-        model::Offer {
-            id: offer.id,
-            contract_symbol: offer.contract_symbol,
-            position_maker: offer.position_maker,
-            price: offer.price,
-            min_quantity: offer.min_quantity,
-            max_quantity: offer.max_quantity,
-            leverage_taker: Leverage::TWO,
-            leverage_choices: offer.leverage_choices,
-            creation_timestamp_maker: offer.creation_timestamp_maker,
-            settlement_interval: offer.settlement_interval,
-            origin: offer.origin,
-            oracle_event_id: offer.oracle_event_id,
-            tx_fee_rate: offer.tx_fee_rate,
-            funding_rate: offer.funding_rate,
-            opening_fee: offer.opening_fee,
-        }
-    }
-}
-
-impl From<model::MakerOffers> for MakerOffers {
-    fn from(maker_offers: model::MakerOffers) -> Self {
-        MakerOffers {
-            long: maker_offers.long.map(|offer| offer.into()),
-            short: maker_offers.short.map(|offer| offer.into()),
-            tx_fee_rate: maker_offers.tx_fee_rate,
-            funding_rate_long: maker_offers.funding_rate_long,
-            funding_rate_short: maker_offers.funding_rate_short,
-        }
-    }
-}
-
-impl From<model::Offer> for Offer {
-    fn from(offer: model::Offer) -> Self {
-        Offer {
-            id: offer.id,
-            contract_symbol: offer.contract_symbol,
-            position_maker: offer.position_maker,
-            price: offer.price,
-            min_quantity: offer.min_quantity,
-            max_quantity: offer.max_quantity,
-            leverage_choices: offer.leverage_choices,
-            creation_timestamp_maker: offer.creation_timestamp_maker,
-            settlement_interval: offer.settlement_interval,
-            origin: offer.origin,
-            oracle_event_id: offer.oracle_event_id,
-            tx_fee_rate: offer.tx_fee_rate,
-            funding_rate: offer.funding_rate,
-            opening_fee: offer.opening_fee,
-        }
-    }
-}
+pub use current::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::taker::LatestMakerOffers;
+    use crate::taker::LatestOffers;
     use async_trait::async_trait;
     use futures::Future;
-    use futures::FutureExt;
     use model::olivia::BitMexPriceEventId;
     use model::ContractSymbol;
     use model::FundingRate;
     use model::Leverage;
-    use model::Origin;
     use model::Position;
     use model::Price;
+    use model::Timestamp;
     use model::TxFeeRate;
     use model::Usd;
     use rust_decimal::Decimal;
@@ -213,7 +62,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let new_offers = dummy_maker_offers();
+        let new_offers = dummy_offers();
 
         // maker keeps sending the offers until the taker establishes
         // a connection
@@ -236,16 +85,11 @@ mod tests {
         // get the maker's latest offers
         let received_offers = retry_until_some(|| {
             let offer_receiver_addr = offer_receiver_addr.clone();
-            async move {
-                offer_receiver_addr
-                    .send(GetLatestOffers)
-                    .map(|res| res.unwrap())
-                    .await
-            }
+            async move { offer_receiver_addr.send(GetLatestOffers).await.unwrap() }
         })
         .await;
 
-        assert_eq!(new_offers, Some(received_offers))
+        assert_eq!(new_offers, received_offers)
     }
 
     fn create_endpoint_with_offer_maker(
@@ -297,14 +141,12 @@ mod tests {
     }
 
     struct OffersReceiver {
-        latest_offers: Option<MakerOffers>,
+        offers: Vec<model::Offer>,
     }
 
     impl OffersReceiver {
         fn new() -> Self {
-            Self {
-                latest_offers: None,
-            }
+            Self { offers: Vec::new() }
         }
     }
 
@@ -317,8 +159,8 @@ mod tests {
 
     #[xtra_productivity]
     impl OffersReceiver {
-        async fn handle(&mut self, msg: LatestMakerOffers) {
-            self.latest_offers = msg.0.map(|offer| offer.into());
+        async fn handle(&mut self, msg: LatestOffers) {
+            self.offers = msg.0;
         }
     }
 
@@ -326,51 +168,47 @@ mod tests {
 
     #[xtra_productivity]
     impl OffersReceiver {
-        async fn handle(&mut self, _: GetLatestOffers) -> Option<MakerOffers> {
-            self.latest_offers.clone()
+        async fn handle(&mut self, _: GetLatestOffers) -> Vec<model::Offer> {
+            self.offers.clone()
         }
     }
 
-    async fn retry_until_some<F, FUT, T>(mut fut: F) -> T
+    async fn retry_until_some<F, FUT>(mut fut: F) -> Vec<model::Offer>
     where
         F: FnMut() -> FUT,
-        FUT: Future<Output = Option<T>>,
+        FUT: Future<Output = Vec<model::Offer>>,
     {
         loop {
-            match fut().await {
-                Some(t) => return t,
-                None => tokio_extras::time::sleep(Duration::from_millis(200)).await,
+            let offers = fut().await;
+
+            if offers.is_empty() {
+                tokio_extras::time::sleep(Duration::from_millis(200)).await;
+            } else {
+                return offers;
             }
         }
     }
 
-    pub fn dummy_maker_offers() -> Option<MakerOffers> {
-        Some(MakerOffers {
-            long: Some(dummy_offer(Position::Long)),
-            short: Some(dummy_offer(Position::Short)),
-            tx_fee_rate: TxFeeRate::default(),
-            funding_rate_long: FundingRate::new(Decimal::ONE).unwrap(),
-            funding_rate_short: FundingRate::new(Decimal::NEGATIVE_ONE).unwrap(),
-        })
+    pub fn dummy_offers() -> Vec<model::Offer> {
+        vec![dummy_offer(Position::Long), dummy_offer(Position::Short)]
     }
 
-    fn dummy_offer(position: Position) -> Offer {
-        Offer {
+    fn dummy_offer(position_maker: Position) -> model::Offer {
+        model::Offer {
             id: Default::default(),
             contract_symbol: ContractSymbol::BtcUsd,
-            position_maker: position,
+            position_maker,
             price: Price::new(dec!(1000)).unwrap(),
             min_quantity: Usd::new(dec!(100)),
             max_quantity: Usd::new(dec!(1000)),
             leverage_choices: vec![Leverage::TWO],
             creation_timestamp_maker: Timestamp::now(),
             settlement_interval: time::Duration::hours(24),
-            origin: Origin::Ours,
             oracle_event_id: BitMexPriceEventId::with_20_digits(
                 datetime!(2021-10-04 22:00:00).assume_utc(),
             ),
-            tx_fee_rate: Default::default(),
-            funding_rate: Default::default(),
+            tx_fee_rate: TxFeeRate::default(),
+            funding_rate: FundingRate::new(Decimal::ONE).unwrap(),
             opening_fee: Default::default(),
         }
     }

@@ -43,6 +43,12 @@ interface SymbolDefaults {
     longPrice: string;
 }
 
+enum Symbol {
+    // we use lower case variant names because of react-router using lower-case routes by default and it is easier to match
+    btcusd = "btcusd",
+    ethusd = "ethusd",
+}
+
 let Defaults: { [key: string]: SymbolDefaults } = {
     btcusd: {
         minQuantity: "100",
@@ -60,7 +66,7 @@ let Defaults: { [key: string]: SymbolDefaults } = {
 
 export default function App() {
     document.title = "Hermes Maker";
-    const [symbol, setSymbol] = useState("btcusd");
+    const [symbol, setSymbol] = useState(Symbol.btcusd);
     let symbolDefaults = Defaults[symbol];
 
     let source = useEventSource({ source: `/api/feed`, options: { withCredentials: true } });
@@ -69,18 +75,28 @@ export default function App() {
 
     const cfdsOrUndefined = useLatestEvent<Cfd[]>(source, "cfds", intoCfd);
     let cfds = cfdsOrUndefined ? cfdsOrUndefined! : [];
-    const makerLongOrder = useLatestEvent<MakerOffer>(
+
+    const btcUsdLongOffer = useLatestEvent<MakerOffer>(
         source,
-        "long_offer",
+        "btcusd_long_offer",
         undefined,
-        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
     );
-    const makerShortOrder = useLatestEvent<MakerOffer>(
+    const btcUsdShortOffer = useLatestEvent<MakerOffer>(
         source,
-        "short_offer",
+        "btcusd_short_offer",
         undefined,
-        (data: any) => data && data.contract_symbol.toLowerCase() === symbol,
     );
+    const ethUsdLongOffer = useLatestEvent<MakerOffer>(
+        source,
+        "ethusd_long_offer",
+        undefined,
+    );
+    const ethUsdShortOffer = useLatestEvent<MakerOffer>(
+        source,
+        "ethusd_short_offer",
+        undefined,
+    );
+
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
     const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
 
@@ -135,7 +151,7 @@ export default function App() {
     const open = cfds.filter((value) => value.state.getGroup() === StateGroupKey.OPEN);
     const closed = cfds.filter((value) => value.state.getGroup() === StateGroupKey.CLOSED);
 
-    const onSymbolChange = (value: string) => {
+    const onSymbolChange = (value: Symbol) => {
         setSymbol(value);
         let symbolDefaults = Defaults[value];
         setMinQuantity(symbolDefaults.minQuantity);
@@ -166,9 +182,9 @@ export default function App() {
                         alignItems="center"
                     >
                         <Text align={"left"}>Contract Symbol</Text>
-                        <Select value={symbol} onChange={(item) => onSymbolChange(item.target.value)}>
-                            <option value="btcusd">BTCUSD</option>
-                            <option value="ethusd">ETHUSD</option>
+                        <Select value={symbol} onChange={(item) => onSymbolChange(item.target.value as Symbol)}>
+                            <option value={Symbol.btcusd}>BTCUSD</option>
+                            <option value={Symbol.ethusd}>ETHUSD</option>
                         </Select>
 
                         <Text align={"left"}>Reference Price:</Text>
@@ -263,15 +279,21 @@ export default function App() {
                                     await makeNewCfdSellOrder(payload, symbol);
                                 }}
                             >
-                                {makerLongOrder ? "Update Offers" : "Create Offers"}
+                                Create Offers
                             </Button>
                         </GridItem>
                     </Grid>
                 </VStack>
-                <HStack>
-                    {makerShortOrder && <OrderTile maker_offer={makerShortOrder} />}
-                    {makerLongOrder && <OrderTile maker_offer={makerLongOrder} />}
-                </HStack>
+                <VStack>
+                    <HStack>
+                        {btcUsdLongOffer && <OrderTile maker_offer={btcUsdLongOffer} />}
+                        {btcUsdShortOffer && <OrderTile maker_offer={btcUsdShortOffer} />}
+                    </HStack>
+                    <HStack>
+                        {ethUsdLongOffer && <OrderTile maker_offer={ethUsdLongOffer} />}
+                        {ethUsdShortOffer && <OrderTile maker_offer={ethUsdShortOffer} />}
+                    </HStack>
+                </VStack>
                 <Box width="40%" />
             </HStack>
 

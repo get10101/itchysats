@@ -22,6 +22,7 @@ use daemon::N_PAYOUTS;
 use libp2p_core::PeerId;
 use model::olivia;
 use model::Identity;
+use model::Role;
 use model::SETTLEMENT_INTERVAL;
 use shared_bin::catchers::default_catchers;
 use shared_bin::cli::Network;
@@ -344,6 +345,7 @@ async fn main() -> Result<()> {
         db.clone(),
         bitcoin_network,
         taker.price_feed_actor.clone().into(),
+        Role::Taker,
     );
     tasks.add(projection_context.run(proj_actor));
 

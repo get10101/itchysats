@@ -15,6 +15,7 @@ use maker::routes;
 use maker::ActorSystem;
 use maker::Opts;
 use model::olivia;
+use model::Role;
 use model::SETTLEMENT_INTERVAL;
 use shared_bin::catchers::default_catchers;
 use shared_bin::cli::Withdraw;
@@ -158,8 +159,12 @@ async fn main() -> Result<()> {
 
     tasks.add(supervisor.run_log_summary());
 
-    let (proj_actor, projection_feeds) =
-        projection::Actor::new(db.clone(), bitcoin_network, price_feed.clone().into());
+    let (proj_actor, projection_feeds) = projection::Actor::new(
+        db.clone(),
+        bitcoin_network,
+        price_feed.clone().into(),
+        Role::Maker,
+    );
     tasks.add(projection_context.run(proj_actor));
 
     let mission_success = rocket::custom(figment)

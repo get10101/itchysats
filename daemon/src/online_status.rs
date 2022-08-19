@@ -66,7 +66,7 @@ impl xtra::Actor for Actor {
                     "Unable to receive connection stats from the endpoint upon startup: {e:#}"
                 );
                 // This code path should not be hit, but in case we run into an error this sleep
-                // prevents a continuous endless loup of restarts.
+                // prevents a continuous endless loop of restarts.
                 self.sender
                     .send(ConnectionStatus::Offline)
                     .expect("Receiver to outlive this actor");

@@ -20,7 +20,6 @@ use model::libp2p::PeerId;
 use model::olivia;
 use model::Identity;
 use model::Leverage;
-use model::Offer;
 use model::OfferId;
 use model::OrderId;
 use model::Price;

@@ -4,7 +4,6 @@ export default function useLatestEvent<T>(
     source: EventSource | null,
     eventName: string,
     mapping: (key: string, value: any) => any = (_, value) => value,
-    filter?: (data: any) => boolean,
 ): T | null {
     const [state, setState] = useState<T | null>(null);
 
@@ -12,9 +11,6 @@ export default function useLatestEvent<T>(
         if (source) {
             const listener = (event: Event) => {
                 const data = JSON.parse((event as EventSourceEvent).data, mapping);
-                if (filter !== undefined && !filter(data)) {
-                    return;
-                }
                 setState(data);
             };
 
@@ -22,7 +18,7 @@ export default function useLatestEvent<T>(
             return () => source.removeEventListener(eventName, listener);
         }
         return undefined;
-    }, [source, eventName, mapping, filter]);
+    }, [source, eventName, mapping]);
 
     return state;
 }

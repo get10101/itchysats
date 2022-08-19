@@ -25,8 +25,6 @@ use maia_core::PartyParams;
 use model::olivia;
 use model::Cfd;
 use model::Identity;
-use model::MakerOffers;
-use model::Offer;
 use model::OfferId;
 use model::OrderId;
 use model::Role;
@@ -54,7 +52,7 @@ pub struct Actor {
     n_payouts: usize,
     decision_senders: HashMap<OrderId, oneshot::Sender<protocol::Decision>>,
     db: sqlite_db::Connection,
-    latest_offers: MessageChannel<xtra_libp2p_offer::maker::GetLatestOffers, Option<MakerOffers>>,
+    latest_offers: MessageChannel<xtra_libp2p_offer::maker::GetLatestOffers, Vec<model::Offer>>,
 }
 
 impl Actor {
@@ -71,10 +69,7 @@ impl Actor {
             MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
         ),
         projection: xtra::Address<projection::Actor>,
-        latest_offers: MessageChannel<
-            xtra_libp2p_offer::maker::GetLatestOffers,
-            Option<MakerOffers>,
-        >,
+        latest_offers: MessageChannel<xtra_libp2p_offer::maker::GetLatestOffers, Vec<model::Offer>>,
     ) -> Self {
         Self {
             executor: command::Executor::new(db.clone(), process_manager),
@@ -107,17 +102,18 @@ impl Actor {
     }
 
     #[instrument(skip(self), err)]
-    async fn pick_offer(&self, offer_id: OfferId) -> Result<Offer> {
+    async fn pick_offer(&self, offer_id: OfferId) -> Result<model::Offer> {
         let latest_offers = self
             .latest_offers
             .send(xtra_libp2p_offer::maker::GetLatestOffers)
             .await
-            .context("Failed to retrieve latest offer from offers actor")?
-            .context("No latest offers available")?;
+            .context("Failed to retrieve latest offer from offers actor")?;
 
         let offer = latest_offers
-            .pick_offer_to_take(offer_id)
-            .with_context(|| format!("Offer with id {offer_id} not found in current offers"))?;
+            .iter()
+            .find(|offer| offer.id == offer_id)
+            .with_context(|| format!("Offer with id {offer_id} not found in current offers"))?
+            .clone();
 
         Ok(offer)
     }

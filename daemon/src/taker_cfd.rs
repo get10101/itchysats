@@ -11,20 +11,16 @@ use model::market_closing_price;
 use model::Cfd;
 use model::Identity;
 use model::Leverage;
-use model::MakerOffers;
 use model::OfferId;
 use model::OrderId;
-use model::Origin;
 use model::Price;
 use model::Role;
 use model::Usd;
 use sqlite_db;
+use std::collections::HashMap;
 use time::OffsetDateTime;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
-
-#[derive(Clone)]
-pub struct CurrentMakerOffers(pub Option<MakerOffers>);
 
 #[derive(Clone, Copy)]
 pub struct PlaceOrder {
@@ -46,7 +42,7 @@ pub struct Actor {
     projection_actor: xtra::Address<projection::Actor>,
     libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     order_actor: xtra::Address<order::taker::Actor>,
-    current_maker_offers: Option<MakerOffers>,
+    offers: Offers,
     maker_identity: Identity,
     maker_peer_id: PeerId,
 }
@@ -66,7 +62,7 @@ impl Actor {
             projection_actor,
             libp2p_collab_settlement_actor,
             order_actor,
-            current_maker_offers: None,
+            offers: Offers::default(),
             maker_identity,
             maker_peer_id,
         }
@@ -75,30 +71,10 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_current_offers(&mut self, msg: xtra_libp2p_offer::taker::LatestMakerOffers) {
-        let takers_perspective_of_maker_offers = msg.0.map(|mut maker_offers| {
-            maker_offers.long = maker_offers.long.map(|mut long| {
-                long.origin = Origin::Theirs;
-                long
-            });
-            maker_offers.short = maker_offers.short.map(|mut short| {
-                short.origin = Origin::Theirs;
-                short
-            });
+    async fn handle_latest_offers(&mut self, msg: xtra_libp2p_offer::taker::LatestOffers) {
+        self.offers.insert(msg.0.clone());
 
-            maker_offers
-        });
-
-        self.current_maker_offers = takers_perspective_of_maker_offers.clone();
-        tracing::trace!("new maker offers {:?}", takers_perspective_of_maker_offers);
-
-        if let Err(e) = self
-            .projection_actor
-            .send(projection::Update(
-                takers_perspective_of_maker_offers.clone(),
-            ))
-            .await
-        {
+        if let Err(e) = self.projection_actor.send(projection::Update(msg.0)).await {
             tracing::warn!("Failed to send current offers to projection actor: {e:#}");
         };
     }
@@ -139,10 +115,8 @@ impl Actor {
         } = msg;
 
         let offer = self
-            .current_maker_offers
-            .clone()
-            .context("No maker offers available to take")?
-            .pick_offer_to_take(offer_id)
+            .offers
+            .get(&offer_id)
             .context("Offer to take could not be found in current maker offers, you might have an outdated offer")?;
 
         if !offer.is_safe_to_take(OffsetDateTime::now_utc()) {
@@ -164,6 +138,28 @@ impl Actor {
             .context("Failed to place order")?;
 
         Ok(order_id)
+    }
+}
+
+#[derive(Default)]
+struct Offers(HashMap<OfferId, model::Offer>);
+
+impl Offers {
+    fn insert(&mut self, offers: Vec<model::Offer>) {
+        for offer in offers.into_iter() {
+            self.0.insert(offer.id, offer);
+        }
+    }
+
+    fn get(&mut self, id: &OfferId) -> Option<model::Offer> {
+        self.remove_old_offers();
+
+        self.0.get(id).cloned()
+    }
+
+    fn remove_old_offers(&mut self) {
+        self.0
+            .retain(|_, offer| offer.is_safe_to_take(OffsetDateTime::now_utc()));
     }
 }
 
