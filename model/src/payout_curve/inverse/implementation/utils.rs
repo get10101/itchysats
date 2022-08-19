@@ -1,4 +1,4 @@
-use crate::payout_curve::inverse::Error;
+use crate::payout_curve::inverse::implementation::Error;
 use ndarray::prelude::*;
 use ndarray::s;
 use std::cmp::Ordering;

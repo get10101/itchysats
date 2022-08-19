@@ -1,6 +1,6 @@
-use crate::payout_curve::inverse::compat::To1DArray;
-use crate::payout_curve::inverse::compat::ToNAlgebraMatrix;
-use crate::payout_curve::inverse::Error;
+use crate::payout_curve::inverse::implementation::compat::To1DArray;
+use crate::payout_curve::inverse::implementation::compat::ToNAlgebraMatrix;
+use crate::payout_curve::inverse::implementation::Error;
 use itertools::Itertools;
 use ndarray::prelude::*;
 use std::ops::Mul;
