@@ -486,10 +486,10 @@ fn create_long_payout_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payouts::prop_compose::arb_contracts;
-    use crate::payouts::prop_compose::arb_fee_flow;
-    use crate::payouts::prop_compose::arb_leverage;
-    use crate::payouts::prop_compose::arb_price;
+    use crate::payout_curve::prop_compose::arb_contracts;
+    use crate::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payout_curve::prop_compose::arb_leverage;
+    use crate::payout_curve::prop_compose::arb_price;
     use bdk::bitcoin::Amount;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;

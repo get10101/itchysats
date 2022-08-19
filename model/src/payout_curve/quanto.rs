@@ -432,9 +432,9 @@ fn bankruptcy_price_shift(
 #[cfg(test)]
 mod api_tests {
     use super::*;
-    use crate::payouts::prop_compose::arb_fee_flow;
-    use crate::payouts::prop_compose::arb_leverage;
-    use crate::payouts::quanto;
+    use crate::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payout_curve::prop_compose::arb_leverage;
+    use crate::payout_curve::quanto;
     use itertools::Itertools;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;

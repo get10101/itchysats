@@ -33,15 +33,15 @@ mod contract_setup;
 pub mod hex_transaction;
 pub mod libp2p;
 pub mod olivia;
-mod payouts;
+mod payout_curve;
 mod rollover;
 pub mod shared_protocol;
 pub mod transaction_ext;
 
 pub use cfd::*;
 pub use contract_setup::SetupParams;
-pub use payouts::OraclePayouts;
-pub use payouts::Payouts;
+pub use payout_curve::OraclePayouts;
+pub use payout_curve::Payouts;
 pub use rollover::BaseDlcParams;
 pub use rollover::RolloverParams;
 pub use rollover::Version as RolloverVersion;

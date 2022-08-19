@@ -3,7 +3,7 @@ use crate::hex_transaction;
 use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
-use crate::payouts::Payouts;
+use crate::payout_curve::Payouts;
 use crate::rollover;
 use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;

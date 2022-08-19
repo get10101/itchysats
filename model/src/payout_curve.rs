@@ -1,7 +1,6 @@
 use crate::olivia;
-use crate::payouts;
+use crate::payout_curve;
 use crate::CompleteFee;
-use crate::Contracts;
 use crate::Leverage;
 use crate::Position;
 use crate::Price;
@@ -71,13 +70,13 @@ impl Payouts {
         position: Position,
         role: Role,
         price: Price,
-        quantity: Contracts,
+        quantity: Usd,
         long_leverage: Leverage,
         short_leverage: Leverage,
         n_payouts: usize,
         fee: CompleteFee,
     ) -> Result<Self> {
-        let mut payouts = payouts::inverse::calculate(
+        let mut payouts = payout_curve::inverse::calculate(
             price,
             quantity,
             long_leverage,
@@ -212,11 +211,11 @@ mod tests {
     use super::*;
     use crate::olivia::Announcement;
     use crate::olivia::BitMexPriceEventId;
-    use crate::payouts::prop_compose::arb_contracts;
-    use crate::payouts::prop_compose::arb_fee_flow;
-    use crate::payouts::prop_compose::arb_leverage;
-    use crate::payouts::prop_compose::arb_price;
-    use crate::payouts::quanto;
+    use crate::payout_curve::prop_compose::arb_contracts;
+    use crate::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payout_curve::prop_compose::arb_leverage;
+    use crate::payout_curve::prop_compose::arb_price;
+    use crate::payout_curve::quanto;
     use crate::ContractSymbol;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
