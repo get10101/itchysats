@@ -10,6 +10,7 @@ use futures::Stream;
 use model::libp2p::PeerId;
 use model::CfdEvent;
 use model::ContractSymbol;
+use model::Contracts;
 use model::EventKind;
 use model::FundingRate;
 use model::Identity;
@@ -21,7 +22,6 @@ use model::Position;
 use model::Price;
 use model::Role;
 use model::TxFeeRate;
-use model::Usd;
 use sqlx::migrate::MigrateError;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Acquire;
@@ -155,7 +155,7 @@ impl Connection {
         let offer_id = models::OfferId::from(cfd.offer_id());
 
         let role = models::Role::from(cfd.role());
-        let quantity = models::Usd::from(cfd.quantity());
+        let contracts = models::Contracts::from(cfd.quantity());
         let initial_price = models::Price::from(cfd.initial_price());
         let leverage = models::Leverage::from(cfd.taker_leverage());
 
@@ -177,7 +177,7 @@ impl Connection {
             initial_price,
             leverage,
             settlement_time_interval_hours,
-            quantity_usd,
+            contracts,
             counterparty_network_identity,
             counterparty_peer_id,
             role,
@@ -193,7 +193,7 @@ impl Connection {
         .bind(&initial_price)
         .bind(&leverage)
         .bind(&cfd.settlement_time_interval_hours().whole_hours())
-        .bind(&quantity)
+        .bind(&contracts)
         .bind(&counterparty_network_identity)
         .bind(&counterparty_peer_id.unwrap_or_else(|| {
             tracing::debug!(
@@ -518,7 +518,7 @@ pub struct Cfd {
     pub initial_price: Price,
     pub taker_leverage: Leverage,
     pub settlement_interval: Duration,
-    pub quantity_usd: Usd,
+    pub quantity: Contracts,
     pub counterparty_network_identity: Identity,
     pub counterparty_peer_id: Option<PeerId>,
     pub role: Role,
@@ -576,7 +576,7 @@ async fn load_cfd_row(conn: &mut SqliteConnection, id: OrderId) -> Result<Cfd, E
                 initial_price as "initial_price: models::Price",
                 leverage as "leverage: models::Leverage",
                 settlement_time_interval_hours,
-                quantity_usd as "quantity_usd: models::Usd",
+                contracts as "contracts: models::Contracts",
                 counterparty_network_identity as "counterparty_network_identity: models::Identity",
                 counterparty_peer_id as "counterparty_peer_id: models::PeerId",
                 role as "role: models::Role",
@@ -612,7 +612,7 @@ async fn load_cfd_row(conn: &mut SqliteConnection, id: OrderId) -> Result<Cfd, E
         initial_price: cfd_row.initial_price.into(),
         taker_leverage: cfd_row.leverage.into(),
         settlement_interval: Duration::hours(cfd_row.settlement_time_interval_hours),
-        quantity_usd: cfd_row.quantity_usd.into(),
+        quantity: cfd_row.contracts.try_into()?,
         counterparty_network_identity,
         counterparty_peer_id,
         role,
@@ -778,7 +778,6 @@ mod tests {
     use model::Role;
     use model::Timestamp;
     use model::TxFeeRate;
-    use model::Usd;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -797,7 +796,7 @@ mod tests {
             initial_price,
             taker_leverage: leverage,
             settlement_interval,
-            quantity_usd,
+            quantity,
             counterparty_network_identity,
             counterparty_peer_id,
             role,
@@ -813,7 +812,7 @@ mod tests {
         assert_eq!(cfd.initial_price(), initial_price);
         assert_eq!(cfd.taker_leverage(), leverage);
         assert_eq!(cfd.settlement_time_interval_hours(), settlement_interval);
-        assert_eq!(cfd.quantity(), quantity_usd);
+        assert_eq!(cfd.quantity(), quantity);
         assert_eq!(
             cfd.counterparty_network_identity(),
             counterparty_network_identity
@@ -948,7 +947,7 @@ mod tests {
             Leverage::TWO,
             Duration::hours(24),
             Role::Taker,
-            Usd::new(dec!(1_000)),
+            Contracts::new(1_000),
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                 .parse()
                 .unwrap(),
@@ -969,7 +968,7 @@ mod tests {
             Leverage::TWO,
             Duration::hours(24),
             Role::Taker,
-            Usd::new(dec!(1_000)),
+            Contracts::new(1_000),
             identity.parse().unwrap(),
             None,
             OpeningFee::new(Amount::from_sat(2000)),

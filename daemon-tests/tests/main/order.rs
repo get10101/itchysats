@@ -12,11 +12,10 @@ use daemon_tests::Maker;
 use daemon_tests::OfferParamsBuilder;
 use daemon_tests::Taker;
 use model::ContractSymbol;
+use model::Contracts;
 use model::Leverage;
 use model::OrderId;
-use model::Usd;
 use otel_tests::otel_test;
-use rust_decimal_macros::dec;
 
 #[otel_test]
 async fn taker_places_order_and_maker_rejects() {
@@ -42,7 +41,7 @@ async fn taker_places_order_and_maker_rejects() {
     maker.mocks.mock_oracle_announcement().await;
     let order_id = taker
         .system
-        .place_order(offer_id, Usd::new(dec!(100)), Leverage::TWO)
+        .place_order(offer_id, Contracts::new(100), Leverage::TWO)
         .await
         .unwrap();
 
@@ -78,7 +77,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup() {
 
     let order_id = taker
         .system
-        .place_order(offer_id, Usd::new(dec!(100)), Leverage::TWO)
+        .place_order(offer_id, Contracts::new(100), Leverage::TWO)
         .await
         .unwrap();
 
@@ -109,7 +108,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     maker.mocks.mock_oracle_announcement().await;
     let first_order_id = taker
         .system
-        .place_order(offer_id, Usd::new(dec!(10)), Leverage::TWO)
+        .place_order(offer_id, Contracts::new(10), Leverage::TWO)
         .await
         .unwrap();
 
@@ -117,7 +116,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
 
     let second_order_id = taker
         .system
-        .place_order(offer_id, Usd::new(dec!(10)), Leverage::TWO)
+        .place_order(offer_id, Contracts::new(10), Leverage::TWO)
         .await
         .unwrap();
 

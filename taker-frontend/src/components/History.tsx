@@ -77,7 +77,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
     const initialPrice = cfd.initial_price;
     const liquidationPrice = cfd.liquidation_price;
     const closing_price = cfd.closing_price || 0;
-    const contracts = `${cfd.quantity_usd}`;
+    const contracts = `${cfd.quantity}`;
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
     const txCommit = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Commit);

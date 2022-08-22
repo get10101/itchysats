@@ -7,6 +7,7 @@ use futures::StreamExt;
 use model::calculate_margin;
 use model::CfdEvent;
 use model::ClosedCfd;
+use model::Contracts;
 use model::EventKind;
 use model::FailedCfd;
 use model::FailedKind;
@@ -16,8 +17,6 @@ use model::OrderId;
 use model::Position;
 use model::Role;
 use model::Settlement;
-use model::Usd;
-use rust_decimal::Decimal;
 use sqlite_db;
 use std::collections::HashMap;
 use xtra_productivity::xtra_productivity;
@@ -127,7 +126,7 @@ pub struct CfdChanged(pub OrderId);
 pub struct Cfd {
     id: OrderId,
     position: Position,
-    quantity_usd: Usd,
+    quantity: Contracts,
     margin: Amount,
     margin_counterparty: Amount,
 
@@ -157,14 +156,14 @@ impl sqlite_db::CfdAggregate for Cfd {
             Role::Taker => (cfd.taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(cfd.initial_price, cfd.quantity_usd, our_leverage);
+        let margin = calculate_margin(cfd.initial_price, cfd.quantity, our_leverage);
         let margin_counterparty =
-            calculate_margin(cfd.initial_price, cfd.quantity_usd, counterparty_leverage);
+            calculate_margin(cfd.initial_price, cfd.quantity, counterparty_leverage);
 
         Self {
             id: cfd.id,
             position: cfd.position,
-            quantity_usd: cfd.quantity_usd,
+            quantity: cfd.quantity,
             margin,
             margin_counterparty,
             state: AggregatedState::New,
@@ -277,7 +276,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
         let ClosedCfd {
             id,
             position,
-            n_contracts,
+            n_contracts: quantity,
             settlement,
             counterparty_network_identity,
             role,
@@ -285,8 +284,6 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             initial_price,
             ..
         } = closed_cfd;
-
-        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match settlement {
             Settlement::Collaborative { .. } | Settlement::Cet { .. } => AggregatedState::Closed,
@@ -298,14 +295,13 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
-        let margin_counterparty =
-            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+        let margin = calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
 
         Self {
             id,
             position,
-            quantity_usd,
+            quantity,
             margin,
             margin_counterparty,
             state,
@@ -320,7 +316,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         let FailedCfd {
             id,
             position,
-            n_contracts,
+            n_contracts: quantity,
             kind,
             counterparty_network_identity,
             role,
@@ -328,8 +324,6 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             initial_price,
             ..
         } = cfd;
-
-        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
 
         let state = match kind {
             FailedKind::OfferRejected => AggregatedState::Rejected,
@@ -341,14 +335,13 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
-        let margin_counterparty =
-            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+        let margin = calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
 
         Self {
             id,
             position,
-            quantity_usd,
+            quantity,
             margin,
             margin_counterparty,
             state,
@@ -363,9 +356,9 @@ mod metrics {
     use crate::position_metrics::Cfd;
     use bdk::bitcoin::Amount;
     use itertools::Itertools;
+    use model::Contracts;
     use model::OrderId;
     use model::Position;
-    use model::Usd;
     use rust_decimal::prelude::ToPrimitive;
     use std::collections::HashMap;
 
@@ -556,8 +549,8 @@ mod metrics {
             .set(margin_counterparty.as_sat() as i64);
     }
 
-    fn sum_amounts(cfds: &[&Cfd]) -> Usd {
+    fn sum_amounts(cfds: &[&Cfd]) -> Contracts {
         cfds.iter()
-            .fold(Usd::ZERO, |sum, cfd| cfd.quantity_usd + sum)
+            .fold(Contracts::ZERO, |sum, cfd| cfd.quantity + sum)
     }
 }

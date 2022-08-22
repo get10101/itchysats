@@ -9,13 +9,13 @@ use async_trait::async_trait;
 use model::libp2p::PeerId;
 use model::market_closing_price;
 use model::Cfd;
+use model::Contracts;
 use model::Identity;
 use model::Leverage;
 use model::OfferId;
 use model::OrderId;
 use model::Price;
 use model::Role;
-use model::Usd;
 use sqlite_db;
 use std::collections::HashMap;
 use time::OffsetDateTime;
@@ -25,7 +25,7 @@ use xtras::SendAsyncSafe;
 #[derive(Clone, Copy)]
 pub struct PlaceOrder {
     pub offer_id: OfferId,
-    pub quantity: Usd,
+    pub quantity: Contracts,
     pub leverage: Leverage,
 }
 

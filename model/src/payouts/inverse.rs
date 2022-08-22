@@ -1,7 +1,7 @@
 use crate::CompleteFee;
+use crate::Contracts;
 use crate::Leverage;
 use crate::Price;
-use crate::Usd;
 use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin;
@@ -49,7 +49,7 @@ mod utils;
 /// The list of [`Payout`]s for the given price, quantity and leverage.
 pub fn calculate(
     price: Price,
-    quantity: Usd,
+    quantity: Contracts,
     long_leverage: Leverage,
     short_leverage: Leverage,
     n_payouts: usize,
@@ -84,7 +84,7 @@ const CONTRACT_VALUE: f64 = 1.;
 /// output. The design goal here is that the the above `calculate` function is as thin as possible.
 fn calculate_payout_parameters(
     price: Price,
-    quantity: Usd,
+    quantity: Contracts,
     long_leverage: Leverage,
     short_leverage: Leverage,
     n_payouts: usize,
@@ -546,7 +546,7 @@ mod tests {
     fn calculate_snapshot() {
         let actual_payouts = calculate_payout_parameters(
             Price::new(dec!(54000.00)).unwrap(),
-            Usd::new(dec!(3500.00)),
+            Contracts::new(3500),
             Leverage::new(5).unwrap(),
             Leverage::new(1).unwrap(),
             200,
@@ -764,7 +764,7 @@ mod tests {
     #[test]
     fn verify_effect_of_funding_fee() {
         let price = Price::new(dec!(54000.00)).unwrap();
-        let quantity = Usd::new(dec!(3500.00));
+        let quantity = Contracts::new(3500);
 
         let payouts = calculate_payout_parameters(
             price,
@@ -832,7 +832,7 @@ mod tests {
     fn verify_tails() {
         let actual_payouts = calculate_payout_parameters(
             Price::new(dec!(54000.00)).unwrap(),
-            Usd::new(dec!(3500.00)),
+            Contracts::new(3500),
             Leverage::new(5).unwrap(),
             Leverage::new(1).unwrap(),
             200,

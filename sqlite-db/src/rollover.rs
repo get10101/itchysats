@@ -18,6 +18,7 @@ mod tests {
     use model::CfdEvent;
     use model::CompleteFee;
     use model::ContractSymbol;
+    use model::Contracts;
     use model::Dlc;
     use model::EventKind;
     use model::FundingFee;
@@ -31,7 +32,6 @@ mod tests {
     use model::Role;
     use model::Timestamp;
     use model::TxFeeRate;
-    use model::Usd;
     use rust_decimal_macros::dec;
     use sqlx::SqliteConnection;
     use time::macros::datetime;
@@ -47,7 +47,7 @@ mod tests {
             Leverage::TWO,
             Duration::hours(24),
             Role::Taker,
-            Usd::new(dec!(1_000)),
+            Contracts::new(1_000),
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                 .parse()
                 .unwrap(),

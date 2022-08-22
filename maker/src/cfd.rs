@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use daemon::order;
 use daemon::projection;
 use model::ContractSymbol;
+use model::Contracts;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
@@ -14,7 +15,6 @@ use model::Position;
 use model::Price;
 use model::Timestamp;
 use model::TxFeeRate;
-use model::Usd;
 use std::collections::HashMap;
 use time::Duration;
 use xtra::prelude::MessageChannel;
@@ -63,8 +63,8 @@ pub struct GetRolloverParams;
 pub struct OfferParams {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
+    pub min_quantity: Contracts,
+    pub max_quantity: Contracts,
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate_long: FundingRate,
     pub funding_rate_short: FundingRate,

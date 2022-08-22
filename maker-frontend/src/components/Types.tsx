@@ -49,7 +49,7 @@ export interface Cfd {
     liquidation_price: number;
     closing_price?: number;
 
-    quantity_usd: number;
+    quantity: number;
 
     margin: number;
 

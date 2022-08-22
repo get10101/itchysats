@@ -10,13 +10,13 @@ use daemon::projection::Feeds;
 use daemon::wallet;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
 use model::TxFeeRate;
-use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
@@ -106,8 +106,8 @@ pub async fn maker_feed(
 pub struct CfdNewOfferParamsRequest {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
+    pub min_quantity: Contracts,
+    pub max_quantity: Contracts,
     /// The current _daily_ funding rate for the maker's long position
     pub daily_funding_rate_long: FundingRate,
     /// The current _daily_ funding rate for the maker's short position

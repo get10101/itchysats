@@ -52,6 +52,108 @@
     },
     "query": "\n            select\n                id as cfd_id,\n                order_id as \"order_id: models::OrderId\"\n            from\n                cfds\n            where exists (\n                select id from EVENTS as events\n                where events.cfd_id = cfds.id and\n                (\n                    events.name = $1 or\n                    events.name = $2\n                )\n            )\n            "
   },
+  "06739ffd2f18d7ab53569b4e10330486cd3d484c662c3f569a8eb2ff4acb01cd": {
+    "describe": {
+      "columns": [
+        {
+          "name": "cfd_id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "order_id: models::OrderId",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "offer_id: models::OfferId",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "position: models::Position",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "initial_price: models::Price",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "leverage: models::Leverage",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "settlement_time_interval_hours",
+          "ordinal": 6,
+          "type_info": "Int64"
+        },
+        {
+          "name": "contracts: models::Contracts",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_network_identity: models::Identity",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "counterparty_peer_id: models::PeerId",
+          "ordinal": 9,
+          "type_info": "Text"
+        },
+        {
+          "name": "role: models::Role",
+          "ordinal": 10,
+          "type_info": "Text"
+        },
+        {
+          "name": "opening_fee: models::OpeningFee",
+          "ordinal": 11,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_funding_rate: models::FundingRate",
+          "ordinal": 12,
+          "type_info": "Null"
+        },
+        {
+          "name": "initial_tx_fee_rate: models::TxFeeRate",
+          "ordinal": 13,
+          "type_info": "Null"
+        },
+        {
+          "name": "contract_symbol: models::ContractSymbol",
+          "ordinal": 14,
+          "type_info": "Null"
+        }
+      ],
+      "nullable": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "\n            select\n                id as cfd_id,\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                contracts as \"contracts: models::Contracts\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: models::TxFeeRate\",\n                contract_symbol as \"contract_symbol: models::ContractSymbol\"\n            from\n                cfds\n            where\n                cfds.order_id = $1\n            "
+  },
   "0859464e9b1d6758efeced4abf74ad440a3128611856a72ba22c0234fca37e81": {
     "describe": {
       "columns": [],
@@ -755,108 +857,6 @@
       }
     },
     "query": "\n            INSERT INTO event_log (\n                cfd_id,\n                name,\n                created_at\n            )\n            VALUES\n            (\n                (SELECT id FROM closed_cfds WHERE closed_cfds.order_id = $1),\n                $2, $3\n            )\n            "
-  },
-  "cae8bdf8fa73fa170608b6608b335ada2d9ce6c95aeb0ea1293cb7970243f23a": {
-    "describe": {
-      "columns": [
-        {
-          "name": "cfd_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "order_id: models::OrderId",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "offer_id: models::OfferId",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "position: models::Position",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "initial_price: models::Price",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "leverage: models::Leverage",
-          "ordinal": 5,
-          "type_info": "Int64"
-        },
-        {
-          "name": "settlement_time_interval_hours",
-          "ordinal": 6,
-          "type_info": "Int64"
-        },
-        {
-          "name": "quantity_usd: models::Usd",
-          "ordinal": 7,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_network_identity: models::Identity",
-          "ordinal": 8,
-          "type_info": "Text"
-        },
-        {
-          "name": "counterparty_peer_id: models::PeerId",
-          "ordinal": 9,
-          "type_info": "Text"
-        },
-        {
-          "name": "role: models::Role",
-          "ordinal": 10,
-          "type_info": "Text"
-        },
-        {
-          "name": "opening_fee: models::OpeningFee",
-          "ordinal": 11,
-          "type_info": "Null"
-        },
-        {
-          "name": "initial_funding_rate: models::FundingRate",
-          "ordinal": 12,
-          "type_info": "Null"
-        },
-        {
-          "name": "initial_tx_fee_rate: models::TxFeeRate",
-          "ordinal": 13,
-          "type_info": "Null"
-        },
-        {
-          "name": "contract_symbol: models::ContractSymbol",
-          "ordinal": 14,
-          "type_info": "Null"
-        }
-      ],
-      "nullable": [
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Right": 1
-      }
-    },
-    "query": "\n            select\n                id as cfd_id,\n                order_id as \"order_id: models::OrderId\",\n                offer_id as \"offer_id: models::OfferId\",\n                position as \"position: models::Position\",\n                initial_price as \"initial_price: models::Price\",\n                leverage as \"leverage: models::Leverage\",\n                settlement_time_interval_hours,\n                quantity_usd as \"quantity_usd: models::Usd\",\n                counterparty_network_identity as \"counterparty_network_identity: models::Identity\",\n                counterparty_peer_id as \"counterparty_peer_id: models::PeerId\",\n                role as \"role: models::Role\",\n                opening_fee as \"opening_fee: models::OpeningFee\",\n                initial_funding_rate as \"initial_funding_rate: models::FundingRate\",\n                initial_tx_fee_rate as \"initial_tx_fee_rate: models::TxFeeRate\",\n                contract_symbol as \"contract_symbol: models::ContractSymbol\"\n            from\n                cfds\n            where\n                cfds.order_id = $1\n            "
   },
   "d2574386cb16c2ee01fded3c8d025e46a034efa3d5878e03879dc911bf61b749": {
     "describe": {

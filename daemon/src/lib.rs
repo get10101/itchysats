@@ -18,13 +18,13 @@ pub use maia_core;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::olivia;
+use model::Contracts;
 use model::Identity;
 use model::Leverage;
 use model::OfferId;
 use model::OrderId;
 use model::Price;
 use model::Role;
-use model::Usd;
 use online_status::ConnectionStatus;
 use parse_display::Display;
 use seed::Identities;
@@ -366,7 +366,7 @@ where
     pub async fn place_order(
         &self,
         offer_id: OfferId,
-        quantity: Usd,
+        quantity: Contracts,
         leverage: Leverage,
     ) -> Result<OrderId> {
         let order_id = self

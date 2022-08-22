@@ -25,12 +25,12 @@ use libp2p_core::PeerId;
 use maia_core::PartyParams;
 use model::olivia;
 use model::Cfd;
+use model::Contracts;
 use model::Identity;
 use model::Leverage;
 use model::Offer;
 use model::OrderId;
 use model::Role;
-use model::Usd;
 use xtra::prelude::MessageChannel;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
@@ -236,7 +236,7 @@ impl Actor {
 pub(crate) struct PlaceOrder {
     order_id: OrderId,
     offer: Offer,
-    quantity: Usd,
+    quantity: Contracts,
     leverage: Leverage,
     maker_peer_id: PeerId,
     maker_identity: Identity,
@@ -246,7 +246,7 @@ impl PlaceOrder {
     pub(crate) fn new(
         order_id: OrderId,
         offer: Offer,
-        (quantity, leverage): (Usd, Leverage),
+        (quantity, leverage): (Contracts, Leverage),
         maker_peer_id: PeerId,
         maker_identity: Identity,
     ) -> Self {

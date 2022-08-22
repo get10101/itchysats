@@ -26,6 +26,7 @@ use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use maia_core::PartyParams;
 use model::olivia::Announcement;
 use model::ContractSymbol;
+use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
 use model::OpeningFee;
@@ -33,7 +34,6 @@ use model::OrderId;
 use model::Price;
 use model::Role;
 use model::TxFeeRate;
-use model::Usd;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::Tasks;
@@ -333,8 +333,8 @@ where
         &self,
         price_long: Option<Price>,
         price_short: Option<Price>,
-        min_quantity: Usd,
-        max_quantity: Usd,
+        min_quantity: Contracts,
+        max_quantity: Contracts,
         tx_fee_rate: TxFeeRate,
         funding_rate_long: FundingRate,
         funding_rate_short: FundingRate,
