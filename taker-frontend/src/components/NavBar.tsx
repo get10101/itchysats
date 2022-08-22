@@ -301,20 +301,17 @@ const SymbolSelector = ({ current, onChange }: SymbolSelectorProps) => {
 
     return (
         <Box w={"100%"}>
-            {false
-                && (
-                    <Select
-                        defaultValue={options[0]}
-                        value={{
-                            value: current,
-                            label: current.toUpperCase(),
-                        }}
-                        selectedOptionColor="orange"
-                        selectedOptionStyle="color"
-                        options={options}
-                        onChange={(item) => onChangeInner(item)}
-                    />
-                )}
+            <Select
+                defaultValue={options[0]}
+                value={{
+                    value: current,
+                    label: current.toUpperCase(),
+                }}
+                selectedOptionColor="orange"
+                selectedOptionStyle="color"
+                options={options}
+                onChange={(item) => onChangeInner(item)}
+            />
         </Box>
     );
 };
