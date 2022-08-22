@@ -208,7 +208,14 @@ export const App = () => {
     const {
         isOpen: incompatibleWarningIsVisible,
         onClose: onCloseIncompatibleWarning,
+        onOpen: onOpenIncompatibleWarning,
     } = useDisclosure({ defaultIsOpen: incompatible });
+
+    useEffect(() => {
+        if (incompatible) {
+            onOpenIncompatibleWarning();
+        }
+    }, [incompatible, onOpenIncompatibleWarning]);
 
     const pathname = location.pathname;
     useEffect(() => {
