@@ -62,6 +62,7 @@ pub enum Error {
     NegativePrice,
 }
 
+/// Represents "quantity" or "contract size" in Cfd terms
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Contracts(Decimal);
 
@@ -191,7 +192,6 @@ impl fmt::Display for Leverage {
     }
 }
 
-// add impl's to do algebra with Quantity, Leverage, and ExhangeRate as required
 impl Mul<Leverage> for Contracts {
     type Output = Contracts;
 
@@ -953,6 +953,21 @@ impl str::FromStr for TxFeeRate {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let fee_sat = s.parse()?;
         Ok(TxFeeRate(fee_sat))
+    }
+}
+/// Contract lot size
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct LotSize(u8);
+
+impl LotSize {
+    pub fn new(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl From<LotSize> for Contracts {
+    fn from(lot: LotSize) -> Self {
+        Self(Decimal::from(lot.0))
     }
 }
 

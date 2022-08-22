@@ -11,6 +11,7 @@ use model::ContractSymbol;
 use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
+use model::LotSize;
 use model::OfferId;
 use model::OpeningFee;
 use model::Position;
@@ -64,6 +65,7 @@ pub(crate) struct Offer {
     tx_fee_rate: TxFeeRate,
     funding_rate: FundingRate,
     opening_fee: OpeningFee,
+    lot_size: LotSize,
 }
 
 impl From<model::Offer> for Offer {
@@ -82,6 +84,7 @@ impl From<model::Offer> for Offer {
             tx_fee_rate: offer.tx_fee_rate,
             funding_rate: offer.funding_rate,
             opening_fee: offer.opening_fee,
+            lot_size: offer.lot_size,
         }
     }
 }
@@ -102,6 +105,7 @@ impl From<Offer> for model::Offer {
             tx_fee_rate: offer.tx_fee_rate,
             funding_rate: offer.funding_rate,
             opening_fee: offer.opening_fee,
+            lot_size: offer.lot_size,
         }
     }
 }

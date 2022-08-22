@@ -16,6 +16,7 @@ use crate::FundingRate;
 use crate::Identity;
 use crate::InversePrice;
 use crate::Leverage;
+use crate::LotSize;
 use crate::OpeningFee;
 use crate::Percent;
 use crate::Position;
@@ -172,6 +173,7 @@ pub struct Offer {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
+    pub lot_size: LotSize,
 }
 
 impl Offer {
@@ -187,6 +189,7 @@ impl Offer {
         opening_fee: OpeningFee,
         leverage_choices: Vec<Leverage>,
         contract_symbol: ContractSymbol,
+        lot_size: LotSize,
     ) -> Self {
         let oracle_event_id =
             olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval);
@@ -205,6 +208,7 @@ impl Offer {
             tx_fee_rate,
             funding_rate,
             opening_fee,
+            lot_size,
         }
     }
 
@@ -4303,6 +4307,7 @@ mod tests {
                 OpeningFee::default(),
                 vec![Leverage::TWO],
                 ContractSymbol::BtcUsd,
+                LotSize::new(100),
             )
         }
 

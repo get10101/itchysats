@@ -9,6 +9,7 @@ use model::Contracts;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
+use model::LotSize;
 use model::OpeningFee;
 use model::OrderId;
 use model::Position;
@@ -71,6 +72,7 @@ pub struct OfferParams {
     pub opening_fee: OpeningFee,
     pub leverage_choices: Vec<Leverage>,
     pub contract_symbol: ContractSymbol,
+    pub lot_size: LotSize,
 }
 
 impl OfferParams {
@@ -86,6 +88,7 @@ impl OfferParams {
             opening_fee,
             leverage_choices,
             contract_symbol,
+            lot_size,
         } = self;
 
         let mut offers = Vec::new();
@@ -102,6 +105,7 @@ impl OfferParams {
                 opening_fee,
                 leverage_choices.clone(),
                 contract_symbol,
+                lot_size,
             );
 
             offers.push(long);
@@ -119,6 +123,7 @@ impl OfferParams {
                 opening_fee,
                 leverage_choices,
                 contract_symbol,
+                lot_size,
             );
 
             offers.push(short);

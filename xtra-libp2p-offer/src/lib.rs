@@ -14,6 +14,7 @@ mod tests {
     use model::Contracts;
     use model::FundingRate;
     use model::Leverage;
+    use model::LotSize;
     use model::Position;
     use model::Price;
     use model::Timestamp;
@@ -210,6 +211,7 @@ mod tests {
             tx_fee_rate: TxFeeRate::default(),
             funding_rate: FundingRate::new(Decimal::ONE).unwrap(),
             opening_fee: Default::default(),
+            lot_size: LotSize::new(100),
         }
     }
 }

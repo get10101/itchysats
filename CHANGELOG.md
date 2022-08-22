@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `/itchysats/offer/2.0.0` protocol, which supports any contract symbol.
 - New dynamic route for maker `PUT /<contract_symbol>/offer/`.
   This allows the creation of offers with `<contract_symbol>`.
+- Introducing a new field `lot_size` for `offer`: Lot Size (in number of contracts) is the minimum trading unit of a contract. Order quantity need to be a multiple of this.
 
 ### Changed
 

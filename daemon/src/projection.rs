@@ -32,6 +32,7 @@ use model::FeeAccount;
 use model::FundingFee;
 use model::FundingRate;
 use model::Leverage;
+use model::LotSize;
 use model::OfferId;
 use model::OrderId;
 use model::Position;
@@ -1278,8 +1279,7 @@ pub struct CfdOffer {
     ///
     /// For example, if `lot_size` is 100, `min_quantity` is 300 and `max_quantity`is 800, then
     /// the user can buy 300, 400, 500, 600, 700 or 800 contracts.
-    #[serde(with = "round_to_two_dp")]
-    pub lot_size: Contracts,
+    pub lot_size: LotSize,
 
     /// Contains liquidation price, margin and initial fund amount per leverage
     pub leverage_details: Vec<LeverageDetails>,
@@ -1311,7 +1311,7 @@ pub struct LeverageDetails {
 
 impl CfdOffer {
     fn new(offer: model::Offer, role: Role) -> Result<Self> {
-        let lot_size = Contracts::new(100); // TODO: Have the maker tell us this.
+        let lot_size = offer.lot_size;
 
         let own_position = match role {
             Role::Maker => offer.position_maker,
@@ -1327,14 +1327,14 @@ impl CfdOffer {
                     Position::Short => calculate_short_liquidation_price(*leverage, offer.price),
                 };
                 // Margin per lot price is dependent on one's own leverage
-                let margin_per_lot = calculate_margin(offer.price, lot_size, *leverage);
+                let margin_per_lot = calculate_margin(offer.price, lot_size.into(), *leverage);
 
                 let (long_leverage, short_leverage) =
                     long_and_short_leverage(*leverage, role, own_position);
 
                 let initial_funding_fee_per_lot = FundingFee::calculate(
                     offer.price,
-                    lot_size,
+                    lot_size.into(),
                     long_leverage,
                     short_leverage,
                     offer.funding_rate,

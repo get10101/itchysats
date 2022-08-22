@@ -13,6 +13,7 @@ use http_api_problem::StatusCode;
 use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
+use model::LotSize;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
@@ -118,10 +119,17 @@ pub struct CfdNewOfferParamsRequest {
     pub opening_fee: OpeningFee,
     #[serde(default = "empty_leverage")]
     pub leverage_choices: Vec<Leverage>,
+    #[serde(default = "default_lot_size")]
+    pub lot_size: LotSize,
 }
 
 fn empty_leverage() -> Vec<Leverage> {
     vec![Leverage::TWO]
+}
+
+// TODO: we can remove this once all clients have been updated
+fn default_lot_size() -> LotSize {
+    LotSize::new(100)
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]
@@ -144,6 +152,7 @@ pub async fn put_offer_params(
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
             ContractSymbol::BtcUsd.into(),
+            offer_params.lot_size,
         )
         .await
         .map_err(|e| {
@@ -208,6 +217,7 @@ pub async fn put_offer_params_for_symbol(
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
             symbol.into(),
+            offer_params.lot_size,
         )
         .await
         .map_err(|e| {

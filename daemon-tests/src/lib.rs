@@ -42,6 +42,7 @@ use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
+use model::LotSize;
 use model::OpeningFee;
 use model::OrderId;
 use model::Position;
@@ -722,6 +723,7 @@ impl Maker {
             opening_fee,
             leverage_choices,
             contract_symbol,
+            lot_size,
         } = offer_params;
         self.system
             .set_offer_params(
@@ -735,6 +737,7 @@ impl Maker {
                 opening_fee,
                 leverage_choices,
                 contract_symbol,
+                lot_size,
             )
             .await
             .unwrap();
@@ -997,6 +1000,7 @@ impl OfferParamsBuilder {
             opening_fee: OpeningFee::new(Amount::from_sat(2)),
             leverage_choices: vec![Leverage::TWO],
             contract_symbol: ContractSymbol::BtcUsd,
+            lot_size: LotSize::new(100),
         })
     }
 

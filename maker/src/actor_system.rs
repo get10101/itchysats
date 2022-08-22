@@ -29,6 +29,7 @@ use model::ContractSymbol;
 use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
+use model::LotSize;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
@@ -341,6 +342,7 @@ where
         opening_fee: OpeningFee,
         leverage_choices: Vec<Leverage>,
         contract_symbol: ContractSymbol,
+        lot_size: LotSize,
     ) -> Result<()> {
         self.cfd_actor
             .send(cfd::OfferParams {
@@ -354,6 +356,7 @@ where
                 opening_fee,
                 leverage_choices,
                 contract_symbol,
+                lot_size,
             })
             .await??;
 
