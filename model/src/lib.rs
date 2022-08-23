@@ -959,12 +959,6 @@ impl Payout {
     }
 }
 
-impl From<Payout> for SignedAmount {
-    fn from(payout: Payout) -> Self {
-        payout.0.to_signed().expect("Amount to fit in SignedAmount")
-    }
-}
-
 impl TryFrom<i64> for Payout {
     type Error = anyhow::Error;
 

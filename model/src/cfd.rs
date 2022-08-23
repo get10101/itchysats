@@ -1826,7 +1826,11 @@ pub fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Pr
     price * leverage / (leverage - 1)
 }
 
-pub fn calculate_profit(payout: SignedAmount, margin: SignedAmount) -> (SignedAmount, Percent) {
+pub fn calculate_profit(payout: Amount, margin: SignedAmount) -> (SignedAmount, Percent) {
+    let payout = payout
+        .to_signed()
+        .expect("amount to fit into signed amount");
+
     let profit = payout - margin;
 
     let profit_sats = Decimal::from(profit.as_sat());
@@ -1847,7 +1851,7 @@ pub fn calculate_profit_at_price(
     long_leverage: Leverage,
     short_leverage: Leverage,
     fee_account: FeeAccount,
-) -> Result<(SignedAmount, Percent, SignedAmount)> {
+) -> Result<(SignedAmount, Percent, Amount)> {
     let long_liquidation_price = calculate_long_liquidation_price(long_leverage, opening_price);
     let long_is_liquidated = closing_price <= long_liquidation_price;
 
@@ -1920,6 +1924,8 @@ pub fn calculate_profit_at_price(
             (short_margin, payout)
         }
     };
+
+    let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
 
     let (profit_btc, profit_percent) = calculate_profit(payout, margin);
     Ok((profit_btc, profit_percent, payout))

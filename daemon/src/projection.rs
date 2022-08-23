@@ -168,8 +168,6 @@ pub struct Cfd {
     /// Projected or final profit percent
     pub profit_percent: Option<String>,
 
-    // TODO: Payout should not be a signed amount but should be converted to a `bitcoin::Amount`
-    // when calculating
     /// Projected or final payout
     ///
     /// If we don't know the final payout yet then we calculate this based on the projected profit.
@@ -177,7 +175,7 @@ pub struct Cfd {
     /// represented as option. If we already know the final payout (based on CET or
     /// collborative close) then this is the final payout.
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub payout: Option<SignedAmount>,
+    pub payout: Option<Amount>,
     pub closing_price: Option<Price>,
 
     pub state: CfdState,
@@ -586,10 +584,6 @@ impl Cfd {
 
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
-            let payout = payout
-                .to_signed()
-                .expect("Amount to fit into signed amount");
-
             let (profit_btc, profit_percent) = calculate_profit(
                 payout,
                 self.margin
@@ -910,16 +904,11 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                 }
             };
 
-            (
-                CfdDetails { tx_url_list },
-                price,
-                SignedAmount::from(payout),
-                state,
-            )
+            (CfdDetails { tx_url_list }, price, payout, state)
         };
 
         let (profit_btc, profit_percent) = calculate_profit(
-            payout,
+            payout.inner(),
             margin
                 .to_signed()
                 .expect("Amount to fit into signed amount"),
@@ -948,7 +937,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 
             profit_btc: Some(profit_btc),
             profit_percent: Some(profit_percent.to_string()),
-            payout: Some(payout),
+            payout: Some(payout.inner()),
             closing_price,
 
             state,
