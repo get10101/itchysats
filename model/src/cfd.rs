@@ -2587,7 +2587,7 @@ mod tests {
     ) {
         // TODO: Assert on payout as well
 
-        let (profit, in_percent, _) = inverse::calculate_profit_at_price(
+        let (_, profit, in_percent) = inverse::calculate_payout_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -2623,7 +2623,7 @@ mod tests {
             .add_opening_fee(opening_fee)
             .add_funding_fee(funding_fee);
 
-        let (profit, profit_in_percent, _) = inverse::calculate_profit_at_price(
+        let (_, profit, profit_in_percent) = inverse::calculate_payout_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -2632,7 +2632,7 @@ mod tests {
             taker_long,
         )
         .unwrap();
-        let (loss, loss_in_percent, _) = inverse::calculate_profit_at_price(
+        let (_, loss, loss_in_percent) = inverse::calculate_payout_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -2692,7 +2692,7 @@ mod tests {
             .add_funding_fee(funding_fee);
 
         for price in closing_prices {
-            let (long_profit, _, _) = inverse::calculate_profit_at_price(
+            let (_, long_profit, _) = inverse::calculate_payout_at_price(
                 initial_price,
                 price,
                 quantity,
@@ -2701,7 +2701,7 @@ mod tests {
                 taker_long,
             )
             .unwrap();
-            let (short_profit, _, _) = inverse::calculate_profit_at_price(
+            let (_, short_profit, _) = inverse::calculate_payout_at_price(
                 initial_price,
                 price,
                 quantity,

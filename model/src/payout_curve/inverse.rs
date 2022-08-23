@@ -44,21 +44,24 @@ pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percen
     (profit, Percent(percent))
 }
 
-/// Compute the PNL and payout for the given CFD parameters at a particular `closing_price`.
+/// Compute the payout for the given CFD parameters at a particular `closing_price`.
+///
+/// The PNL, both as a `bitcoin::SignedAmount` and as a percentage, is also returned for
+/// convenience.
 ///
 /// The `Position` is determined based on the `FeeAccount`.
 ///
 /// These formulas are independent of the inverse payout curve implementation and are therefore
 /// theoretical. There could be slight differences between what we return here and what the payout
 /// curve determines.
-pub fn calculate_profit_at_price(
+pub fn calculate_payout_at_price(
     opening_price: Price,
     closing_price: Price,
     quantity: Contracts,
     long_leverage: Leverage,
     short_leverage: Leverage,
     fee_account: FeeAccount,
-) -> Result<(SignedAmount, Percent, Amount)> {
+) -> Result<(Amount, SignedAmount, Percent)> {
     let long_margin = calculate_margin(opening_price, quantity, long_leverage);
     let short_margin = calculate_margin(opening_price, quantity, short_leverage);
     let total_margin = long_margin + short_margin;
@@ -110,5 +113,5 @@ pub fn calculate_profit_at_price(
 
     let (profit_btc, profit_percent) = calculate_profit(payout, margin);
 
-    Ok((profit_btc, profit_percent, payout))
+    Ok((payout, profit_btc, profit_percent))
 }

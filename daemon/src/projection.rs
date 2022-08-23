@@ -630,7 +630,7 @@ impl Cfd {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(self.leverage_taker, self.role, self.position);
 
-        let (profit_btc, profit_percent, payout) = match inverse::calculate_profit_at_price(
+        let (profit_btc, profit_percent, payout) = match inverse::calculate_payout_at_price(
             self.initial_price,
             closing_price,
             self.quantity,
@@ -638,7 +638,7 @@ impl Cfd {
             short_leverage,
             self.aggregated.fee_account,
         ) {
-            Ok((profit_btc, profit_percent, payout)) => {
+            Ok((payout, profit_btc, profit_percent)) => {
                 (profit_btc, profit_percent.round_dp(1).to_string(), payout)
             }
             Err(e) => {
