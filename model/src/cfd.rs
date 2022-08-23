@@ -18,7 +18,6 @@ use crate::Identity;
 use crate::Leverage;
 use crate::LotSize;
 use crate::OpeningFee;
-use crate::Percent;
 use crate::Position;
 use crate::Price;
 use crate::Timestamp;
@@ -35,7 +34,6 @@ use bdk::bitcoin::util::key::PublicKey;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Script;
-use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::TxIn;
 use bdk::bitcoin::TxOut;
@@ -49,10 +47,8 @@ use maia_core::secp256k1_zkp::ecdsa::Signature;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::SECP256K1;
 use maia_core::TransactionExt;
-use num::ToPrimitive;
 use num::Zero;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde::Serialize;
@@ -1826,89 +1822,6 @@ pub fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Pr
     price * leverage / (leverage - 1)
 }
 
-pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percent) {
-    let payout = payout
-        .to_signed()
-        .expect("amount to fit into signed amount");
-    let margin = margin
-        .to_signed()
-        .expect("amount to fit into signed amount");
-
-    let profit = payout - margin;
-
-    let profit_sats = Decimal::from(profit.as_sat());
-    let margin_sats = Decimal::from(margin.as_sat());
-    let percent = dec!(100) * profit_sats / margin_sats;
-
-    (profit, Percent(percent))
-}
-
-/// Returns the profit/loss and payout capped by the provided margin
-///
-/// All values are calculated without using the payout curve.
-/// Profit/loss is returned as signed bitcoin amount and percent.
-pub fn calculate_profit_at_price(
-    opening_price: Price,
-    closing_price: Price,
-    quantity: Contracts,
-    long_leverage: Leverage,
-    short_leverage: Leverage,
-    fee_account: FeeAccount,
-) -> Result<(SignedAmount, Percent, Amount)> {
-    let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage);
-    let short_margin = inverse::calculate_margin(opening_price, quantity, short_leverage);
-    let total_margin = long_margin + short_margin;
-
-    let uncapped_pnl_long = {
-        let opening_price = opening_price.0;
-        let closing_price = closing_price.0;
-        let quantity = quantity.0;
-
-        let uncapped_pnl = (quantity / opening_price) - (quantity / closing_price);
-        let uncapped_pnl = uncapped_pnl
-            .round_dp_with_strategy(8, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
-        let uncapped_pnl = uncapped_pnl
-            .to_f64()
-            .context("Could not convert Decimal to f64")?;
-
-        SignedAmount::from_btc(uncapped_pnl)?
-    };
-
-    let position = fee_account.position;
-    let fee_offset = fee_account.balance();
-    let (margin, payout) = match position {
-        Position::Long => {
-            let payout = {
-                let long_margin = long_margin
-                    .to_signed()
-                    .context("Unable to compute long margin")?;
-
-                long_margin - fee_offset + uncapped_pnl_long
-            };
-
-            (long_margin, payout)
-        }
-        Position::Short => {
-            let payout = {
-                let short_margin = short_margin
-                    .to_signed()
-                    .context("Unable to compute short margin")?;
-
-                short_margin - fee_offset - uncapped_pnl_long
-            };
-
-            (short_margin, payout)
-        }
-    };
-
-    let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
-    let payout = payout.min(total_margin);
-
-    let (profit_btc, profit_percent) = calculate_profit(payout, margin);
-
-    Ok((profit_btc, profit_percent, payout))
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Cet {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
@@ -2452,10 +2365,13 @@ impl CollaborativeSettlement {
 
 #[cfg(test)]
 mod tests {
+    use crate::Percent;
+
     use super::*;
     use bdk::bitcoin;
     use bdk::bitcoin::secp256k1::SecretKey;
     use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
+    use bdk::bitcoin::SignedAmount;
     use bdk_ext::keypair;
     use bdk_ext::SecretKeyExt;
     use maia::lock_descriptor;
@@ -2671,7 +2587,7 @@ mod tests {
     ) {
         // TODO: Assert on payout as well
 
-        let (profit, in_percent, _) = calculate_profit_at_price(
+        let (profit, in_percent, _) = inverse::calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -2707,7 +2623,7 @@ mod tests {
             .add_opening_fee(opening_fee)
             .add_funding_fee(funding_fee);
 
-        let (profit, profit_in_percent, _) = calculate_profit_at_price(
+        let (profit, profit_in_percent, _) = inverse::calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -2716,7 +2632,7 @@ mod tests {
             taker_long,
         )
         .unwrap();
-        let (loss, loss_in_percent, _) = calculate_profit_at_price(
+        let (loss, loss_in_percent, _) = inverse::calculate_profit_at_price(
             initial_price,
             closing_price,
             quantity,
@@ -2776,7 +2692,7 @@ mod tests {
             .add_funding_fee(funding_fee);
 
         for price in closing_prices {
-            let (long_profit, _, _) = calculate_profit_at_price(
+            let (long_profit, _, _) = inverse::calculate_profit_at_price(
                 initial_price,
                 price,
                 quantity,
@@ -2785,7 +2701,7 @@ mod tests {
                 taker_long,
             )
             .unwrap();
-            let (short_profit, _, _) = calculate_profit_at_price(
+            let (short_profit, _, _) = inverse::calculate_profit_at_price(
                 initial_price,
                 price,
                 quantity,
