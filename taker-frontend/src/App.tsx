@@ -73,11 +73,6 @@ export const App = () => {
     const [githubVersion, setGithubVersion] = useState<SemVer | null>();
     const [daemonVersion, setDaemonVersion] = useState<SemVer | null>();
 
-    let outdated = false;
-    if (githubVersion && daemonVersion) {
-        outdated = githubVersion > daemonVersion;
-    }
-
     useWebSocket(bitmexWebSocketURL(symbol), {
         shouldReconnect: () => true,
         onMessage: (message) => {
@@ -201,12 +196,26 @@ export const App = () => {
     const {
         isOpen: outdatedWarningIsVisible,
         onClose: onCloseOutdatedWarning,
-    } = useDisclosure({ defaultIsOpen: outdated });
+        onOpen: onOpenOutdatedWarning,
+    } = useDisclosure();
+
+    useEffect(() => {
+        if (githubVersion && daemonVersion && githubVersion > daemonVersion) {
+            onOpenOutdatedWarning();
+        }
+    }, [githubVersion, daemonVersion, onOpenOutdatedWarning]);
 
     const {
         isOpen: incompatibleWarningIsVisible,
         onClose: onCloseIncompatibleWarning,
+        onOpen: onOpenIncompatibleWarning,
     } = useDisclosure({ defaultIsOpen: incompatible });
+
+    useEffect(() => {
+        if (incompatible) {
+            onOpenIncompatibleWarning();
+        }
+    }, [incompatible, onOpenIncompatibleWarning]);
 
     const pathname = location.pathname;
     useEffect(() => {
