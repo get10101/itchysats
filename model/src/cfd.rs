@@ -1826,8 +1826,11 @@ pub fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Pr
     price * leverage / (leverage - 1)
 }
 
-pub fn calculate_profit(payout: Amount, margin: SignedAmount) -> (SignedAmount, Percent) {
+pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percent) {
     let payout = payout
+        .to_signed()
+        .expect("amount to fit into signed amount");
+    let margin = margin
         .to_signed()
         .expect("amount to fit into signed amount");
 
@@ -1899,27 +1902,34 @@ pub fn calculate_profit_at_price(
         //          0 if xc >= b
         //     }
         Position::Long => {
-            let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage)
-                .to_signed()
-                .context("Unable to compute long margin")?;
+            let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage);
+            let payout = {
+                let long_margin = long_margin
+                    .to_signed()
+                    .context("Unable to compute long margin")?;
 
-            let payout = match long_is_liquidated {
-                true => SignedAmount::ZERO,
-                false => long_margin + amount_changed - fee_account.balance(),
+                match long_is_liquidated {
+                    true => SignedAmount::ZERO,
+                    false => long_margin + amount_changed - fee_account.balance(),
+                }
             };
             (long_margin, payout)
         }
         Position::Short => {
-            let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage)
-                .to_signed()
-                .context("Unable to compute long margin")?;
-            let short_margin = inverse::calculate_margin(opening_price, quantity, short_leverage)
-                .to_signed()
-                .context("Unable to compute long margin")?;
+            let short_margin = inverse::calculate_margin(opening_price, quantity, short_leverage);
 
-            let payout = match long_is_liquidated {
-                true => long_margin + short_margin,
-                false => short_margin - amount_changed - fee_account.balance(),
+            let payout = {
+                let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage)
+                    .to_signed()
+                    .context("Unable to compute long margin")?;
+                let short_margin = short_margin
+                    .to_signed()
+                    .context("Unable to compute long margin")?;
+
+                match long_is_liquidated {
+                    true => long_margin + short_margin,
+                    false => short_margin - amount_changed - fee_account.balance(),
+                }
             };
             (short_margin, payout)
         }

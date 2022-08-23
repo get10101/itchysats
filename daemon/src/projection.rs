@@ -584,12 +584,7 @@ impl Cfd {
 
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
-            let (profit_btc, profit_percent) = calculate_profit(
-                payout,
-                self.margin
-                    .to_signed()
-                    .expect("Amount to fit into signed amount"),
-            );
+            let (profit_btc, profit_percent) = calculate_profit(payout, self.margin);
 
             return Self {
                 payout: Some(payout),
@@ -907,12 +902,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             (CfdDetails { tx_url_list }, price, payout, state)
         };
 
-        let (profit_btc, profit_percent) = calculate_profit(
-            payout.inner(),
-            margin
-                .to_signed()
-                .expect("Amount to fit into signed amount"),
-        );
+        let (profit_btc, profit_percent) = calculate_profit(payout.inner(), margin);
 
         // there are no events to apply at this stage for closed CFDs,
         // which is why this field is mostly ignored
