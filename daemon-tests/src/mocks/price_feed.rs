@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use xtra_bitmex_price_feed::LatestQuotes;
 use xtra_productivity::xtra_productivity;
 
 #[derive(Clone)]
@@ -28,25 +29,22 @@ impl xtra::Actor for PriceFeedActor {
 
 #[xtra_productivity]
 impl PriceFeedActor {
-    async fn handle(
-        &mut self,
-        _: xtra_bitmex_price_feed::LatestQuote,
-    ) -> Option<xtra_bitmex_price_feed::Quote> {
-        self.mock.lock().await.latest_quote()
+    async fn handle(&mut self, _: xtra_bitmex_price_feed::GetLatestQuotes) -> LatestQuotes {
+        self.mock.lock().await.latest_quotes()
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 pub struct MockPriceFeed {
-    latest_quote: Option<xtra_bitmex_price_feed::Quote>,
+    latest_quotes: LatestQuotes,
 }
 
 impl MockPriceFeed {
-    pub fn latest_quote(&self) -> Option<xtra_bitmex_price_feed::Quote> {
-        self.latest_quote
+    pub fn latest_quotes(&self) -> LatestQuotes {
+        self.latest_quotes.clone()
     }
 
-    pub fn set_latest_quote(&mut self, new_quote: Option<xtra_bitmex_price_feed::Quote>) {
-        self.latest_quote = new_quote;
+    pub fn set_latest_quotes(&mut self, new_quote: LatestQuotes) {
+        self.latest_quotes = new_quote;
     }
 }

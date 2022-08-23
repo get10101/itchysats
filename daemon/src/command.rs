@@ -35,6 +35,20 @@ impl Executor {
         }
     }
 
+    /// A way of querying values of a CFD, without issuing any commands or
+    /// mutating its state.
+    ///
+    /// Can be useful when preparing a command.
+    pub async fn query<T>(&self, id: OrderId, query: impl Fn(&Cfd) -> Result<T>) -> Result<T> {
+        let cfd = self
+            .db
+            .load_open_cfd(id, ())
+            .await
+            .context("Failed to load CFD")?;
+
+        query(&cfd).context("Failed to execute command on CFD")
+    }
+
     pub async fn execute<T: ExtractEventFromTuple>(
         &self,
         id: OrderId,

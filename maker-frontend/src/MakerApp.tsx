@@ -101,7 +101,7 @@ export default function App() {
     );
 
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
-    const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
+    const priceInfo = useLatestEvent<PriceInfo>(source, "btcusd_quote");
 
     const toast = useToast();
 

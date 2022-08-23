@@ -57,6 +57,7 @@ use tokio::sync::watch;
 use tracing::info_span;
 use tracing::Instrument;
 use xtra::prelude::MessageChannel;
+use xtra_bitmex_price_feed::GetLatestQuotes;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncNext;
 
@@ -76,13 +77,12 @@ pub struct Actor {
     db: sqlite_db::Connection,
     tx: Tx,
     state: State,
-    price_feed:
-        MessageChannel<xtra_bitmex_price_feed::LatestQuote, Option<xtra_bitmex_price_feed::Quote>>,
+    price_feed: MessageChannel<GetLatestQuotes, xtra_bitmex_price_feed::LatestQuotes>,
     role: Role,
 }
 
 pub struct Feeds {
-    pub quote: watch::Receiver<Option<Quote>>,
+    pub quote: watch::Receiver<LatestQuotes>,
     pub offers: watch::Receiver<MakerOffers>,
     pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
 }
@@ -91,15 +91,12 @@ impl Actor {
     pub fn new(
         db: sqlite_db::Connection,
         network: Network,
-        price_feed: MessageChannel<
-            xtra_bitmex_price_feed::LatestQuote,
-            Option<xtra_bitmex_price_feed::Quote>,
-        >,
+        price_feed: MessageChannel<GetLatestQuotes, xtra_bitmex_price_feed::LatestQuotes>,
         role: Role,
     ) -> (Self, Feeds) {
         let (tx_cfds, rx_cfds) = watch::channel(None);
         let (tx_offer, rx_offer) = watch::channel(MakerOffers::default());
-        let (tx_quote, rx_quote) = watch::channel(None);
+        let (tx_quote, rx_quote) = watch::channel(LatestQuotes::default());
 
         let actor = Self {
             db,
@@ -567,7 +564,7 @@ impl Cfd {
         self
     }
 
-    pub fn with_current_quote(self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) -> Self {
+    pub fn with_current_quote(self, latest_quotes: Option<&LatestQuotes>) -> Self {
         // If the payout was already set we don't care about the current quote, this applies to
         // closed CFDs
         if self.payout.is_some() {
@@ -596,6 +593,8 @@ impl Cfd {
         }
 
         // Otherwise, compute based on current quote.
+        let latest_quote = latest_quotes.and_then(|quote| quote.get(&self.contract_symbol));
+
         let latest_quote = match latest_quote {
             Some(latest_quote) => latest_quote,
             None => {
@@ -759,18 +758,14 @@ impl Cfd {
 struct Tx {
     cfds: watch::Sender<Option<Vec<Cfd>>>,
     pub offer: watch::Sender<MakerOffers>,
-    pub quote: watch::Sender<Option<Quote>>,
+    pub quote: watch::Sender<LatestQuotes>,
 }
 
 impl Tx {
-    fn send_cfds_update(
-        &self,
-        cfds: HashMap<OrderId, Cfd>,
-        quote: Option<xtra_bitmex_price_feed::Quote>,
-    ) {
+    fn send_cfds_update(&self, cfds: HashMap<OrderId, Cfd>, quotes: &LatestQuotes) {
         let cfds_with_quote = cfds
             .into_iter()
-            .map(|(_, cfd)| cfd.with_current_quote(quote))
+            .map(|(_, cfd)| cfd.with_current_quote(Some(quotes)))
             .sorted_by(|a, b| {
                 Ord::cmp(
                     &b.aggregated.creation_timestamp,
@@ -782,8 +777,8 @@ impl Tx {
         let _ = self.cfds.send(Some(cfds_with_quote));
     }
 
-    fn send_quote_update(&self, quote: Option<xtra_bitmex_price_feed::Quote>) {
-        let _ = self.quote.send(quote.map(|q| q.into()));
+    fn send_quotes_update(&self, quotes: LatestQuotes) {
+        let _ = self.quote.send(quotes);
     }
 
     fn send_offer_update(&self, offers: MakerOffers) -> Result<()> {
@@ -796,7 +791,7 @@ impl Tx {
 /// Internal struct to keep state in one place
 struct State {
     network: Network,
-    quote: Option<xtra_bitmex_price_feed::Quote>,
+    latest_quotes: LatestQuotes,
     offers: MakerOffers,
     /// All hydrated CFDs.
     cfds: Option<HashMap<OrderId, Cfd>>,
@@ -1038,7 +1033,7 @@ impl State {
     fn new(network: Network) -> Self {
         Self {
             network,
-            quote: None,
+            latest_quotes: LatestQuotes::default(),
             cfds: None,
             offers: MakerOffers::default(),
         }
@@ -1057,8 +1052,8 @@ impl State {
         Ok(())
     }
 
-    fn update_quote(&mut self, quote: Option<xtra_bitmex_price_feed::Quote>) {
-        self.quote = quote;
+    fn update_quotes(&mut self, quotes: LatestQuotes) {
+        self.latest_quotes = quotes;
     }
 
     fn update_offers(&mut self, new_offers: Vec<CfdOffer>) {
@@ -1115,7 +1110,7 @@ impl Actor {
                 .cfds
                 .clone()
                 .expect("we initialized the state above; qed"),
-            self.state.quote,
+            &self.state.latest_quotes,
         );
     }
 
@@ -1130,7 +1125,7 @@ impl Actor {
                 .cfds
                 .clone()
                 .expect("update_cfd fails if the CFDs have not been initialized yet"),
-            self.state.quote,
+            &self.state.latest_quotes,
         );
     }
 
@@ -1154,9 +1149,9 @@ impl Actor {
         }
     }
 
-    fn handle(&mut self, msg: Update<Option<xtra_bitmex_price_feed::Quote>>) {
-        self.state.update_quote(msg.0);
-        self.tx.send_quote_update(msg.0);
+    fn handle(&mut self, msg: Update<LatestQuotes>) {
+        self.state.update_quotes(msg.0.clone());
+        self.tx.send_quotes_update(msg.0.clone());
 
         let hydrated_cfds = match self.state.cfds.clone() {
             None => {
@@ -1166,7 +1161,7 @@ impl Actor {
             Some(cfds) => cfds,
         };
 
-        self.tx.send_cfds_update(hydrated_cfds, msg.0);
+        self.tx.send_cfds_update(hydrated_cfds, &msg.0);
     }
 }
 
@@ -1184,17 +1179,17 @@ impl xtra::Actor for Actor {
                 loop {
                     {
                         let span = info_span!("Update projection with latest quote");
-                        // TODO: subscribe to all the quotes
                         let latest = price_feed
-                            .send(xtra_bitmex_price_feed::LatestQuote(
-                                xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
-                            ))
+                            .send(GetLatestQuotes)
                             .instrument(span.clone())
                             .await;
 
                         match latest {
-                            Ok(quote) => {
-                                let _ = this.send(Update(quote)).instrument(span).await;
+                            Ok(quotes) => {
+                                let _ = this
+                                    .send(Update(into_projection_quotes(quotes)))
+                                    .instrument(span)
+                                    .await;
                             }
                             Err(_) => {
                                 span.in_scope(|| {
@@ -1230,6 +1225,24 @@ impl From<xtra_bitmex_price_feed::Quote> for Quote {
             last_updated_at: Timestamp::new(quote.timestamp.unix_timestamp()),
         }
     }
+}
+
+pub type LatestQuotes = HashMap<ContractSymbol, Quote>;
+
+/// Converts between ContractSymbol types
+fn as_contract_symbol(symbol: &xtra_bitmex_price_feed::ContractSymbol) -> ContractSymbol {
+    match symbol {
+        xtra_bitmex_price_feed::ContractSymbol::BtcUsd => ContractSymbol::BtcUsd,
+        xtra_bitmex_price_feed::ContractSymbol::EthUsd => ContractSymbol::EthUsd,
+    }
+}
+
+/// Converts quotes from xtra_bitmex_price_feed into projection types
+fn into_projection_quotes(latest_quotes: xtra_bitmex_price_feed::LatestQuotes) -> LatestQuotes {
+    latest_quotes
+        .iter()
+        .map(|(symbol, quote)| (as_contract_symbol(symbol), (*quote).into()))
+        .collect()
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
