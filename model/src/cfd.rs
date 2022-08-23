@@ -1855,89 +1855,57 @@ pub fn calculate_profit_at_price(
     short_leverage: Leverage,
     fee_account: FeeAccount,
 ) -> Result<(SignedAmount, Percent, Amount)> {
-    let long_liquidation_price = calculate_long_liquidation_price(long_leverage, opening_price);
-    let long_is_liquidated = closing_price <= long_liquidation_price;
+    let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage);
+    let short_margin = inverse::calculate_margin(opening_price, quantity, short_leverage);
+    let total_margin = long_margin + short_margin;
 
-    let amount_changed = {
+    let uncapped_pnl_long = {
         let opening_price = opening_price.0;
         let closing_price = closing_price.0;
         let quantity = quantity.0;
 
-        let amount_changed = (quantity / opening_price) - (quantity / closing_price);
-        let amount_changed = amount_changed
+        let uncapped_pnl = (quantity / opening_price) - (quantity / closing_price);
+        let uncapped_pnl = uncapped_pnl
             .round_dp_with_strategy(8, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
-        let amount_changed = amount_changed
+        let uncapped_pnl = uncapped_pnl
             .to_f64()
             .context("Could not convert Decimal to f64")?;
 
-        SignedAmount::from_btc(amount_changed)?
+        SignedAmount::from_btc(uncapped_pnl)?
     };
 
-    // calculate profit/loss (P and L) in BTC
-    let (margin, payout) = match fee_account.position {
-        // TODO: Make sure that what is written down below makes sense (we have the general case
-        // now)
-
-        // The general case is:
-        //   let:
-        //     P = payout
-        //     Q = quantity
-        //     Ll = long_leverage
-        //     Ls = short_leverage
-        //     xi = initial_price
-        //     xc = closing_price
-        //
-        //     a = xi * Ll / (Ll + 1)
-        //     b = xi * Ls / (Ls - 1)
-        //
-        //     P_long(xc) = {
-        //          0 if xc <= a,
-        //          Q / (xi * Ll) + Q * (1 / xi - 1 / xc) if a < xc < b,
-        //          Q / xi * (1/Ll + 1/Ls) if xc if xc >= b
-        //     }
-        //
-        //     P_short(xc) = {
-        //          Q / xi * (1/Ll + 1/Ls) if xc <= a,
-        //          Q / (xi * Ls) - Q * (1 / xi - 1 / xc) if a < xc < b,
-        //          0 if xc >= b
-        //     }
+    let position = fee_account.position;
+    let fee_offset = fee_account.balance();
+    let (margin, payout) = match position {
         Position::Long => {
-            let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage);
             let payout = {
                 let long_margin = long_margin
                     .to_signed()
                     .context("Unable to compute long margin")?;
 
-                match long_is_liquidated {
-                    true => SignedAmount::ZERO,
-                    false => long_margin + amount_changed - fee_account.balance(),
-                }
+                long_margin - fee_offset + uncapped_pnl_long
             };
+
             (long_margin, payout)
         }
         Position::Short => {
-            let short_margin = inverse::calculate_margin(opening_price, quantity, short_leverage);
-
             let payout = {
-                let long_margin = inverse::calculate_margin(opening_price, quantity, long_leverage)
-                    .to_signed()
-                    .context("Unable to compute long margin")?;
                 let short_margin = short_margin
                     .to_signed()
-                    .context("Unable to compute long margin")?;
+                    .context("Unable to compute short margin")?;
 
-                match long_is_liquidated {
-                    true => long_margin + short_margin,
-                    false => short_margin - amount_changed - fee_account.balance(),
-                }
+                short_margin - fee_offset - uncapped_pnl_long
             };
+
             (short_margin, payout)
         }
     };
 
     let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
+    let payout = payout.min(total_margin);
 
     let (profit_btc, profit_percent) = calculate_profit(payout, margin);
+
     Ok((profit_btc, profit_percent, payout))
 }
 
