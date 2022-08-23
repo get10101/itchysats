@@ -145,27 +145,6 @@ impl str::FromStr for Price {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct InversePrice(Decimal);
-
-impl InversePrice {
-    pub fn new(value: Price) -> Result<Self, Error> {
-        if value.0 == Decimal::ZERO {
-            return Result::Err(Error::ZeroPrice);
-        }
-
-        if value.0 < Decimal::ZERO {
-            return Result::Err(Error::NegativePrice);
-        }
-
-        Ok(Self(Decimal::ONE / value.0))
-    }
-
-    pub fn try_into_u64(&self) -> Result<u64> {
-        self.0.to_u64().context("Could not fit decimal into u64")
-    }
-}
-
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Leverage(u8);
 
@@ -301,46 +280,6 @@ impl Div<Leverage> for Price {
     }
 }
 
-impl Mul<InversePrice> for Contracts {
-    type Output = Amount;
-
-    fn mul(self, rhs: InversePrice) -> Self::Output {
-        let mut btc = self.0 * rhs.0;
-        btc.rescale(8);
-        // we need to set to 0 because it can happen that we get a negative 0 which is invalid
-        let btc = if btc.is_zero() { Decimal::ZERO } else { btc };
-        Amount::from_str_in(&btc.to_string(), Denomination::Bitcoin)
-            .expect("Error computing BTC amount")
-    }
-}
-
-impl Mul<Leverage> for InversePrice {
-    type Output = InversePrice;
-
-    fn mul(self, rhs: Leverage) -> Self::Output {
-        let value = self.0 * Decimal::from(rhs.0);
-        Self(value)
-    }
-}
-
-impl Mul<InversePrice> for Leverage {
-    type Output = InversePrice;
-
-    fn mul(self, rhs: InversePrice) -> Self::Output {
-        let value = Decimal::from(self.0) * rhs.0;
-        InversePrice(value)
-    }
-}
-
-impl Div<Leverage> for InversePrice {
-    type Output = InversePrice;
-
-    fn div(self, rhs: Leverage) -> Self::Output {
-        let value = self.0 / Decimal::from(rhs.0);
-        Self(value)
-    }
-}
-
 impl Add<Price> for Price {
     type Output = Price;
 
@@ -353,22 +292,6 @@ impl Sub<Price> for Price {
     type Output = Price;
 
     fn sub(self, rhs: Price) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl Add<InversePrice> for InversePrice {
-    type Output = InversePrice;
-
-    fn add(self, rhs: InversePrice) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl Sub<InversePrice> for InversePrice {
-    type Output = InversePrice;
-
-    fn sub(self, rhs: InversePrice) -> Self::Output {
         Self(self.0 - rhs.0)
     }
 }
@@ -1160,43 +1083,12 @@ mod tests {
     }
 
     #[test]
-    fn quantity_for_1_btc_buys_1_btc() {
-        let quantity = Contracts::new(61234);
-        let price = Price::new(dec!(61234)).unwrap();
-        let inv_price = InversePrice::new(price).unwrap();
-        let res_0 = quantity / price;
-        let res_1 = quantity * inv_price;
-
-        assert_eq!(res_0, Amount::ONE_BTC);
-        assert_eq!(res_1, Amount::ONE_BTC);
-    }
-
-    #[test]
     fn leverage_does_not_alter_type() {
         let quantity = Contracts::new(61234);
         let leverage = Leverage::new(3).unwrap();
         let res = quantity * leverage / leverage;
 
         assert_eq!(res.0, quantity.0);
-    }
-
-    #[test]
-    fn test_algebra_with_types() {
-        let quantity = Contracts::new(61234);
-        let leverage = Leverage::new(5).unwrap();
-        let price = Price::new(dec!(61234)).unwrap();
-        let expected_buying = Amount::from_btc(0.2).unwrap();
-
-        let liquidation_price = price * leverage / (leverage + 1);
-        let inv_price = InversePrice::new(price).unwrap();
-        let inv_liquidation_price = InversePrice::new(liquidation_price).unwrap();
-
-        let long_buying = quantity / (price * leverage);
-        let long_payout =
-            (quantity / leverage) * ((leverage + 1) * inv_price - leverage * inv_liquidation_price);
-
-        assert_eq!(long_buying, expected_buying);
-        assert_eq!(long_payout, Amount::ZERO);
     }
 
     #[test]

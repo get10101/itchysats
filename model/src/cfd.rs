@@ -15,7 +15,6 @@ use crate::FeeAccount;
 use crate::FundingFee;
 use crate::FundingRate;
 use crate::Identity;
-use crate::InversePrice;
 use crate::Leverage;
 use crate::LotSize;
 use crate::OpeningFee;
@@ -50,6 +49,7 @@ use maia_core::secp256k1_zkp::ecdsa::Signature;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::SECP256K1;
 use maia_core::TransactionExt;
+use num::ToPrimitive;
 use num::Zero;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -1848,19 +1848,23 @@ pub fn calculate_profit_at_price(
     short_leverage: Leverage,
     fee_account: FeeAccount,
 ) -> Result<(SignedAmount, Percent, SignedAmount)> {
-    let inv_initial_price =
-        InversePrice::new(opening_price).context("cannot invert invalid price")?;
-    let inv_closing_price =
-        InversePrice::new(closing_price).context("cannot invert invalid price")?;
     let long_liquidation_price = calculate_long_liquidation_price(long_leverage, opening_price);
     let long_is_liquidated = closing_price <= long_liquidation_price;
 
-    let amount_changed = (quantity * inv_initial_price)
-        .to_signed()
-        .context("Unable to convert to SignedAmount")?
-        - (quantity * inv_closing_price)
-            .to_signed()
-            .context("Unable to convert to SignedAmount")?;
+    let amount_changed = {
+        let opening_price = opening_price.0;
+        let closing_price = closing_price.0;
+        let quantity = quantity.0;
+
+        let amount_changed = (quantity / opening_price) - (quantity / closing_price);
+        let amount_changed = amount_changed
+            .round_dp_with_strategy(8, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        let amount_changed = amount_changed
+            .to_f64()
+            .context("Could not convert Decimal to f64")?;
+
+        SignedAmount::from_btc(amount_changed)?
+    };
 
     // calculate profit/loss (P and L) in BTC
     let (margin, payout) = match fee_account.position {
