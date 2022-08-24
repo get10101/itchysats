@@ -90,9 +90,7 @@ fn calculate_payout_parameters(
     n_payouts: usize,
     fee: CompleteFee,
 ) -> Result<Vec<PayoutParameter>> {
-    let initial_rate = price
-        .try_into_f64()
-        .context("Cannot convert price to f64")?;
+    let initial_rate = price.to_f64();
     let quantity = quantity
         .try_into_u64()
         .context("Cannot convert quantity to u64")? as usize;
