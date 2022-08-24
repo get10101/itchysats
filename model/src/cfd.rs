@@ -1103,13 +1103,10 @@ impl Cfd {
         )?
         .settlement();
 
-        let payout = {
-            let current_price = current_price.try_into_u64()?;
-            payouts
-                .iter()
-                .find(|&x| x.digits().range().contains(&current_price))
-                .context("find current price on the payout curve")?
-        };
+        let payout = payouts
+            .iter()
+            .find(|&x| x.digits().range().contains(&current_price.to_u64()))
+            .context("find current price on the payout curve")?;
 
         let dlc = self
             .dlc
@@ -1158,13 +1155,10 @@ impl Cfd {
         )?
         .settlement();
 
-        let payout = {
-            let proposal_price = proposal.price.try_into_u64()?;
-            payouts
-                .iter()
-                .find(|&x| x.digits().range().contains(&proposal_price))
-                .context("find current price on the payout curve")?
-        };
+        let payout = payouts
+            .iter()
+            .find(|&x| x.digits().range().contains(&proposal.price.to_u64()))
+            .context("find current price on the payout curve")?;
 
         if proposal.maker != *payout.maker_amount() || proposal.taker != *payout.taker_amount() {
             bail!("The settlement amounts sent by the taker are not according to the agreed payout curve. Expected taker {} and maker {} but received taker {} and maker {}", payout.taker_amount(), payout.maker_amount(), proposal.taker, proposal.maker);

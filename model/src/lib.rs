@@ -116,8 +116,8 @@ impl Price {
         Ok(Self(value))
     }
 
-    pub fn try_into_u64(&self) -> Result<u64> {
-        self.0.to_u64().context("Could not fit decimal into u64")
+    pub fn to_u64(&self) -> u64 {
+        self.0.to_u64().expect("price to fit into u64")
     }
 
     pub fn to_f64(&self) -> f64 {
