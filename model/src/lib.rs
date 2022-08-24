@@ -54,14 +54,6 @@ pub use transaction_ext::TransactionExt;
 /// with the non-collaborative settlement of the CFD.
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
-#[derive(thiserror::Error, Debug, Clone, Copy)]
-pub enum Error {
-    #[error("Price of zero is not allowed")]
-    ZeroPrice,
-    #[error("Negative Price is unimplemented")]
-    NegativePrice,
-}
-
 /// Represents "quantity" or "contract size" in Cfd terms
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Contracts(Decimal);
@@ -104,14 +96,8 @@ pub struct Price(Decimal);
 impl Price {
     const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
 
-    pub fn new(value: Decimal) -> Result<Self, Error> {
-        if value == Decimal::ZERO {
-            return Result::Err(Error::ZeroPrice);
-        }
-
-        if value < Decimal::ZERO {
-            return Result::Err(Error::NegativePrice);
-        }
+    pub fn new(value: Decimal) -> Result<Self> {
+        ensure!(value > Decimal::ZERO, "Non-positive price not supported");
 
         Ok(Self(value))
     }
