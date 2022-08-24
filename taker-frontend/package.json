@@ -10,7 +10,7 @@
     "test": "vite-jest"
   },
   "dependencies": {
-    "@chakra-ui/icons": "^2.0.8",
+    "@chakra-ui/icons": "^2.0.9",
     "@chakra-ui/react": "^2.2.8",
     "@emotion/react": "^11.10.0",
     "@emotion/styled": "^11",
@@ -21,7 +21,7 @@
     "@testing-library/user-event": "^14.4.3",
     "@types/eslint": "^8.4.6",
     "@types/jest": "^27.5.0",
-    "@types/node": "^18.7.9",
+    "@types/node": "^18.7.13",
     "@types/react": "^18.0.17",
     "@types/react-dom": "^18.0.6",
     "@types/semver": "^7.3.12",
