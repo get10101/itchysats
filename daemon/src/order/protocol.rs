@@ -9,10 +9,10 @@ use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::CfdTransactions;
 use maia_core::PartyParams;
 use maia_core::PunishParams;
+use model::Contracts;
 use model::Leverage;
 use model::Offer;
 use model::OrderId;
-use model::Usd;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -23,7 +23,7 @@ pub(crate) enum TakerMessage {
     PlaceOrder {
         id: OrderId,
         offer: Offer,
-        quantity: Usd,
+        quantity: Contracts,
         leverage: Leverage,
     },
     ContractSetupMsg(Box<SetupMsg>),

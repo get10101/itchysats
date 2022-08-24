@@ -40,6 +40,9 @@ function OrderTile(
                     <Text width={labelWidth}>Leverage Choices</Text>
                     <Text>[{maker_offer.leverage_details.map(leverage => `${leverage.leverage},`)}]</Text>
 
+                    <Text width={labelWidth}>Lot Size</Text>
+                    <Text>{maker_offer.lot_size}</Text>
+
                     <Text width={labelWidth}>Opening Fee</Text>
                     <Text>{maker_offer.opening_fee}</Text>
 

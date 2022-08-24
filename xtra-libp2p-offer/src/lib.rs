@@ -11,13 +11,14 @@ mod tests {
     use futures::Future;
     use model::olivia::BitMexPriceEventId;
     use model::ContractSymbol;
+    use model::Contracts;
     use model::FundingRate;
     use model::Leverage;
+    use model::LotSize;
     use model::Position;
     use model::Price;
     use model::Timestamp;
     use model::TxFeeRate;
-    use model::Usd;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use std::time::Duration;
@@ -199,8 +200,8 @@ mod tests {
             contract_symbol: ContractSymbol::BtcUsd,
             position_maker,
             price: Price::new(dec!(1000)).unwrap(),
-            min_quantity: Usd::new(dec!(100)),
-            max_quantity: Usd::new(dec!(1000)),
+            min_quantity: Contracts::new(100),
+            max_quantity: Contracts::new(1000),
             leverage_choices: vec![Leverage::TWO],
             creation_timestamp_maker: Timestamp::now(),
             settlement_interval: time::Duration::hours(24),
@@ -210,6 +211,7 @@ mod tests {
             tx_fee_rate: TxFeeRate::default(),
             funding_rate: FundingRate::new(Decimal::ONE).unwrap(),
             opening_fee: Default::default(),
+            lot_size: LotSize::new(100),
         }
     }
 }

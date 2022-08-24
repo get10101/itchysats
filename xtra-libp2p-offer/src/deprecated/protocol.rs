@@ -5,6 +5,7 @@ use futures::AsyncWriteExt;
 use futures::SinkExt;
 use model::olivia::BitMexPriceEventId;
 use model::ContractSymbol;
+use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
 use model::OfferId;
@@ -14,7 +15,6 @@ use model::Position;
 use model::Price;
 use model::Timestamp;
 use model::TxFeeRate;
-use model::Usd;
 use serde::Deserialize;
 use serde::Serialize;
 use time::Duration;
@@ -47,8 +47,8 @@ pub(crate) struct Offer {
     #[serde(rename = "position")]
     position_maker: Position,
     price: Price,
-    min_quantity: Usd,
-    max_quantity: Usd,
+    min_quantity: Contracts,
+    max_quantity: Contracts,
     #[serde(rename = "leverage")]
     leverage_taker: Leverage,
     leverage_choices: Vec<Leverage>,

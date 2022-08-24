@@ -122,7 +122,7 @@ impl Connection {
             position: cfd.position.into(),
             initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage.into(),
-            n_contracts: cfd.n_contracts.into(),
+            n_contracts: cfd.n_contracts.try_into()?,
             counterparty_network_identity: cfd.counterparty_network_identity.into(),
             counterparty_peer_id: cfd.counterparty_peer_id.into(),
             role: cfd.role.into(),
@@ -169,11 +169,7 @@ async fn insert_failed_cfd(
         bail!("Failed CFD does not have expected event")
     };
 
-    let n_contracts = cfd
-        .quantity_usd
-        .try_into_u64()
-        .expect("number of contracts to fit into a u64");
-    let n_contracts = models::Contracts::from(n_contracts);
+    let n_contracts = models::Contracts::from(cfd.quantity);
 
     let fees = {
         let (long_leverage, short_leverage) =
@@ -181,7 +177,7 @@ async fn insert_failed_cfd(
 
         let initial_funding_fee = FundingFee::calculate(
             cfd.initial_price,
-            cfd.quantity_usd,
+            cfd.quantity,
             long_leverage,
             short_leverage,
             cfd.initial_funding_rate,

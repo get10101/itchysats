@@ -1,5 +1,6 @@
 use crate::olivia::BitMexPriceEventId;
 use crate::CompleteFee;
+use crate::Contracts;
 use crate::Dlc;
 use crate::FeeAccount;
 use crate::FundingFee;
@@ -8,7 +9,6 @@ use crate::Price;
 use crate::RevokedCommit;
 use crate::TxFeeRate;
 use crate::Txid;
-use crate::Usd;
 use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
@@ -55,7 +55,7 @@ impl std::fmt::Display for Version {
 #[derive(Debug, Clone, Copy)]
 pub struct RolloverParams {
     pub price: Price,
-    pub quantity: Usd,
+    pub quantity: Contracts,
     pub long_leverage: Leverage,
     pub short_leverage: Leverage,
     pub refund_timelock: u32,
@@ -69,7 +69,7 @@ impl RolloverParams {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         price: Price,
-        quantity: Usd,
+        quantity: Contracts,
         long_leverage: Leverage,
         short_leverage: Leverage,
         refund_timelock: u32,

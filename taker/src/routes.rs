@@ -14,11 +14,11 @@ use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::Contracts;
 use model::Leverage;
 use model::OrderId;
 use model::Price;
 use model::Timestamp;
-use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
@@ -162,7 +162,7 @@ impl Heartbeat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CfdOrderRequest {
     pub order_id: OrderId,
-    pub quantity: Usd,
+    pub quantity: Contracts,
     pub leverage: Leverage,
 }
 
@@ -230,7 +230,7 @@ pub fn get_health_check() {}
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct MarginRequest {
     pub price: Price,
-    pub quantity: Usd,
+    pub quantity: Contracts,
     pub leverage: Leverage,
 
     #[serde(with = "bdk::bitcoin::util::amount::serde::as_btc")]

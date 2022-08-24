@@ -34,6 +34,7 @@ use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;
 use model::CompleteFee;
 use model::ContractSymbol;
+use model::Contracts;
 use model::Dlc;
 use model::EventKind;
 use model::FeeAccount;
@@ -41,13 +42,13 @@ use model::FundingFee;
 use model::FundingRate;
 use model::Identity;
 use model::Leverage;
+use model::LotSize;
 use model::OpeningFee;
 use model::OrderId;
 use model::Position;
 use model::Price;
 use model::Role;
 use model::TxFeeRate;
-use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -238,7 +239,7 @@ macro_rules! wait_next_state_multi_cfd {
 pub struct OpenCfdArgs {
     pub position_maker: Position,
     pub initial_price: Price,
-    pub quantity: Usd,
+    pub quantity: Contracts,
     pub taker_leverage: Leverage,
     pub oracle_data: OliviaData,
 }
@@ -268,7 +269,7 @@ impl Default for OpenCfdArgs {
         Self {
             position_maker: Position::Short,
             initial_price: Price::new(dummy_price()).unwrap(),
-            quantity: Usd::new(dec!(100)),
+            quantity: Contracts::new(100),
             taker_leverage: Leverage::TWO,
             oracle_data: OliviaData::example_0(),
         }
@@ -385,14 +386,14 @@ pub struct FeeCalculator {
     maker_position: Position,
 
     offer_params: OfferParams,
-    quantity: Usd,
+    quantity: Contracts,
     taker_leverage: Leverage,
 }
 
 impl FeeCalculator {
     pub fn new(
         offer_params: OfferParams,
-        quantity: Usd,
+        quantity: Contracts,
         taker_leverage: Leverage,
         maker_position: Position,
     ) -> Self {
@@ -722,6 +723,7 @@ impl Maker {
             opening_fee,
             leverage_choices,
             contract_symbol,
+            lot_size,
         } = offer_params;
         self.system
             .set_offer_params(
@@ -735,6 +737,7 @@ impl Maker {
                 opening_fee,
                 leverage_choices,
                 contract_symbol,
+                lot_size,
             )
             .await
             .unwrap();
@@ -988,8 +991,8 @@ impl OfferParamsBuilder {
         OfferParamsBuilder(OfferParams {
             price_long: Some(dummy_price),
             price_short: Some(dummy_price),
-            min_quantity: Usd::new(dec!(100)),
-            max_quantity: Usd::new(dec!(1000)),
+            min_quantity: Contracts::new(100),
+            max_quantity: Contracts::new(1000),
             tx_fee_rate: TxFeeRate::default(),
             // 8.76% annualized = rate of 0.0876 annualized = rate of 0.00024 daily
             funding_rate_long: FundingRate::new(dec!(0.00024)).unwrap(),
@@ -997,6 +1000,7 @@ impl OfferParamsBuilder {
             opening_fee: OpeningFee::new(Amount::from_sat(2)),
             leverage_choices: vec![Leverage::TWO],
             contract_symbol: ContractSymbol::BtcUsd,
+            lot_size: LotSize::new(100),
         })
     }
 
@@ -1027,7 +1031,7 @@ impl Default for OfferParamsBuilder {
 fn dummy_funding_fee() -> FundingFee {
     FundingFee::calculate(
         Price::new(dec!(10000)).unwrap(),
-        Usd::ZERO,
+        Contracts::ZERO,
         Leverage::ONE,
         Leverage::ONE,
         Default::default(),

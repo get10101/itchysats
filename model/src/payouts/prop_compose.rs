@@ -1,7 +1,7 @@
 use crate::CompleteFee;
+use crate::Contracts;
 use crate::Leverage;
 use crate::Price;
-use crate::Usd;
 use bdk::bitcoin::Amount;
 use num::FromPrimitive;
 use proptest::prop_compose;
@@ -17,10 +17,9 @@ prop_compose! {
 
 #[cfg(test)]
 prop_compose! {
-    pub fn arb_contracts(min: u64, max: u64)(contracts in min..max) -> Usd {
-        let contracts = Decimal::from(contracts);
+    pub fn arb_contracts(min: u64, max: u64)(contracts in min..max) -> Contracts {
 
-        Usd::new(contracts)
+        Contracts::new(contracts)
     }
 }
 

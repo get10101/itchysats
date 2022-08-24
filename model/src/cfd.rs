@@ -9,19 +9,20 @@ use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;
 use crate::CompleteFee;
 use crate::ContractSymbol;
+use crate::Contracts;
 use crate::FeeAccount;
 use crate::FundingFee;
 use crate::FundingRate;
 use crate::Identity;
 use crate::InversePrice;
 use crate::Leverage;
+use crate::LotSize;
 use crate::OpeningFee;
 use crate::Percent;
 use crate::Position;
 use crate::Price;
 use crate::Timestamp;
 use crate::TxFeeRate;
-use crate::Usd;
 use crate::SETTLEMENT_INTERVAL;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -152,8 +153,8 @@ pub struct Offer {
 
     pub price: Price,
 
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
+    pub min_quantity: Contracts,
+    pub max_quantity: Contracts,
 
     /// A selection of leverages that the maker allows for the taker
     pub leverage_choices: Vec<Leverage>,
@@ -172,6 +173,7 @@ pub struct Offer {
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub opening_fee: OpeningFee,
+    pub lot_size: LotSize,
 }
 
 impl Offer {
@@ -179,14 +181,15 @@ impl Offer {
     pub fn new(
         position_maker: Position,
         price: Price,
-        min_quantity: Usd,
-        max_quantity: Usd,
+        min_quantity: Contracts,
+        max_quantity: Contracts,
         settlement_interval: Duration,
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         opening_fee: OpeningFee,
         leverage_choices: Vec<Leverage>,
         contract_symbol: ContractSymbol,
+        lot_size: LotSize,
     ) -> Self {
         let oracle_event_id =
             olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval);
@@ -205,6 +208,7 @@ impl Offer {
             tx_fee_rate,
             funding_rate,
             opening_fee,
+            lot_size,
         }
     }
 
@@ -494,7 +498,7 @@ pub struct Cfd {
     long_leverage: Leverage,
     short_leverage: Leverage,
     settlement_interval: Duration,
-    quantity: Usd,
+    quantity: Contracts,
     counterparty_network_identity: Identity,
     counterparty_peer_id: Option<PeerId>,
     role: Role,
@@ -549,7 +553,7 @@ impl Cfd {
                                         * we don't have to deal with precisions in the
                                         * database. */
         role: Role,
-        quantity: Usd,
+        quantity: Contracts,
         counterparty_network_identity: Identity,
         counterparty_peer_id: Option<PeerId>,
         opening_fee: OpeningFee,
@@ -612,7 +616,7 @@ impl Cfd {
     pub fn from_order(
         order_id: OrderId,
         offer: &Offer,
-        quantity: Usd,
+        quantity: Contracts,
         counterparty_network_identity: Identity,
         counterparty_peer_id: Option<PeerId>,
         role: Role,
@@ -1456,7 +1460,7 @@ impl Cfd {
         self.settlement_interval
     }
 
-    pub fn quantity(&self) -> Usd {
+    pub fn quantity(&self) -> Contracts {
         self.quantity
     }
 
@@ -1806,7 +1810,7 @@ pub fn market_closing_price(bid: Price, ask: Price, role: Role, position: Positi
 ///
 /// The initial margin represents the collateral both parties have to come up with
 /// to satisfy the contract.
-pub fn calculate_margin(price: Price, quantity: Usd, leverage: Leverage) -> Amount {
+pub fn calculate_margin(price: Price, quantity: Contracts, leverage: Leverage) -> Amount {
     quantity / (price * leverage)
 }
 
@@ -1842,7 +1846,7 @@ pub fn calculate_profit(payout: SignedAmount, margin: SignedAmount) -> (SignedAm
 pub fn calculate_profit_at_price(
     opening_price: Price,
     closing_price: Price,
-    quantity: Usd,
+    quantity: Contracts,
     long_leverage: Leverage,
     short_leverage: Leverage,
     fee_account: FeeAccount,
@@ -2492,7 +2496,7 @@ mod tests {
     #[test]
     fn given_leverage_of_one_and_equal_price_and_quantity_then_long_margin_is_one_btc() {
         let price = Price::new(dec!(40000)).unwrap();
-        let quantity = Usd::new(dec!(40000));
+        let quantity = Contracts::new(40000);
         let leverage = Leverage::new(1).unwrap();
 
         let long_margin = calculate_margin(price, quantity, leverage);
@@ -2503,7 +2507,7 @@ mod tests {
     #[test]
     fn given_leverage_of_one_and_leverage_of_ten_then_long_margin_is_lower_factor_ten() {
         let price = Price::new(dec!(40000)).unwrap();
-        let quantity = Usd::new(dec!(40000));
+        let quantity = Contracts::new(40000);
         let leverage = Leverage::new(10).unwrap();
 
         let long_margin = calculate_margin(price, quantity, leverage);
@@ -2516,7 +2520,7 @@ mod tests {
     #[test]
     fn given_quantity_equals_price_then_short_margin_is_one_btc() {
         let price = Price::new(dec!(40000)).unwrap();
-        let quantity = Usd::new(dec!(40000));
+        let quantity = Contracts::new(40000);
 
         let short_margin = calculate_margin(price, quantity, Leverage::ONE);
 
@@ -2526,7 +2530,7 @@ mod tests {
     #[test]
     fn given_quantity_half_of_price_then_short_margin_is_half_btc() {
         let price = Price::new(dec!(40000)).unwrap();
-        let quantity = Usd::new(dec!(20000));
+        let quantity = Contracts::new(20000);
 
         let short_margin = calculate_margin(price, quantity, Leverage::ONE);
 
@@ -2536,7 +2540,7 @@ mod tests {
     #[test]
     fn given_quantity_double_of_price_then_short_margin_is_two_btc() {
         let price = Price::new(dec!(40000)).unwrap();
-        let quantity = Usd::new(dec!(80000));
+        let quantity = Contracts::new(80000);
 
         let short_margin = calculate_margin(price, quantity, Leverage::ONE);
 
@@ -2568,7 +2572,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_long,
@@ -2580,7 +2584,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_long.add_funding_fee(FundingFee::new(
@@ -2595,7 +2599,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_short.add_funding_fee(FundingFee::new(
@@ -2610,7 +2614,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(20_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_long,
@@ -2622,7 +2626,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(9_000)).unwrap(),
             Price::new(dec!(6_000)).unwrap(),
-            Usd::new(dec!(9_000)),
+            Contracts::new(9_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_long,
@@ -2634,7 +2638,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(5_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_long,
@@ -2646,7 +2650,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(50_400)).unwrap(),
             Price::new(dec!(60_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_long,
@@ -2658,7 +2662,7 @@ mod tests {
         assert_profit_loss_values(
             Price::new(dec!(50_400)).unwrap(),
             Price::new(dec!(60_000)).unwrap(),
-            Usd::new(dec!(10_000)),
+            Contracts::new(10_000),
             Leverage::TWO,
             Leverage::ONE,
             empty_fee_short,
@@ -2672,7 +2676,7 @@ mod tests {
     fn assert_profit_loss_values(
         initial_price: Price,
         closing_price: Price,
-        quantity: Usd,
+        quantity: Contracts,
         leverage: Leverage,
         counterparty_leverage: Leverage,
         fee_account: FeeAccount,
@@ -2700,7 +2704,7 @@ mod tests {
     fn test_profit_calculation_loss_plus_profit_should_be_zero() {
         let initial_price = Price::new(dec!(10_000)).unwrap();
         let closing_price = Price::new(dec!(16_000)).unwrap();
-        let quantity = Usd::new(dec!(10_000));
+        let quantity = Contracts::new(10_000);
         let leverage = Leverage::ONE;
         let counterparty_leverage = Leverage::ONE;
 
@@ -2749,7 +2753,7 @@ mod tests {
     #[test]
     fn margin_remains_constant() {
         let initial_price = Price::new(dec!(15_000)).unwrap();
-        let quantity = Usd::new(dec!(10_000));
+        let quantity = Contracts::new(10_000);
         let leverage = Leverage::TWO;
         let counterpart_leverage = Leverage::ONE;
 
@@ -3013,7 +3017,7 @@ mod tests {
         let funding_rate = FundingRate::new(Decimal::NEGATIVE_ONE).unwrap();
         let funding_fee = FundingFee::calculate(
             Price::new(dec!(1)).unwrap(),
-            Usd::new(dec!(1)),
+            Contracts::new(1),
             Leverage::ONE,
             Leverage::ONE,
             funding_rate,
@@ -3027,7 +3031,7 @@ mod tests {
 
     #[test]
     fn given_collab_settlement_then_cannot_start_rollover() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
 
         let taker_keys = new_keypair();
@@ -3060,7 +3064,7 @@ mod tests {
     /// settled.
     #[test]
     fn given_collab_settlement_finished_then_cannot_finish_rollover() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
 
         let taker_keys = new_keypair();
@@ -3130,7 +3134,7 @@ mod tests {
 
     #[test]
     fn given_ongoing_rollover_then_can_start_collaborative_settlement() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
@@ -3170,7 +3174,7 @@ mod tests {
 
     #[test]
     fn given_collab_settlement_then_cannot_force_close() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
 
         let taker_keys = new_keypair();
@@ -3239,7 +3243,7 @@ mod tests {
 
     #[test]
     fn given_collab_settlement_finished_when_lock_confirmed_then_lock_confirmed_after_finality() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
         let order_id = OrderId::default();
 
@@ -3309,7 +3313,7 @@ mod tests {
 
     #[test]
     fn given_no_rollover_then_no_rollover_fee() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
@@ -3342,7 +3346,7 @@ mod tests {
 
     #[test]
     fn given_one_rollover_with_positive_rate_then_long_pays_rollover_fee() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
@@ -3382,7 +3386,7 @@ mod tests {
 
     #[test]
     fn given_two_rollover_with_positive_rate_then_long_pays_two_rollover_fees() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
@@ -3422,7 +3426,7 @@ mod tests {
 
     #[test]
     fn given_more_rollover_then_long_margin_with_positive_rate_then_long_gets_liquidated() {
-        let quantity = Usd::new(dec!(10));
+        let quantity = Contracts::new(10);
         let opening_price = Price::new(dec!(10000)).unwrap();
         let closing_price = Price::new(dec!(10000)).unwrap();
         let positive_funding_rate = dec!(0.0001);
@@ -3450,7 +3454,7 @@ mod tests {
 
     #[test]
     fn given_taker_long_maker_short_production_values_then_collab_settlement_is_as_expected() {
-        let quantity = Usd::new(dec!(100));
+        let quantity = Contracts::new(100);
         let opening_price = Price::new(dec!(41015.60)).unwrap();
         let closing_price = Price::new(dec!(40600)).unwrap();
         let positive_funding_rate = dec!(0.0005);
@@ -3719,7 +3723,7 @@ mod tests {
 
     #[allow(clippy::too_many_arguments)]
     fn collab_settlement_taker_long_maker_short(
-        quantity: Usd,
+        quantity: Contracts,
         opening_price: Price,
         closing_price: Price,
         funding_rate: Decimal,
@@ -3776,7 +3780,7 @@ mod tests {
         fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(quantity in 1u64..100_000u64) {
             let funding_rate = FundingRate::new(dec!(0.01)).unwrap();
             let price = Price::new(dec!(10_000)).unwrap();
-            let quantity = Usd::new(Decimal::from(quantity));
+            let quantity = Contracts::new(quantity);
             let leverage = Leverage::ONE;
 
             let funding_fee_for_whole_interval =
@@ -4015,7 +4019,7 @@ mod tests {
     }
 
     impl Cfd {
-        fn taker_long_from_order(offer: Offer, quantity: Usd, leverage: Leverage) -> Self {
+        fn taker_long_from_order(offer: Offer, quantity: Contracts, leverage: Leverage) -> Self {
             Cfd::from_order(
                 OrderId::default(),
                 &offer,
@@ -4027,7 +4031,7 @@ mod tests {
             )
         }
 
-        fn maker_short_from_order(offer: Offer, quantity: Usd, leverage: Leverage) -> Self {
+        fn maker_short_from_order(offer: Offer, quantity: Contracts, leverage: Leverage) -> Self {
             Cfd::from_order(
                 OrderId::default(),
                 &offer,
@@ -4043,7 +4047,7 @@ mod tests {
             Cfd::from_order(
                 OrderId::default(),
                 &Offer::dummy_short(),
-                Usd::new(dec!(1000)),
+                Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
                 Role::Taker,
@@ -4055,7 +4059,7 @@ mod tests {
             Cfd::from_order(
                 OrderId::default(),
                 &Offer::dummy_short(),
-                Usd::new(dec!(1000)),
+                Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
                 Role::Maker,
@@ -4067,7 +4071,7 @@ mod tests {
             Cfd::from_order(
                 OrderId::default(),
                 &Offer::dummy_short(),
-                Usd::new(dec!(1000)),
+                Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
                 Role::Taker,
@@ -4241,7 +4245,7 @@ mod tests {
             let cfd = Cfd::from_order(
                 OrderId::default(),
                 &Offer::dummy_short(),
-                Usd::new(dec!(1000)),
+                Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
                 Role::Taker,
@@ -4257,7 +4261,7 @@ mod tests {
             let cfd = Cfd::from_order(
                 OrderId::default(),
                 &Offer::dummy_short(),
-                Usd::new(dec!(1000)),
+                Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
                 Role::Taker,
@@ -4274,7 +4278,7 @@ mod tests {
             self
         }
 
-        fn with_quantity(mut self, quantity: Usd) -> Self {
+        fn with_quantity(mut self, quantity: Contracts) -> Self {
             self.quantity = quantity;
             self
         }
@@ -4295,14 +4299,15 @@ mod tests {
             Offer::new(
                 Position::Short,
                 Price::new(dec!(1000)).unwrap(),
-                Usd::new(dec!(100)),
-                Usd::new(dec!(1000)),
+                Contracts::new(100),
+                Contracts::new(1000),
                 time::Duration::hours(24),
                 TxFeeRate::default(),
                 FundingRate::default(),
                 OpeningFee::default(),
                 vec![Leverage::TWO],
                 ContractSymbol::BtcUsd,
+                LotSize::new(100),
             )
         }
 

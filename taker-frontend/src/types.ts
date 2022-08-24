@@ -67,7 +67,7 @@ export interface Cfd {
     position: Position;
     liquidation_price: number;
 
-    quantity_usd: number;
+    quantity: number;
 
     margin: number;
 

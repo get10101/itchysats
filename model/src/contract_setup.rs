@@ -1,9 +1,9 @@
+use crate::Contracts;
 use crate::FeeAccount;
 use crate::Identity;
 use crate::Leverage;
 use crate::Price;
 use crate::TxFeeRate;
-use crate::Usd;
 use anyhow::Result;
 use bdk::bitcoin::Amount;
 
@@ -13,7 +13,7 @@ pub struct SetupParams {
     pub counterparty_margin: Amount,
     pub counterparty_identity: Identity,
     pub price: Price,
-    pub quantity: Usd,
+    pub quantity: Contracts,
     pub long_leverage: Leverage,
     pub short_leverage: Leverage,
     pub refund_timelock: u32,
@@ -28,7 +28,7 @@ impl SetupParams {
         counterparty_margin: Amount,
         counterparty_identity: Identity,
         price: Price,
-        quantity: Usd,
+        quantity: Contracts,
         long_leverage: Leverage,
         short_leverage: Leverage,
         refund_timelock: u32,

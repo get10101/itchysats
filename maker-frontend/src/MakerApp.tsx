@@ -41,6 +41,7 @@ interface SymbolDefaults {
     maxQuantity: string;
     shortPrice: string;
     longPrice: string;
+    lot_size: number;
 }
 
 enum Symbol {
@@ -55,12 +56,14 @@ let Defaults: { [key: string]: SymbolDefaults } = {
         maxQuantity: "1000",
         shortPrice: "0",
         longPrice: "0",
+        lot_size: 100,
     } as SymbolDefaults,
     ethusd: {
         minQuantity: "1",
         maxQuantity: "10000",
         shortPrice: "0",
         longPrice: "0",
+        lot_size: 1,
     } as SymbolDefaults,
 };
 
@@ -275,6 +278,7 @@ export default function App() {
                                         // TODO: This is is in sats which is not really in line with other APIs for the maker
                                         opening_fee: Number.parseFloat("100"),
                                         leverage_choices: leverages.map((val) => Number.parseInt(val)),
+                                        lot_size: symbolDefaults.lot_size,
                                     };
                                     await makeNewCfdSellOrder(payload, symbol);
                                 }}

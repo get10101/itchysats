@@ -168,7 +168,7 @@ impl Connection {
             position: cfd.position.into(),
             initial_price: cfd.initial_price.into(),
             taker_leverage: cfd.taker_leverage.into(),
-            n_contracts: cfd.n_contracts.into(),
+            n_contracts: cfd.n_contracts.try_into()?,
             counterparty_network_identity: cfd.counterparty_network_identity.into(),
             counterparty_peer_id: cfd.counterparty_peer_id.into(),
             role: cfd.role.into(),
@@ -243,7 +243,7 @@ impl ClosedCfdInputAggregate {
             initial_price,
             taker_leverage,
             settlement_interval: _,
-            quantity_usd,
+            quantity,
             counterparty_network_identity,
             counterparty_peer_id,
             role,
@@ -252,7 +252,7 @@ impl ClosedCfdInputAggregate {
             contract_symbol,
             ..
         } = cfd;
-        let n_contracts = quantity_usd
+        let n_contracts = quantity
             .try_into_u64()
             .expect("number of contracts to fit into a u64");
         let n_contracts = Contracts::new(n_contracts);
@@ -263,7 +263,7 @@ impl ClosedCfdInputAggregate {
 
             FundingFee::calculate(
                 initial_price,
-                quantity_usd,
+                quantity,
                 long_leverage,
                 short_leverage,
                 initial_funding_rate,
@@ -999,6 +999,7 @@ mod tests {
     use model::libp2p::PeerId;
     use model::Cfd;
     use model::ContractSymbol;
+    use model::Contracts;
     use model::EventKind;
     use model::FundingRate;
     use model::OfferId;
@@ -1007,7 +1008,6 @@ mod tests {
     use model::Price;
     use model::Timestamp;
     use model::TxFeeRate;
-    use model::Usd;
     use model::Vout;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -1310,7 +1310,7 @@ mod tests {
             Leverage::TWO,
             Duration::hours(24),
             Role::Taker,
-            Usd::new(dec!(100)),
+            Contracts::new(100),
             "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
                 .parse()
                 .unwrap(),

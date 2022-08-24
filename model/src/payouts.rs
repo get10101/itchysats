@@ -1,11 +1,11 @@
 use crate::olivia;
 use crate::payouts;
 use crate::CompleteFee;
+use crate::Contracts;
 use crate::Leverage;
 use crate::Position;
 use crate::Price;
 use crate::Role;
-use crate::Usd;
 use anyhow::bail;
 use anyhow::Result;
 use itertools::Itertools;
@@ -71,7 +71,7 @@ impl Payouts {
         position: Position,
         role: Role,
         price: Price,
-        quantity: Usd,
+        quantity: Contracts,
         long_leverage: Leverage,
         short_leverage: Leverage,
         n_payouts: usize,

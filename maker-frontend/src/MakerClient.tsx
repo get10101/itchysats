@@ -10,6 +10,7 @@ export interface CfdNewOfferParamsPayload {
     tx_fee_rate: number;
     opening_fee?: number;
     leverage_choices: number[];
+    lot_size: number;
 }
 
 export async function putCfdNewOfferParamsRequest(payload: CfdNewOfferParamsPayload, symbol: string) {

@@ -10,6 +10,7 @@ use bdk::bitcoin::Amount;
 use bdk::bitcoin::SignedAmount;
 use maia_core::secp256k1_zkp;
 use model::olivia::EVENT_TIME_FORMAT;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error;
 use serde::Deserialize;
@@ -231,36 +232,45 @@ impl_sqlx_type_display_from_str!(Transaction);
 
 /// Represents "quantity" or "contract size" in Cfd terms
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct Usd(Decimal);
+pub struct Contracts(Decimal);
 
-impl fmt::Display for Usd {
+impl Contracts {
+    pub fn try_into_u64(&self) -> Result<u64> {
+        self.0.to_u64().context("could not fit decimal into u64")
+    }
+}
+
+impl fmt::Display for Contracts {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
     }
 }
 
-impl FromStr for Usd {
+impl FromStr for Contracts {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let dec = Decimal::from_str(s)?;
-        Ok(Usd(dec))
+        Ok(Contracts(dec))
     }
 }
 
-impl From<model::Usd> for Usd {
-    fn from(usd: model::Usd) -> Self {
-        Self(usd.into_decimal())
+impl From<model::Contracts> for Contracts {
+    fn from(contracts: model::Contracts) -> Self {
+        Self(contracts.into_decimal())
     }
 }
 
-impl From<Usd> for model::Usd {
-    fn from(usd: Usd) -> Self {
-        model::Usd::new(usd.0)
+impl TryFrom<Contracts> for model::Contracts {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Contracts) -> std::result::Result<Self, Self::Error> {
+        let contracts = model::Contracts::new(value.try_into_u64()?);
+        Ok(contracts)
     }
 }
 
-impl_sqlx_type_display_from_str!(Usd);
+impl_sqlx_type_display_from_str!(Contracts);
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
@@ -613,51 +623,6 @@ impl From<Fees> for model::Fees {
 }
 
 impl_sqlx_type_integer!(Fees);
-
-#[derive(Debug, Clone, Copy)]
-pub struct Contracts(u64);
-
-impl From<Contracts> for u64 {
-    fn from(contracts: Contracts) -> Self {
-        contracts.0
-    }
-}
-
-impl From<u64> for Contracts {
-    fn from(contracts: u64) -> Self {
-        Self(contracts)
-    }
-}
-
-impl TryFrom<i64> for Contracts {
-    type Error = anyhow::Error;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        let contracts = u64::try_from(value)?;
-
-        Ok(Self(contracts))
-    }
-}
-
-impl From<&Contracts> for i64 {
-    fn from(contracts: &Contracts) -> Self {
-        contracts.0 as i64
-    }
-}
-
-impl_sqlx_type_integer!(Contracts);
-
-impl From<model::Contracts> for Contracts {
-    fn from(contracts: model::Contracts) -> Self {
-        Self(contracts.into())
-    }
-}
-
-impl From<Contracts> for model::Contracts {
-    fn from(contracts: Contracts) -> Self {
-        model::Contracts::new(contracts.0)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Payout(Amount);

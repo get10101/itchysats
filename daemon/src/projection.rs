@@ -23,6 +23,7 @@ use model::market_closing_price;
 use model::CfdEvent;
 use model::ClosedCfd;
 use model::ContractSymbol;
+use model::Contracts;
 use model::Dlc;
 use model::EventKind;
 use model::FailedCfd;
@@ -31,6 +32,7 @@ use model::FeeAccount;
 use model::FundingFee;
 use model::FundingRate;
 use model::Leverage;
+use model::LotSize;
 use model::OfferId;
 use model::OrderId;
 use model::Position;
@@ -38,7 +40,6 @@ use model::Price;
 use model::Role;
 use model::Settlement;
 use model::Timestamp;
-use model::Usd;
 use model::SETTLEMENT_INTERVAL;
 use parse_display::Display;
 use parse_display::FromStr;
@@ -144,7 +145,7 @@ pub struct Cfd {
     pub liquidation_price: Price,
 
     #[serde(with = "round_to_two_dp")]
-    pub quantity_usd: Usd,
+    pub quantity: Contracts,
 
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
     pub margin: Amount,
@@ -319,7 +320,7 @@ impl Cfd {
             position,
             initial_price,
             taker_leverage,
-            quantity_usd,
+            quantity,
             counterparty_network_identity,
             role,
             opening_fee,
@@ -334,9 +335,8 @@ impl Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
-        let margin_counterparty =
-            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+        let margin = calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
 
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
@@ -348,7 +348,7 @@ impl Cfd {
 
         let initial_funding_fee = FundingFee::calculate(
             initial_price,
-            quantity_usd,
+            quantity,
             long_leverage,
             short_leverage,
             initial_funding_rate,
@@ -375,7 +375,7 @@ impl Cfd {
             contract_symbol,
             position,
             liquidation_price,
-            quantity_usd,
+            quantity,
             margin,
             margin_counterparty,
             role,
@@ -634,7 +634,7 @@ impl Cfd {
         let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
             self.initial_price,
             closing_price,
-            self.quantity_usd,
+            self.quantity,
             long_leverage,
             short_leverage,
             self.aggregated.fee_account,
@@ -826,7 +826,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             position,
             initial_price,
             taker_leverage,
-            n_contracts,
+            n_contracts: quantity,
             counterparty_network_identity,
             role,
             fees,
@@ -838,16 +838,13 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             ..
         } = closed_cfd;
 
-        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
-
         let (our_leverage, counterparty_leverage) = match role {
             Role::Maker => (Leverage::ONE, taker_leverage),
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
-        let margin_counterparty =
-            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+        let margin = calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
 
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
@@ -939,7 +936,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             contract_symbol,
             position,
             liquidation_price,
-            quantity_usd,
+            quantity,
             margin,
             margin_counterparty,
             role,
@@ -969,7 +966,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             position,
             initial_price,
             taker_leverage,
-            n_contracts,
+            n_contracts: quantity,
             counterparty_network_identity,
             role,
             fees,
@@ -984,16 +981,13 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             FailedKind::ContractSetupFailed => CfdState::SetupFailed,
         };
 
-        let quantity_usd = Usd::new(Decimal::from(u64::from(n_contracts)));
-
         let (our_leverage, counterparty_leverage) = match role {
             Role::Maker => (Leverage::ONE, taker_leverage),
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity_usd, our_leverage);
-        let margin_counterparty =
-            calculate_margin(initial_price, quantity_usd, counterparty_leverage);
+        let margin = calculate_margin(initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
 
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
@@ -1016,7 +1010,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             contract_symbol,
             position,
             liquidation_price,
-            quantity_usd,
+            quantity,
             margin,
             margin_counterparty,
             role,
@@ -1277,16 +1271,15 @@ pub struct CfdOffer {
     pub funding_rate_hourly_percent: String,
 
     #[serde(with = "round_to_two_dp")]
-    pub min_quantity: Usd,
+    pub min_quantity: Contracts,
     #[serde(with = "round_to_two_dp")]
-    pub max_quantity: Usd,
+    pub max_quantity: Contracts,
 
     /// The user can only buy contracts in multiples of this.
     ///
     /// For example, if `lot_size` is 100, `min_quantity` is 300 and `max_quantity`is 800, then
     /// the user can buy 300, 400, 500, 600, 700 or 800 contracts.
-    #[serde(with = "round_to_two_dp")]
-    pub lot_size: Usd,
+    pub lot_size: LotSize,
 
     /// Contains liquidation price, margin and initial fund amount per leverage
     pub leverage_details: Vec<LeverageDetails>,
@@ -1318,7 +1311,7 @@ pub struct LeverageDetails {
 
 impl CfdOffer {
     fn new(offer: model::Offer, role: Role) -> Result<Self> {
-        let lot_size = Usd::new(dec!(100)); // TODO: Have the maker tell us this.
+        let lot_size = offer.lot_size;
 
         let own_position = match role {
             Role::Maker => offer.position_maker,
@@ -1334,14 +1327,14 @@ impl CfdOffer {
                     Position::Short => calculate_short_liquidation_price(*leverage, offer.price),
                 };
                 // Margin per lot price is dependent on one's own leverage
-                let margin_per_lot = calculate_margin(offer.price, lot_size, *leverage);
+                let margin_per_lot = calculate_margin(offer.price, lot_size.into(), *leverage);
 
                 let (long_leverage, short_leverage) =
                     long_and_short_leverage(*leverage, role, own_position);
 
                 let initial_funding_fee_per_lot = FundingFee::calculate(
                     offer.price,
-                    lot_size,
+                    lot_size.into(),
                     long_leverage,
                     short_leverage,
                     offer.funding_rate,
@@ -1432,7 +1425,7 @@ mod round_to_two_dp {
         fn to_decimal(&self) -> Decimal;
     }
 
-    impl ToDecimal for Usd {
+    impl ToDecimal for Contracts {
         fn to_decimal(&self) -> Decimal {
             self.into_decimal()
         }
@@ -1490,11 +1483,11 @@ mod round_to_two_dp {
 
         #[test]
         fn usd_serializes_with_only_cents() {
-            let usd = WithOnlyTwoDecimalPlaces {
-                inner: model::Usd::new(dec!(1000.12345)),
+            let quantity = WithOnlyTwoDecimalPlaces {
+                inner: model::Contracts::new(1000),
             };
 
-            assert_ser_tokens(&usd, &[Token::Str("1000.12")]);
+            assert_ser_tokens(&quantity, &[Token::Str("1000")]);
         }
 
         #[test]
@@ -1651,7 +1644,7 @@ mod tests {
             Leverage::TWO,
             time::Duration::hours(24),
             Role::Taker,
-            Usd::new(dec!(1_000)),
+            Contracts::new(1_000),
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                 .parse()
                 .unwrap(),
@@ -1692,7 +1685,7 @@ mod tests {
             Leverage::TWO,
             time::Duration::hours(24),
             Role::Taker,
-            Usd::new(dec!(100)),
+            Contracts::new(100),
             "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
                 .parse()
                 .unwrap(),

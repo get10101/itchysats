@@ -10,13 +10,14 @@ use daemon::projection::Feeds;
 use daemon::wallet;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
+use model::Contracts;
 use model::FundingRate;
 use model::Leverage;
+use model::LotSize;
 use model::OpeningFee;
 use model::OrderId;
 use model::Price;
 use model::TxFeeRate;
-use model::Usd;
 use model::WalletInfo;
 use rocket::http::ContentType;
 use rocket::http::Status;
@@ -106,8 +107,8 @@ pub async fn maker_feed(
 pub struct CfdNewOfferParamsRequest {
     pub price_long: Option<Price>,
     pub price_short: Option<Price>,
-    pub min_quantity: Usd,
-    pub max_quantity: Usd,
+    pub min_quantity: Contracts,
+    pub max_quantity: Contracts,
     /// The current _daily_ funding rate for the maker's long position
     pub daily_funding_rate_long: FundingRate,
     /// The current _daily_ funding rate for the maker's short position
@@ -118,10 +119,17 @@ pub struct CfdNewOfferParamsRequest {
     pub opening_fee: OpeningFee,
     #[serde(default = "empty_leverage")]
     pub leverage_choices: Vec<Leverage>,
+    #[serde(default = "default_lot_size")]
+    pub lot_size: LotSize,
 }
 
 fn empty_leverage() -> Vec<Leverage> {
     vec![Leverage::TWO]
+}
+
+// TODO: we can remove this once all clients have been updated
+fn default_lot_size() -> LotSize {
+    LotSize::new(100)
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]
@@ -144,6 +152,7 @@ pub async fn put_offer_params(
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
             ContractSymbol::BtcUsd.into(),
+            offer_params.lot_size,
         )
         .await
         .map_err(|e| {
@@ -208,6 +217,7 @@ pub async fn put_offer_params_for_symbol(
             offer_params.opening_fee,
             offer_params.leverage_choices.clone(),
             symbol.into(),
+            offer_params.lot_size,
         )
         .await
         .map_err(|e| {

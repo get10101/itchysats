@@ -64,13 +64,13 @@ pub enum Error {
 
 /// Represents "quantity" or "contract size" in Cfd terms
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct Usd(Decimal);
+pub struct Contracts(Decimal);
 
-impl Usd {
-    pub const ZERO: Usd = Usd(Decimal::ZERO);
+impl Contracts {
+    pub const ZERO: Contracts = Contracts(Decimal::ZERO);
 
-    pub fn new(value: Decimal) -> Self {
-        Self(value)
+    pub fn new(value: u64) -> Self {
+        Self(Decimal::from(value))
     }
 
     pub fn try_into_u64(&self) -> Result<u64> {
@@ -83,18 +83,18 @@ impl Usd {
     }
 }
 
-impl fmt::Display for Usd {
+impl fmt::Display for Contracts {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.round_dp(2).fmt(f)
     }
 }
 
-impl str::FromStr for Usd {
+impl str::FromStr for Contracts {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let dec = Decimal::from_str(s)?;
-        Ok(Usd(dec))
+        Ok(Contracts(dec))
     }
 }
 
@@ -192,9 +192,8 @@ impl fmt::Display for Leverage {
     }
 }
 
-// add impl's to do algebra with Usd, Leverage, and ExhangeRate as required
-impl Mul<Leverage> for Usd {
-    type Output = Usd;
+impl Mul<Leverage> for Contracts {
+    type Output = Contracts;
 
     fn mul(self, rhs: Leverage) -> Self::Output {
         let value = self.0 * Decimal::from(rhs.0);
@@ -202,25 +201,25 @@ impl Mul<Leverage> for Usd {
     }
 }
 
-impl Div<Leverage> for Usd {
-    type Output = Usd;
+impl Div<Leverage> for Contracts {
+    type Output = Contracts;
 
     fn div(self, rhs: Leverage) -> Self::Output {
         Self(self.0 / Decimal::from(rhs.0))
     }
 }
 
-impl Mul<Usd> for Leverage {
-    type Output = Usd;
+impl Mul<Contracts> for Leverage {
+    type Output = Contracts;
 
-    fn mul(self, rhs: Usd) -> Self::Output {
+    fn mul(self, rhs: Contracts) -> Self::Output {
         let value = Decimal::from(self.0) * rhs.0;
-        Usd(value)
+        Contracts(value)
     }
 }
 
-impl Mul<u8> for Usd {
-    type Output = Usd;
+impl Mul<u8> for Contracts {
+    type Output = Contracts;
 
     fn mul(self, rhs: u8) -> Self::Output {
         let value = self.0 * Decimal::from(rhs);
@@ -228,8 +227,8 @@ impl Mul<u8> for Usd {
     }
 }
 
-impl Div<u8> for Usd {
-    type Output = Usd;
+impl Div<u8> for Contracts {
+    type Output = Contracts;
 
     fn div(self, rhs: u8) -> Self::Output {
         let value = self.0 / Decimal::from(rhs);
@@ -246,25 +245,25 @@ impl Div<u8> for Price {
     }
 }
 
-impl Add<Usd> for Usd {
-    type Output = Usd;
+impl Add<Contracts> for Contracts {
+    type Output = Contracts;
 
-    fn add(self, rhs: Usd) -> Self::Output {
+    fn add(self, rhs: Contracts) -> Self::Output {
         let value = self.0 + rhs.0;
         Self(value)
     }
 }
 
-impl Sub<Usd> for Usd {
-    type Output = Usd;
+impl Sub<Contracts> for Contracts {
+    type Output = Contracts;
 
-    fn sub(self, rhs: Usd) -> Self::Output {
+    fn sub(self, rhs: Contracts) -> Self::Output {
         let value = self.0 - rhs.0;
         Self(value)
     }
 }
 
-impl Div<Price> for Usd {
+impl Div<Price> for Contracts {
     type Output = Amount;
 
     fn div(self, rhs: Price) -> Self::Output {
@@ -302,12 +301,14 @@ impl Div<Leverage> for Price {
     }
 }
 
-impl Mul<InversePrice> for Usd {
+impl Mul<InversePrice> for Contracts {
     type Output = Amount;
 
     fn mul(self, rhs: InversePrice) -> Self::Output {
         let mut btc = self.0 * rhs.0;
         btc.rescale(8);
+        // we need to set to 0 because it can happen that we get a negative 0 which is invalid
+        let btc = if btc.is_zero() { Decimal::ZERO } else { btc };
         Amount::from_str_in(&btc.to_string(), Denomination::Bitcoin)
             .expect("Error computing BTC amount")
     }
@@ -681,7 +682,7 @@ pub struct FundingFee {
 impl FundingFee {
     pub fn calculate(
         price: Price,
-        quantity: Usd,
+        quantity: Contracts,
         long_leverage: Leverage,
         short_leverage: Leverage,
         funding_rate: FundingRate,
@@ -954,6 +955,21 @@ impl str::FromStr for TxFeeRate {
         Ok(TxFeeRate(fee_sat))
     }
 }
+/// Contract lot size
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct LotSize(u8);
+
+impl LotSize {
+    pub fn new(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl From<LotSize> for Contracts {
+    fn from(lot: LotSize) -> Self {
+        Self(Decimal::from(lot.0))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vout(u32);
@@ -1003,38 +1019,6 @@ impl TryFrom<i64> for Fees {
 impl From<&Fees> for i64 {
     fn from(fees: &Fees) -> Self {
         fees.0.as_sat() as i64
-    }
-}
-
-/// The number of contracts per position.
-#[derive(Debug, Clone, Copy)]
-pub struct Contracts(u64);
-
-impl Contracts {
-    pub fn new(contracts: u64) -> Self {
-        Self(contracts)
-    }
-}
-
-impl From<Contracts> for u64 {
-    fn from(contracts: Contracts) -> Self {
-        contracts.0
-    }
-}
-
-impl TryFrom<i64> for Contracts {
-    type Error = anyhow::Error;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        let contracts = u64::try_from(value)?;
-
-        Ok(Self::new(contracts))
-    }
-}
-
-impl From<&Contracts> for i64 {
-    fn from(contracts: &Contracts) -> Self {
-        contracts.0 as i64
     }
 }
 
@@ -1159,28 +1143,28 @@ mod tests {
     use rust_decimal_macros::dec;
 
     #[test]
-    fn algebra_with_usd() {
-        let usd_0 = Usd::new(dec!(1.234));
-        let usd_1 = Usd::new(dec!(9.876));
+    fn algebra_with_quantities() {
+        let quantity_0 = Contracts::new(1);
+        let quanitty_1 = Contracts::new(9);
 
-        let usd_sum = usd_0 + usd_1;
-        let usd_diff = usd_0 - usd_1;
-        let half = usd_0 / 2;
-        let double = usd_1 * 2;
+        let quantity_sum = quantity_0 + quanitty_1;
+        let quantity_diff = quantity_0 - quanitty_1;
+        let half = quantity_0 / 2;
+        let double = quanitty_1 * 2;
 
-        assert_eq!(usd_sum.0, dec!(11.110));
-        assert_eq!(usd_diff.0, dec!(-8.642));
-        assert_eq!(half.0, dec!(0.617));
-        assert_eq!(double.0, dec!(19.752));
+        assert_eq!(quantity_sum.0, dec!(10));
+        assert_eq!(quantity_diff.0, dec!(-8));
+        assert_eq!(half.0, dec!(0.5));
+        assert_eq!(double.0, dec!(18));
     }
 
     #[test]
-    fn usd_for_1_btc_buys_1_btc() {
-        let usd = Usd::new(dec!(61234.5678));
-        let price = Price::new(dec!(61234.5678)).unwrap();
+    fn quantity_for_1_btc_buys_1_btc() {
+        let quantity = Contracts::new(61234);
+        let price = Price::new(dec!(61234)).unwrap();
         let inv_price = InversePrice::new(price).unwrap();
-        let res_0 = usd / price;
-        let res_1 = usd * inv_price;
+        let res_0 = quantity / price;
+        let res_1 = quantity * inv_price;
 
         assert_eq!(res_0, Amount::ONE_BTC);
         assert_eq!(res_1, Amount::ONE_BTC);
@@ -1188,29 +1172,29 @@ mod tests {
 
     #[test]
     fn leverage_does_not_alter_type() {
-        let usd = Usd::new(dec!(61234.5678));
+        let quantity = Contracts::new(61234);
         let leverage = Leverage::new(3).unwrap();
-        let res = usd * leverage / leverage;
+        let res = quantity * leverage / leverage;
 
-        assert_eq!(res.0, usd.0);
+        assert_eq!(res.0, quantity.0);
     }
 
     #[test]
     fn test_algebra_with_types() {
-        let usd = Usd::new(dec!(61234.5678));
+        let quantity = Contracts::new(61234);
         let leverage = Leverage::new(5).unwrap();
-        let price = Price::new(dec!(61234.5678)).unwrap();
-        let expected_buyin = Amount::from_str_in("0.2", Denomination::Bitcoin).unwrap();
+        let price = Price::new(dec!(61234)).unwrap();
+        let expected_buying = Amount::from_btc(0.2).unwrap();
 
         let liquidation_price = price * leverage / (leverage + 1);
         let inv_price = InversePrice::new(price).unwrap();
         let inv_liquidation_price = InversePrice::new(liquidation_price).unwrap();
 
-        let long_buyin = usd / (price * leverage);
+        let long_buying = quantity / (price * leverage);
         let long_payout =
-            (usd / leverage) * ((leverage + 1) * inv_price - leverage * inv_liquidation_price);
+            (quantity / leverage) * ((leverage + 1) * inv_price - leverage * inv_liquidation_price);
 
-        assert_eq!(long_buyin, expected_buyin);
+        assert_eq!(long_buying, expected_buying);
         assert_eq!(long_payout, Amount::ZERO);
     }
 
@@ -1673,8 +1657,8 @@ mod tests {
         Price::new(dec!(35_000)).expect("to not fail")
     }
 
-    fn dummy_n_contracts() -> Usd {
-        Usd::new(dec!(100))
+    fn dummy_n_contracts() -> Contracts {
+        Contracts::new(100)
     }
 
     fn dummy_settlement_interval() -> i64 {

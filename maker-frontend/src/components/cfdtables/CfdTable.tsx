@@ -135,8 +135,8 @@ export function CfdTable(
 
             {
                 Header: "Quantity",
-                accessor: ({ quantity_usd }) => {
-                    return <Dollars amount={quantity_usd} />;
+                accessor: ({ quantity }) => {
+                    return <Dollars amount={quantity} />;
                 },
                 isNumeric: true,
             },
