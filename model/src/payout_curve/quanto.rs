@@ -246,8 +246,7 @@ impl Curve {
             self.n_contracts,
             self.initial_price,
             self.multiplier,
-        )
-        .context("Could not calculate long's bankruptcy price")?;
+        );
 
         Ok(0..=bankruptcy_price)
     }
@@ -270,8 +269,7 @@ impl Curve {
             self.n_contracts,
             self.initial_price,
             self.multiplier,
-        )
-        .context("Could not calculate short's bankruptcy price")?;
+        );
 
         Ok(bankruptcy_price..=maia_core::interval::MAX_PRICE_DEC)
     }
@@ -389,11 +387,10 @@ fn bankruptcy_price_long(
     n_contracts: u64,
     initial_price: u64,
     multiplier: Decimal,
-) -> Result<u64> {
-    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts)
-        .context("Could not calculate long's bankruptcy price shift")?;
+) -> u64 {
+    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts);
 
-    Ok(initial_price.saturating_sub(shift))
+    initial_price.saturating_sub(shift)
 }
 
 /// Compute the closing price over which the party going short should get liquidated.
@@ -402,11 +399,10 @@ fn bankruptcy_price_short(
     n_contracts: u64,
     initial_price: u64,
     multiplier: Decimal,
-) -> Result<u64> {
-    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts)
-        .context("Could not calculate short's bankruptcy price shift")?;
+) -> u64 {
+    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts);
 
-    Ok(initial_price + shift)
+    initial_price + shift
 }
 
 /// By how much the price of the asset needs to shift from the initial price in order to reach the
@@ -414,22 +410,14 @@ fn bankruptcy_price_short(
 ///
 /// This is an absolute value. How to apply it in order to calculate the bankruptcy price will
 /// depend on the party's position.
-fn bankruptcy_price_shift(
-    initial_margin: Amount,
-    multiplier: Decimal,
-    n_contracts: u64,
-) -> Result<u64> {
-    let initial_margin = Decimal::from_f64(initial_margin.as_btc())
-        .context("Could not create Decimal from initial margin")?;
+fn bankruptcy_price_shift(initial_margin: Amount, multiplier: Decimal, n_contracts: u64) -> u64 {
+    let initial_margin =
+        Decimal::from_f64(initial_margin.as_btc()).expect("f64 to fit into Decimal");
 
     let n_contracts = Decimal::from(n_contracts);
 
     let price = initial_margin / (multiplier * n_contracts);
-    let price = price
-        .to_u64()
-        .context("Could not convert bankruptcy price to u64")?;
-
-    Ok(price)
+    price.to_u64().expect("price to fit into u64")
 }
 
 #[cfg(test)]
