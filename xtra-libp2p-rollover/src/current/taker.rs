@@ -132,8 +132,13 @@ where
                         asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new(),
                     );
 
-                    executor
-                        .execute(order_id, |cfd| cfd.start_rollover_taker())
+                    let contract_symbol = executor
+                        .execute(order_id, |cfd| {
+                            let event = cfd.start_rollover_taker()?;
+                            let contract_symbol = cfd.contract_symbol();
+
+                            Ok((event, contract_symbol))
+                        })
                         .await?;
 
                     framed
@@ -243,6 +248,7 @@ where
                                 complete_fee.into(),
                                 punish_params,
                                 Role::Taker,
+                                contract_symbol,
                             )
                             .await?;
 

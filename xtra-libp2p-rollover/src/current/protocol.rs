@@ -322,19 +322,22 @@ pub(crate) async fn build_own_cfd_transactions(
     complete_fee: model::CompleteFee,
     punish_params: PunishParams,
     role: Role,
+    contract_symbol: ContractSymbol,
 ) -> Result<CfdTransactions> {
     let sk = dlc.identity;
 
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
 
-    let payouts = Payouts::new_inverse(
-        our_position,
-        role,
+    let payouts = Payouts::new(
+        contract_symbol,
+        (our_position, role),
         rollover_params.price,
         rollover_params.quantity,
-        rollover_params.long_leverage,
-        rollover_params.short_leverage,
+        (
+            rollover_params.long_leverage,
+            rollover_params.short_leverage,
+        ),
         n_payouts,
         complete_fee,
     )?;

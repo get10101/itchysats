@@ -353,13 +353,13 @@ impl Cfd {
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(
                 initial_price,
-                quantity_usd,
+                quantity,
                 our_leverage,
                 contract_symbol,
             ),
             Position::Short => calculate_short_liquidation_price(
                 initial_price,
-                quantity_usd,
+                quantity,
                 our_leverage,
                 contract_symbol,
             ),
@@ -865,13 +865,13 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(
                 initial_price,
-                quantity_usd,
+                quantity,
                 our_leverage,
                 contract_symbol,
             ),
             Position::Short => calculate_short_liquidation_price(
                 initial_price,
-                quantity_usd,
+                quantity,
                 our_leverage,
                 contract_symbol,
             ),
@@ -1013,13 +1013,13 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         let liquidation_price = match position {
             Position::Long => calculate_long_liquidation_price(
                 initial_price,
-                quantity_usd,
+                quantity,
                 our_leverage,
                 contract_symbol,
             ),
             Position::Short => calculate_short_liquidation_price(
                 initial_price,
-                quantity_usd,
+                quantity,
                 our_leverage,
                 contract_symbol,
             ),

@@ -1,3 +1,4 @@
+use crate::ContractSymbol;
 use crate::Contracts;
 use crate::FeeAccount;
 use crate::Identity;
@@ -9,6 +10,7 @@ use bdk::bitcoin::Amount;
 
 #[derive(Clone, Copy, Debug)]
 pub struct SetupParams {
+    pub contract_symbol: ContractSymbol,
     pub margin: Amount,
     pub counterparty_margin: Amount,
     pub counterparty_identity: Identity,
@@ -24,6 +26,7 @@ pub struct SetupParams {
 impl SetupParams {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        contract_symbol: ContractSymbol,
         margin: Amount,
         counterparty_margin: Amount,
         counterparty_identity: Identity,
@@ -36,6 +39,7 @@ impl SetupParams {
         fee_account: FeeAccount,
     ) -> Result<Self> {
         Ok(Self {
+            contract_symbol,
             margin,
             counterparty_margin,
             counterparty_identity,

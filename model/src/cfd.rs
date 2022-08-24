@@ -801,6 +801,7 @@ impl Cfd {
         Ok((
             CfdEvent::new(self.id(), EventKind::ContractSetupStarted),
             SetupParams::new(
+                self.contract_symbol,
                 self.margin(),
                 self.counterparty_margin(),
                 self.counterparty_network_identity,
@@ -1107,13 +1108,12 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
-        let payouts = Payouts::new_inverse(
-            self.position,
-            self.role,
+        let payouts = Payouts::new(
+            self.contract_symbol,
+            (self.position, self.role),
             self.initial_price,
             self.quantity,
-            self.long_leverage,
-            self.short_leverage,
+            (self.long_leverage, self.short_leverage),
             n_payouts,
             self.fee_account.settle(),
         )?
@@ -1159,13 +1159,12 @@ impl Cfd {
 
         // Validate that the amounts sent by the taker are sane according to the payout curve
 
-        let payouts = Payouts::new_inverse(
-            self.position,
-            self.role,
+        let payouts = Payouts::new(
+            self.contract_symbol,
+            (self.position, self.role),
             self.initial_price,
             self.quantity,
-            self.long_leverage,
-            self.short_leverage,
+            (self.long_leverage, self.short_leverage),
             n_payouts,
             self.fee_account.settle(),
         )?
@@ -1917,7 +1916,7 @@ pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percen
 /// Compute the liquidation price for the party going long.
 pub fn calculate_long_liquidation_price(
     initial_price: Price,
-    quantity: Usd,
+    quantity: Contracts,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
 ) -> Price {
@@ -1955,7 +1954,7 @@ pub fn calculate_long_liquidation_price(
 /// Compute the liquidation price for the party going short.
 pub fn calculate_short_liquidation_price(
     initial_price: Price,
-    quantity: Usd,
+    quantity: Contracts,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
 ) -> Price {

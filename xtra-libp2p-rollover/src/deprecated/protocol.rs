@@ -26,6 +26,7 @@ use model::shared_protocol::verify_adaptor_signature;
 use model::shared_protocol::verify_cets;
 use model::shared_protocol::verify_signature;
 use model::Cet;
+use model::ContractSymbol;
 use model::Dlc;
 use model::ExecuteOnCfd;
 use model::FundingFee;
@@ -381,13 +382,15 @@ pub(crate) async fn build_own_cfd_transactions(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        Payouts::new_inverse(
-            our_position,
-            punish_params.own_role,
+        Payouts::new(
+            ContractSymbol::BtcUsd,
+            (our_position, punish_params.own_role),
             rollover_params.price,
             rollover_params.quantity,
-            rollover_params.long_leverage,
-            rollover_params.short_leverage,
+            (
+                rollover_params.long_leverage,
+                rollover_params.short_leverage,
+            ),
             n_payouts,
             complete_fee,
         )?
