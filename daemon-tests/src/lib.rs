@@ -239,6 +239,7 @@ macro_rules! wait_next_state_multi_cfd {
 /// Arguments that need to be supplied to the `open_cfd` test helper.
 #[derive(Clone)]
 pub struct OpenCfdArgs {
+    pub contract_symbol: ContractSymbol,
     pub position_maker: Position,
     pub initial_price: Price,
     pub quantity: Contracts,
@@ -258,6 +259,7 @@ impl OpenCfdArgs {
             .contains(&self.taker_leverage));
 
         FeeCalculator::new(
+            self.contract_symbol,
             self.offer_params(),
             self.quantity,
             self.taker_leverage,
@@ -269,6 +271,7 @@ impl OpenCfdArgs {
 impl Default for OpenCfdArgs {
     fn default() -> Self {
         Self {
+            contract_symbol: ContractSymbol::BtcUsd,
             position_maker: Position::Short,
             initial_price: Price::new(dummy_price()).unwrap(),
             quantity: Contracts::new(100),
@@ -384,9 +387,8 @@ pub struct FeeCalculator {
     /// Funding fee for the first 24h calculated when opening a Cfd
     initial_funding_fee: FundingFee,
 
-    /// The maker's position for the Cfd
+    contract_symbol: ContractSymbol,
     maker_position: Position,
-
     offer_params: OfferParams,
     quantity: Contracts,
     taker_leverage: Leverage,
@@ -394,6 +396,7 @@ pub struct FeeCalculator {
 
 impl FeeCalculator {
     pub fn new(
+        contract_symbol: ContractSymbol,
         offer_params: OfferParams,
         quantity: Contracts,
         taker_leverage: Leverage,
@@ -407,6 +410,7 @@ impl FeeCalculator {
                 taker_leverage,
                 offer_params.funding_rate_long,
                 SETTLEMENT_INTERVAL.whole_hours(),
+                contract_symbol,
             )
             .unwrap(),
             Position::Short => FundingFee::calculate(
@@ -416,6 +420,7 @@ impl FeeCalculator {
                 Leverage::ONE,
                 offer_params.funding_rate_short,
                 SETTLEMENT_INTERVAL.whole_hours(),
+                contract_symbol,
             )
             .unwrap(),
         };
@@ -423,6 +428,7 @@ impl FeeCalculator {
         Self {
             opening_fee: offer_params.opening_fee,
             initial_funding_fee,
+            contract_symbol,
             maker_position,
             offer_params,
             quantity,
@@ -477,6 +483,7 @@ impl FeeCalculator {
                 self.taker_leverage,
                 self.offer_params.funding_rate_long,
                 accumulated_rollover_hours_to_charge,
+                self.contract_symbol,
             )
             .unwrap(),
             Position::Short => FundingFee::calculate(
@@ -486,6 +493,7 @@ impl FeeCalculator {
                 Leverage::ONE,
                 self.offer_params.funding_rate_short,
                 accumulated_rollover_hours_to_charge,
+                self.contract_symbol,
             )
             .unwrap(),
         };
@@ -1068,6 +1076,7 @@ fn dummy_funding_fee() -> FundingFee {
         Leverage::ONE,
         Default::default(),
         0,
+        ContractSymbol::BtcUsd,
     )
     .unwrap()
 }

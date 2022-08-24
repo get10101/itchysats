@@ -574,6 +574,7 @@ impl Cfd {
             short_leverage,
             initial_funding_rate,
             SETTLEMENT_INTERVAL.whole_hours(),
+            contract_symbol,
         )
         .expect("values from db to be sane");
 
@@ -925,6 +926,7 @@ impl Cfd {
             self.short_leverage,
             funding_rate,
             hours_to_charge as i64,
+            self.contract_symbol,
         )?;
 
         tracing::debug!(
@@ -998,6 +1000,7 @@ impl Cfd {
             self.short_leverage,
             funding_rate,
             hours_to_charge as i64,
+            self.contract_symbol,
         )?;
 
         Ok((
@@ -3078,6 +3081,7 @@ mod tests {
             Leverage::ONE,
             funding_rate,
             SETTLEMENT_INTERVAL.whole_hours(),
+            ContractSymbol::BtcUsd,
         )
         .unwrap();
 
@@ -3765,7 +3769,9 @@ mod tests {
 
     proptest! {
         #[test]
-        fn rollover_extended_by_one_hour_if_time_to_live_is_within_one_hour_of_settlement_interval(minutes in 0i64..=59) {
+        fn rollover_extended_by_one_hour_if_time_to_live_is_within_one_hour_of_settlement_interval(
+            minutes in 0i64..=59
+        ) {
             for now in common_time_boundaries() {
                 let close_to_settlement_interval = SETTLEMENT_INTERVAL + minutes.minutes();
                 let event_id_within_the_hour = BitMexPriceEventId::with_20_digits(
@@ -3775,8 +3781,18 @@ mod tests {
                 let taker = Cfd::dummy_taker_long().dummy_open(event_id_within_the_hour);
                 let maker = Cfd::dummy_maker_short().dummy_open(event_id_within_the_hour);
 
-                prop_assert_eq!(taker.hours_to_extend_in_rollover(now).unwrap(), 1, "Failed with now {}", now);
-                prop_assert_eq!(maker.hours_to_extend_in_rollover(now).unwrap(), 1, "Failed with now {}", now);
+                prop_assert_eq!(
+                    taker.hours_to_extend_in_rollover(now).unwrap(),
+                    1,
+                    "Failed with now {}",
+                    now
+                );
+                prop_assert_eq!(
+                    maker.hours_to_extend_in_rollover(now).unwrap(),
+                    1,
+                    "Failed with now {}",
+                    now
+                );
             }
         }
     }
@@ -3846,35 +3862,60 @@ mod tests {
 
     proptest! {
         #[test]
-        fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(quantity in 1u64..100_000u64) {
+        fn rollover_funding_fee_collected_incrementally_should_not_be_smaller_than_collected_once_per_settlement_interval(
+            quantity in 1u64..100_000u64
+        ) {
             let funding_rate = FundingRate::new(dec!(0.01)).unwrap();
             let price = Price::new(dec!(10_000)).unwrap();
             let quantity = Contracts::new(quantity);
             let leverage = Leverage::ONE;
 
-            let funding_fee_for_whole_interval =
-                FundingFee::calculate(
-                    price,
-                    quantity, leverage , leverage, funding_rate, SETTLEMENT_INTERVAL.whole_hours()).unwrap();
-            let funding_fee_for_one_hour =
-                FundingFee::calculate(price, quantity, leverage, leverage, funding_rate, 1).unwrap();
+            let funding_fee_for_whole_interval = FundingFee::calculate(
+                price,
+                quantity,
+                leverage,
+                leverage,
+                funding_rate,
+                SETTLEMENT_INTERVAL.whole_hours(),
+                ContractSymbol::BtcUsd,
+            )
+                .unwrap();
+            let funding_fee_for_one_hour = FundingFee::calculate(
+                price,
+                quantity,
+                leverage,
+                leverage,
+                funding_rate,
+                1,
+                ContractSymbol::BtcUsd,
+            )
+                .unwrap();
             let fee_account = FeeAccount::new(Position::Long, Role::Taker);
 
-            let fee_account_whole_interval = fee_account.add_funding_fee(funding_fee_for_whole_interval);
+            let fee_account_whole_interval =
+                fee_account.add_funding_fee(funding_fee_for_whole_interval);
             let fee_account_one_hour = fee_account.add_funding_fee(funding_fee_for_one_hour);
 
-            let total_balance_when_collected_hourly = fee_account_one_hour.balance().checked_mul(SETTLEMENT_INTERVAL.whole_hours()).unwrap();
-            let total_balance_when_collected_for_whole_interval = fee_account_whole_interval.balance();
+            let total_balance_when_collected_hourly = fee_account_one_hour
+                .balance()
+                .checked_mul(SETTLEMENT_INTERVAL.whole_hours())
+                .unwrap();
+            let total_balance_when_collected_for_whole_interval = fee_account_whole_interval
+                .balance();
 
             prop_assert!(
-                total_balance_when_collected_hourly >= total_balance_when_collected_for_whole_interval,
-                "when charged per hour we should not be at loss as compared to charging once per settlement interval"
+                total_balance_when_collected_hourly
+                    >= total_balance_when_collected_for_whole_interval,
+                "when charged per hour we should not be at loss as compared to charging once per
+                 settlement interval"
             );
 
             prop_assert!(
-            total_balance_when_collected_hourly - total_balance_when_collected_for_whole_interval < SignedAmount::from_sat(30), "we should not overcharge"
-       );
-    }
+                total_balance_when_collected_hourly
+                    - total_balance_when_collected_for_whole_interval < SignedAmount::from_sat(30),
+                "we should not overcharge"
+            );
+        }
     }
 
     #[test]

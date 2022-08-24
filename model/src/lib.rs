@@ -598,6 +598,7 @@ impl FundingFee {
         short_leverage: Leverage,
         funding_rate: FundingRate,
         hours_to_charge: i64,
+        contract_symbol: ContractSymbol,
     ) -> Result<Self> {
         if funding_rate.0.is_zero() {
             return Ok(Self {
@@ -607,9 +608,9 @@ impl FundingFee {
         }
 
         let margin = if funding_rate.short_pays_long() {
-            calculate_margin(ContractSymbol::BtcUsd, price, quantity, long_leverage)
+            calculate_margin(contract_symbol, price, quantity, long_leverage)
         } else {
-            calculate_margin(ContractSymbol::BtcUsd, price, quantity, short_leverage)
+            calculate_margin(contract_symbol, price, quantity, short_leverage)
         };
 
         let fraction_of_funding_period =
@@ -1372,6 +1373,7 @@ mod tests {
     fn proportional_funding_fees_if_sign_of_funding_rate_changes() {
         let long_leverage = Leverage::TWO;
         let short_leverage = Leverage::ONE;
+        let dummy_contract_symbol = dummy_contract_symbol();
 
         let funding_rate_pos = FundingRate::new(dec!(0.01)).unwrap();
         let long_pays_short_fee = FundingFee::calculate(
@@ -1381,6 +1383,7 @@ mod tests {
             short_leverage,
             funding_rate_pos,
             dummy_settlement_interval(),
+            dummy_contract_symbol,
         )
         .unwrap();
 
@@ -1392,6 +1395,7 @@ mod tests {
             short_leverage,
             funding_rate_neg,
             dummy_settlement_interval(),
+            dummy_contract_symbol,
         )
         .unwrap();
 
@@ -1412,6 +1416,7 @@ mod tests {
             dummy_leverage,
             zero_funding_rate,
             dummy_settlement_interval(),
+            dummy_contract_symbol(),
         )
         .unwrap();
 
@@ -1537,5 +1542,9 @@ mod tests {
 
     fn dummy_settlement_interval() -> i64 {
         8
+    }
+
+    fn dummy_contract_symbol() -> ContractSymbol {
+        ContractSymbol::BtcUsd
     }
 }

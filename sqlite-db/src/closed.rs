@@ -266,6 +266,7 @@ impl ClosedCfdInputAggregate {
                 short_leverage,
                 initial_funding_rate,
                 SETTLEMENT_INTERVAL.whole_hours(),
+                contract_symbol,
             )
             .expect("values from db to be sane")
         };

@@ -365,6 +365,7 @@ impl Cfd {
             short_leverage,
             initial_funding_rate,
             SETTLEMENT_INTERVAL.whole_hours(),
+            contract_symbol,
         )
         .expect("values from db to be sane");
 
@@ -1362,6 +1363,7 @@ impl CfdOffer {
                     short_leverage,
                     offer.funding_rate,
                     SETTLEMENT_INTERVAL.whole_hours(),
+                    offer.contract_symbol,
                 )
                 .context("unable to calculate initial funding fee")?;
 
