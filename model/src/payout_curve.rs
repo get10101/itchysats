@@ -18,7 +18,7 @@ use std::collections::HashMap;
 pub mod inverse;
 #[cfg(test)]
 mod prop_compose;
-mod quanto;
+pub(crate) mod quanto;
 
 /// Payout combinations associated with the oracle events that may
 /// trigger them.
