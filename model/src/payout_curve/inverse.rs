@@ -20,7 +20,7 @@ pub use implementation::calculate;
 ///
 /// The initial margin represents the collateral both parties have to come up with
 /// to satisfy the contract.
-pub fn calculate_margin(price: Price, quantity: Contracts, leverage: Leverage) -> Amount {
+pub(crate) fn calculate_margin(price: Price, quantity: Contracts, leverage: Leverage) -> Amount {
     quantity / (price * leverage)
 }
 

@@ -315,7 +315,7 @@ impl Curve {
 }
 
 /// Compute the initial BTC margin that a party has to put up, according to their `leverage`.
-fn calculate_initial_margin(
+pub fn calculate_initial_margin(
     initial_price: u64,
     n_contracts: u64,
     leverage: Leverage,

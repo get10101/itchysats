@@ -607,9 +607,9 @@ impl FundingFee {
         }
 
         let margin = if funding_rate.short_pays_long() {
-            payout_curve::inverse::calculate_margin(price, quantity, long_leverage)
+            calculate_margin(ContractSymbol::BtcUsd, price, quantity, long_leverage)
         } else {
-            payout_curve::inverse::calculate_margin(price, quantity, short_leverage)
+            calculate_margin(ContractSymbol::BtcUsd, price, quantity, short_leverage)
         };
 
         let fraction_of_funding_period =

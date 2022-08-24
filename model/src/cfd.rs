@@ -4,6 +4,7 @@ use crate::libp2p::PeerId;
 use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve::inverse;
+use crate::payout_curve::quanto;
 use crate::payout_curve::Payouts;
 use crate::rollover;
 use crate::rollover::BaseDlcParams;
@@ -49,6 +50,7 @@ use maia_core::secp256k1_zkp::SECP256K1;
 use maia_core::TransactionExt;
 use num::Zero;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::de::Error as _;
 use serde::Deserialize;
 use serde::Serialize;
@@ -652,23 +654,35 @@ impl Cfd {
 
     fn margin(&self) -> Amount {
         match self.position {
-            Position::Long => {
-                inverse::calculate_margin(self.initial_price, self.quantity, self.long_leverage)
-            }
-            Position::Short => {
-                inverse::calculate_margin(self.initial_price, self.quantity, self.short_leverage)
-            }
+            Position::Long => calculate_margin(
+                self.contract_symbol,
+                self.initial_price,
+                self.quantity,
+                self.long_leverage,
+            ),
+            Position::Short => calculate_margin(
+                self.contract_symbol,
+                self.initial_price,
+                self.quantity,
+                self.short_leverage,
+            ),
         }
     }
 
     fn counterparty_margin(&self) -> Amount {
         match self.position {
-            Position::Long => {
-                inverse::calculate_margin(self.initial_price, self.quantity, self.short_leverage)
-            }
-            Position::Short => {
-                inverse::calculate_margin(self.initial_price, self.quantity, self.long_leverage)
-            }
+            Position::Long => calculate_margin(
+                self.contract_symbol,
+                self.initial_price,
+                self.quantity,
+                self.short_leverage,
+            ),
+            Position::Short => calculate_margin(
+                self.contract_symbol,
+                self.initial_price,
+                self.quantity,
+                self.long_leverage,
+            ),
         }
     }
 
@@ -781,14 +795,11 @@ impl Cfd {
             bail!("Start contract not allowed in version {}", self.version)
         }
 
-        let margin = self.margin();
-        let counterparty_margin = self.counterparty_margin();
-
         Ok((
             CfdEvent::new(self.id(), EventKind::ContractSetupStarted),
             SetupParams::new(
-                margin,
-                counterparty_margin,
+                self.margin(),
+                self.counterparty_margin(),
                 self.counterparty_network_identity,
                 self.initial_price,
                 self.quantity,
@@ -1801,6 +1812,27 @@ pub fn market_closing_price(bid: Price, ask: Price, role: Role, position: Positi
     }
 }
 
+/// Calculate the margin in BTC.
+///
+/// The initial margin represents the collateral both parties have to come up with
+/// to satisfy the contract.
+pub fn calculate_margin(
+    contract_symbol: ContractSymbol,
+    price: Price,
+    quantity: Contracts,
+    leverage: Leverage,
+) -> Amount {
+    match contract_symbol {
+        ContractSymbol::BtcUsd => inverse::calculate_margin(price, quantity, leverage),
+        ContractSymbol::EthUsd => quanto::calculate_initial_margin(
+            price.to_u64(),
+            quantity.to_u64(),
+            leverage,
+            dec!(0.000001),
+        ),
+    }
+}
+
 pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
     price * leverage / (leverage + 1)
 }
@@ -2394,7 +2426,7 @@ mod tests {
         let quantity = Contracts::new(40000);
         let leverage = Leverage::new(1).unwrap();
 
-        let long_margin = inverse::calculate_margin(price, quantity, leverage);
+        let long_margin = calculate_margin(ContractSymbol::BtcUsd, price, quantity, leverage);
 
         assert_eq!(long_margin, Amount::ONE_BTC);
     }
@@ -2405,7 +2437,7 @@ mod tests {
         let quantity = Contracts::new(40000);
         let leverage = Leverage::new(10).unwrap();
 
-        let long_margin = inverse::calculate_margin(price, quantity, leverage);
+        let long_margin = calculate_margin(ContractSymbol::BtcUsd, price, quantity, leverage);
 
         assert_eq!(long_margin, Amount::from_btc(0.1).unwrap());
     }
@@ -2417,7 +2449,7 @@ mod tests {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Contracts::new(40000);
 
-        let short_margin = inverse::calculate_margin(price, quantity, Leverage::ONE);
+        let short_margin = calculate_margin(ContractSymbol::BtcUsd, price, quantity, Leverage::ONE);
 
         assert_eq!(short_margin, Amount::ONE_BTC);
     }
@@ -2427,7 +2459,7 @@ mod tests {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Contracts::new(20000);
 
-        let short_margin = inverse::calculate_margin(price, quantity, Leverage::ONE);
+        let short_margin = calculate_margin(ContractSymbol::BtcUsd, price, quantity, Leverage::ONE);
 
         assert_eq!(short_margin, Amount::from_btc(0.5).unwrap());
     }
@@ -2437,7 +2469,7 @@ mod tests {
         let price = Price::new(dec!(40000)).unwrap();
         let quantity = Contracts::new(80000);
 
-        let short_margin = inverse::calculate_margin(price, quantity, Leverage::ONE);
+        let short_margin = calculate_margin(ContractSymbol::BtcUsd, price, quantity, Leverage::ONE);
 
         assert_eq!(short_margin, Amount::from_btc(2.0).unwrap());
     }
@@ -2647,19 +2679,44 @@ mod tests {
 
     #[test]
     fn margin_remains_constant() {
+        let pool_amount = SignedAmount::ONE_BTC;
         let initial_price = Price::new(dec!(15_000)).unwrap();
         let quantity = Contracts::new(10_000);
-        let leverage = Leverage::TWO;
-        let counterpart_leverage = Leverage::ONE;
+        let long_leverage = Leverage::TWO;
+        let short_leverage = Leverage::ONE;
 
-        let long_margin = inverse::calculate_margin(initial_price, quantity, leverage)
-            .to_signed()
-            .unwrap();
-        let short_margin = inverse::calculate_margin(initial_price, quantity, Leverage::ONE)
-            .to_signed()
-            .unwrap();
-        let pool_amount = SignedAmount::ONE_BTC;
-        let closing_prices = [
+        let long_margin = calculate_margin(
+            ContractSymbol::BtcUsd,
+            initial_price,
+            quantity,
+            long_leverage,
+        )
+        .to_signed()
+        .unwrap();
+        let short_margin = calculate_margin(
+            ContractSymbol::BtcUsd,
+            initial_price,
+            quantity,
+            short_leverage,
+        )
+        .to_signed()
+        .unwrap();
+
+        let opening_fee = OpeningFee::new(Amount::from_sat(500));
+        let funding_fee = FundingFee::new(
+            Amount::from_sat(100),
+            FundingRate::new(dec!(0.001)).unwrap(),
+        );
+
+        let fee_account_taker_long = FeeAccount::new(Position::Long, Role::Taker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee);
+
+        let fee_account_maker_short = FeeAccount::new(Position::Short, Role::Maker)
+            .add_opening_fee(opening_fee)
+            .add_funding_fee(funding_fee);
+
+        for closing_price in [
             Price::new(dec!(0.15)).unwrap(),
             Price::new(dec!(1.5)).unwrap(),
             Price::new(dec!(15)).unwrap(),
@@ -2669,39 +2726,23 @@ mod tests {
             Price::new(dec!(150_000)).unwrap(),
             Price::new(dec!(1_500_000)).unwrap(),
             Price::new(dec!(15_000_000)).unwrap(),
-        ];
-
-        let opening_fee = OpeningFee::new(Amount::from_sat(500));
-        let funding_fee = FundingFee::new(
-            Amount::from_sat(100),
-            FundingRate::new(dec!(0.001)).unwrap(),
-        );
-
-        let taker_long = FeeAccount::new(Position::Long, Role::Taker)
-            .add_opening_fee(opening_fee)
-            .add_funding_fee(funding_fee);
-
-        let maker_short = FeeAccount::new(Position::Short, Role::Maker)
-            .add_opening_fee(opening_fee)
-            .add_funding_fee(funding_fee);
-
-        for price in closing_prices {
+        ] {
             let (_, long_profit, _) = inverse::calculate_payout_at_price(
                 initial_price,
-                price,
+                closing_price,
                 quantity,
-                leverage,
-                counterpart_leverage,
-                taker_long,
+                long_leverage,
+                short_leverage,
+                fee_account_taker_long,
             )
             .unwrap();
             let (_, short_profit, _) = inverse::calculate_payout_at_price(
                 initial_price,
-                price,
+                closing_price,
                 quantity,
-                leverage,
-                counterpart_leverage,
-                maker_short,
+                long_leverage,
+                short_leverage,
+                fee_account_maker_short,
             )
             .unwrap();
 
@@ -4068,7 +4109,7 @@ mod tests {
                         pk_taker,
                     ));
                 }
-            };
+            }
 
             self
         }
