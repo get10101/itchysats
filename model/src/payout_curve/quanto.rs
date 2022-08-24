@@ -107,8 +107,8 @@ impl Curve {
 
     /// Discretize the payout curve into distinct payouts.
     pub fn discretized_payouts(&self) -> Result<Vec<Payout>, Error> {
-        let initial_margin_long = self.initial_margin_long()?;
-        let initial_margin_short = self.initial_margin_short()?;
+        let initial_margin_long = self.initial_margin_long();
+        let initial_margin_short = self.initial_margin_short();
         let initial_margin_total = initial_margin_long + initial_margin_short;
 
         match self.fee_offset {
@@ -215,14 +215,14 @@ impl Curve {
             .with_context(|| format!("Could not calculate PNL at price {midpoint}"))?;
 
         let long = self
-            .initial_margin_long()?
+            .initial_margin_long()
             .to_signed()
             .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
         let long = long + fee_offset_long + pnl.long();
         let long = long.to_unsigned().unwrap_or(Amount::ZERO);
 
         let short = self
-            .initial_margin_short()?
+            .initial_margin_short()
             .to_signed()
             .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
         let short = short + fee_offset_short + pnl.short();
@@ -240,8 +240,6 @@ impl Curve {
     fn long_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
         let initial_margin = self
             .initial_margin_long()
-            .context("Could not calculate long's initial margin")?;
-        let initial_margin = initial_margin
             .to_signed()
             .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
         let effective_initial_margin =
@@ -266,8 +264,6 @@ impl Curve {
     fn short_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
         let initial_margin = self
             .initial_margin_short()
-            .context("Could not calculate short's initial margin")?;
-        let initial_margin = initial_margin
             .to_signed()
             .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
         let effective_initial_margin =
@@ -288,25 +284,23 @@ impl Curve {
     }
 
     /// Compute the initial BTC margin that the party going long has to put up.
-    fn initial_margin_long(&self) -> Result<Amount> {
+    fn initial_margin_long(&self) -> Amount {
         calculate_initial_margin(
             self.initial_price,
             self.n_contracts,
             self.leverage_long,
             self.multiplier,
         )
-        .context("Could not calculate long's initial margin")
     }
 
     /// Compute the initial BTC margin that the party going short has to put up.
-    fn initial_margin_short(&self) -> Result<Amount> {
+    fn initial_margin_short(&self) -> Amount {
         calculate_initial_margin(
             self.initial_price,
             self.n_contracts,
             self.leverage_short,
             self.multiplier,
         )
-        .context("Could not calculate short's initial margin")
     }
 
     /// Compute the profit and loss (PNL) at the given `closing_price`.
@@ -326,17 +320,16 @@ fn calculate_initial_margin(
     n_contracts: u64,
     leverage: Leverage,
     multiplier: Decimal,
-) -> Result<Amount> {
+) -> Amount {
     let n_contracts = Decimal::from(n_contracts);
     let leverage = Decimal::from(leverage.get());
     let initial_price = Decimal::from(initial_price);
 
     let margin = (n_contracts * initial_price * multiplier) / leverage;
     let margin = margin.round_dp_with_strategy(8, RoundingStrategy::MidpointAwayFromZero);
-    let margin = margin.to_f64().context("Could not convert margin to f64")?;
-    let margin = Amount::from_btc(margin).context("Could not convert margin to bitcoin::Amount")?;
+    let margin = margin.to_f64().expect("margin to fit into f64");
 
-    Ok(margin)
+    Amount::from_btc(margin).expect("margin to fit into bitcoin::Amount")
 }
 
 /// The profit and loss (PNL).
@@ -642,8 +635,8 @@ mod unit_tests {
             CompleteFee::None,
         );
 
-        let initial_margin_long = curve.initial_margin_long().unwrap();
-        let initial_margin_short = curve.initial_margin_short().unwrap();
+        let initial_margin_long = curve.initial_margin_long();
+        let initial_margin_short = curve.initial_margin_short();
 
         assert_eq!(initial_margin_long, Amount::from_sat(1_000_000));
         assert_eq!(initial_margin_short, Amount::from_sat(10_000_000));
