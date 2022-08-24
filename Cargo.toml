@@ -1,29 +1,5 @@
 [workspace]
-members = [
-  "daemon",
-  "rocket-basicauth",
-  "rust-embed-rocket",
-  "taker",
-  "maker",
-  "shared-bin",
-  "daemon-tests",
-  "tokio-extras",
-  "otel-tests",
-  "otel-tests-macro",
-  "xtras",
-  "xtra-bitmex-price-feed",
-  "bdk-ext",
-  "model",
-  "btsieve",
-  "bitmex-stream",
-  "xtra-libp2p",
-  "xtra-libp2p-ping",
-  "xtra-libp2p-offer",
-  "xtra-libp2p-rollover",
-  "sqlite-db",
-  "quiet-spans",
-  "vergen-version",
-]
+members = ["crates/*"]
 resolver = "2"
 
 [patch.crates-io]
