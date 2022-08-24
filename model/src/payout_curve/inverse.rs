@@ -54,7 +54,7 @@ pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percen
 /// These formulas are independent of the inverse payout curve implementation and are therefore
 /// theoretical. There could be slight differences between what we return here and what the payout
 /// curve determines.
-pub fn calculate_payout_at_price(
+pub(crate) fn calculate_payout_at_price(
     opening_price: Price,
     closing_price: Price,
     quantity: Contracts,

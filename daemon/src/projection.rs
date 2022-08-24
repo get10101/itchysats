@@ -15,6 +15,7 @@ use itertools::Itertools;
 use maia_core::TransactionExt;
 use model::calculate_long_liquidation_price;
 use model::calculate_margin;
+use model::calculate_payout_at_price;
 use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::market_closing_price;
@@ -635,7 +636,8 @@ impl Cfd {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(self.leverage_taker, self.role, self.position);
 
-        let (profit_btc, profit_percent, payout) = match inverse::calculate_payout_at_price(
+        let (profit_btc, profit_percent, payout) = match calculate_payout_at_price(
+            self.contract_symbol,
             self.initial_price,
             closing_price,
             self.quantity,

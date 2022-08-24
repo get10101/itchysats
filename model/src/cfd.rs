@@ -19,6 +19,7 @@ use crate::Identity;
 use crate::Leverage;
 use crate::LotSize;
 use crate::OpeningFee;
+use crate::Percent;
 use crate::Position;
 use crate::Price;
 use crate::Timestamp;
@@ -35,6 +36,7 @@ use bdk::bitcoin::util::key::PublicKey;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Script;
+use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Transaction;
 use bdk::bitcoin::TxIn;
 use bdk::bitcoin::TxOut;
@@ -1833,6 +1835,72 @@ pub fn calculate_margin(
     }
 }
 
+/// Compute the payout for the given CFD parameters at a particular `closing_price`.
+///
+/// The PNL, both as a `bitcoin::SignedAmount` and as a percentage, is also returned for
+/// convenience.
+///
+/// The `Position` is determined based on the `FeeAccount`.
+///
+/// The formulas used are independent of the payout curve implementations and are therefore
+/// theoretical. There could be slight differences between what we return here and what the payout
+/// curves determine.
+pub fn calculate_payout_at_price(
+    contract_symbol: ContractSymbol,
+    initial_price: Price,
+    closing_price: Price,
+    quantity: Usd,
+    long_leverage: Leverage,
+    short_leverage: Leverage,
+    fee_account: FeeAccount,
+) -> Result<(Amount, SignedAmount, Percent)> {
+    match contract_symbol {
+        ContractSymbol::BtcUsd => inverse::calculate_payout_at_price(
+            initial_price,
+            closing_price,
+            quantity,
+            long_leverage,
+            short_leverage,
+            fee_account,
+        ),
+        ContractSymbol::EthUsd => {
+            let multiplier = dec!(0.000001);
+
+            let position = fee_account.position;
+            let leverage = match position {
+                Position::Long => long_leverage,
+                Position::Short => short_leverage,
+            };
+
+            let initial_price = initial_price.to_u64();
+            let closing_price = closing_price.to_u64();
+            let n_contracts = quantity.to_u64();
+
+            let initial_margin =
+                quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);
+            let fee_offset = fee_account.settle().as_signed_amount(position);
+            let pnl = {
+                let pnl = quanto::Pnl::new(initial_price, closing_price, multiplier, n_contracts)?;
+                match position {
+                    Position::Long => pnl.long(),
+                    Position::Short => pnl.short(),
+                }
+            };
+
+            let payout = quanto::calculate_payout(initial_margin, fee_offset, pnl)?;
+
+            let pnl_percent = {
+                let pnl = Decimal::from(pnl.as_sat());
+                let initial_margin = Decimal::from(initial_margin.as_sat());
+
+                Percent((pnl / initial_margin) * Decimal::ONE_HUNDRED)
+            };
+
+            Ok((payout, pnl, pnl_percent))
+        }
+    }
+}
+
 pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
     price * leverage / (leverage + 1)
 }
@@ -2497,6 +2565,7 @@ mod tests {
         let empty_fee_short = FeeAccount::new(Position::Short, Role::Maker);
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
             Contracts::new(10_000),
@@ -2509,6 +2578,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
             Contracts::new(10_000),
@@ -2524,6 +2594,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(10_000)).unwrap(),
             Contracts::new(10_000),
@@ -2539,6 +2610,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(20_000)).unwrap(),
             Contracts::new(10_000),
@@ -2551,6 +2623,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(9_000)).unwrap(),
             Price::new(dec!(6_000)).unwrap(),
             Contracts::new(9_000),
@@ -2563,6 +2636,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(10_000)).unwrap(),
             Price::new(dec!(5_000)).unwrap(),
             Contracts::new(10_000),
@@ -2575,6 +2649,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(50_400)).unwrap(),
             Price::new(dec!(60_000)).unwrap(),
             Contracts::new(10_000),
@@ -2587,6 +2662,7 @@ mod tests {
         );
 
         assert_profit_loss_values(
+            ContractSymbol::BtcUsd,
             Price::new(dec!(50_400)).unwrap(),
             Price::new(dec!(60_000)).unwrap(),
             Contracts::new(10_000),
@@ -2601,6 +2677,7 @@ mod tests {
 
     #[allow(clippy::too_many_arguments)]
     fn assert_profit_loss_values(
+        contract_symbol: ContractSymbol,
         initial_price: Price,
         closing_price: Price,
         quantity: Contracts,
@@ -2613,7 +2690,8 @@ mod tests {
     ) {
         // TODO: Assert on payout as well
 
-        let (_, profit, in_percent) = inverse::calculate_payout_at_price(
+        let (_, profit, in_percent) = calculate_payout_at_price(
+            contract_symbol,
             initial_price,
             closing_price,
             quantity,
@@ -2634,6 +2712,7 @@ mod tests {
         let quantity = Contracts::new(10_000);
         let leverage = Leverage::ONE;
         let counterparty_leverage = Leverage::ONE;
+        let contract_symbol = ContractSymbol::BtcUsd;
 
         let opening_fee = OpeningFee::new(Amount::from_sat(500));
         let funding_fee = FundingFee::new(
@@ -2649,7 +2728,8 @@ mod tests {
             .add_opening_fee(opening_fee)
             .add_funding_fee(funding_fee);
 
-        let (_, profit, profit_in_percent) = inverse::calculate_payout_at_price(
+        let (_, profit, profit_in_percent) = calculate_payout_at_price(
+            contract_symbol,
             initial_price,
             closing_price,
             quantity,
@@ -2658,7 +2738,8 @@ mod tests {
             taker_long,
         )
         .unwrap();
-        let (_, loss, loss_in_percent) = inverse::calculate_payout_at_price(
+        let (_, loss, loss_in_percent) = calculate_payout_at_price(
+            contract_symbol,
             initial_price,
             closing_price,
             quantity,
@@ -2684,23 +2765,15 @@ mod tests {
         let quantity = Contracts::new(10_000);
         let long_leverage = Leverage::TWO;
         let short_leverage = Leverage::ONE;
+        let contract_symbol = ContractSymbol::BtcUsd;
 
-        let long_margin = calculate_margin(
-            ContractSymbol::BtcUsd,
-            initial_price,
-            quantity,
-            long_leverage,
-        )
-        .to_signed()
-        .unwrap();
-        let short_margin = calculate_margin(
-            ContractSymbol::BtcUsd,
-            initial_price,
-            quantity,
-            short_leverage,
-        )
-        .to_signed()
-        .unwrap();
+        let long_margin = calculate_margin(contract_symbol, initial_price, quantity, long_leverage)
+            .to_signed()
+            .unwrap();
+        let short_margin =
+            calculate_margin(contract_symbol, initial_price, quantity, short_leverage)
+                .to_signed()
+                .unwrap();
 
         let opening_fee = OpeningFee::new(Amount::from_sat(500));
         let funding_fee = FundingFee::new(
@@ -2727,7 +2800,8 @@ mod tests {
             Price::new(dec!(1_500_000)).unwrap(),
             Price::new(dec!(15_000_000)).unwrap(),
         ] {
-            let (_, long_profit, _) = inverse::calculate_payout_at_price(
+            let (_, long_profit, _) = calculate_payout_at_price(
+                contract_symbol,
                 initial_price,
                 closing_price,
                 quantity,
@@ -2736,7 +2810,8 @@ mod tests {
                 fee_account_taker_long,
             )
             .unwrap();
-            let (_, short_profit, _) = inverse::calculate_payout_at_price(
+            let (_, short_profit, _) = calculate_payout_at_price(
+                contract_symbol,
                 initial_price,
                 closing_price,
                 quantity,

@@ -204,9 +204,6 @@ impl Curve {
 
     /// Build the `Payout` for an arbitrary interval.
     fn payout_at_interval(&self, interval: RangeInclusive<u64>) -> Result<Payout> {
-        let fee_offset_long = self.fee_offset.as_signed_amount(Position::Long);
-        let fee_offset_short = self.fee_offset.as_signed_amount(Position::Short);
-
         // We take the value of the closing price for this interval as the midpoint of the
         // interval
         let midpoint = interval.start() + ((interval.end() - interval.start()) / 2);
@@ -214,19 +211,15 @@ impl Curve {
             .pnl_at_closing_price(midpoint)
             .with_context(|| format!("Could not calculate PNL at price {midpoint}"))?;
 
-        let long = self
-            .initial_margin_long()
-            .to_signed()
-            .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
-        let long = long + fee_offset_long + pnl.long();
-        let long = long.to_unsigned().unwrap_or(Amount::ZERO);
+        let long = {
+            let fee_offset = self.fee_offset.as_signed_amount(Position::Long);
+            calculate_payout(self.initial_margin_long(), fee_offset, pnl.long())?
+        };
 
-        let short = self
-            .initial_margin_short()
-            .to_signed()
-            .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
-        let short = short + fee_offset_short + pnl.short();
-        let short = short.to_unsigned().unwrap_or(Amount::ZERO);
+        let short = {
+            let fee_offset = self.fee_offset.as_signed_amount(Position::Short);
+            calculate_payout(self.initial_margin_short(), fee_offset, pnl.short())?
+        };
 
         Ok(Payout {
             interval,
@@ -332,19 +325,36 @@ pub fn calculate_initial_margin(
     Amount::from_btc(margin).expect("margin to fit into bitcoin::Amount")
 }
 
+/// Compute the payout in BTC.
+pub fn calculate_payout(
+    initial_margin: Amount,
+    fee_offset: SignedAmount,
+    pnl: SignedAmount,
+) -> Result<Amount> {
+    let initial_margin = initial_margin
+        .to_signed()
+        .context("Could not convert initial margin to bitcoin::SignedAmount")?;
+
+    let payout = initial_margin + fee_offset + pnl;
+    let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
+
+    Ok(payout)
+}
+
 /// The profit and loss (PNL).
 ///
 /// It is convenient to model the calculations for long and short together, because one party's gain
 /// is the other one's loss and vice-versa. That is, the absolute value of PNL will be the same,
 /// with only the sign changing between the two parties.
-struct Pnl(SignedAmount);
+#[derive(Clone, Copy)]
+pub struct Pnl(SignedAmount);
 
 impl Pnl {
     /// Compute the PNL of the contract.
     ///
     /// Call `Self::new().long()` and `Self::new().short()` to access the PNL values for long and
     /// short respectively.
-    fn new(
+    pub fn new(
         initial_price: u64,
         closing_price: u64,
         multiplier: Decimal,
@@ -363,12 +373,12 @@ impl Pnl {
     }
 
     /// The profit and loss (PNL) from the perspective of the party going long.
-    fn long(&self) -> SignedAmount {
+    pub fn long(&self) -> SignedAmount {
         self.0
     }
 
     /// The profit and loss (PNL) from the perspective of the party going short.
-    fn short(&self) -> SignedAmount {
+    pub fn short(&self) -> SignedAmount {
         self.0 * -1
     }
 }
