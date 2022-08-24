@@ -1914,19 +1914,74 @@ pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percen
     (profit, Percent(percent))
 }
 
-pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
-    price * leverage / (leverage + 1)
+/// Compute the liquidation price for the party going long.
+pub fn calculate_long_liquidation_price(
+    initial_price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    contract_symbol: ContractSymbol,
+) -> Price {
+    match contract_symbol {
+        ContractSymbol::BtcUsd => {
+            inverse::calculate_long_liquidation_price(leverage, initial_price)
+        }
+        ContractSymbol::EthUsd => {
+            let initial_price = initial_price.to_u64();
+            let n_contracts = quantity.to_u64();
+            let multiplier = dec!(0.000001);
+
+            let initial_margin =
+                quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);
+
+            let liquidation_price = quanto::bankruptcy_price_long(
+                initial_margin,
+                n_contracts,
+                initial_price,
+                multiplier,
+            );
+
+            // The `model::Price` type does not allow non-positive values, but the quanto long
+            // liquidation price can easily be 0. We avoid this problem by defaulting to 1
+            if liquidation_price == 0 {
+                Price::new(Decimal::ONE).expect("one to be valid price")
+            } else {
+                Price::new(Decimal::from(liquidation_price))
+                    .expect("liquidation price to fit into Price")
+            }
+        }
+    }
 }
 
-/// calculates short liquidation price
-///
-/// Note: if leverage == 1, then the liquidation price will go towards infinity.
-/// This is represented as Price::INFINITE
-pub fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Price {
-    if leverage == Leverage::ONE {
-        return Price::INFINITE;
+/// Compute the liquidation price for the party going short.
+pub fn calculate_short_liquidation_price(
+    initial_price: Price,
+    quantity: Usd,
+    leverage: Leverage,
+    contract_symbol: ContractSymbol,
+) -> Price {
+    match contract_symbol {
+        ContractSymbol::BtcUsd => {
+            inverse::calculate_short_liquidation_price(leverage, initial_price)
+        }
+        ContractSymbol::EthUsd => {
+            let initial_price = initial_price.to_u64();
+            let n_contracts = quantity.to_u64();
+            let multiplier = dec!(0.000001);
+
+            let initial_margin =
+                quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);
+
+            let liquidation_price = quanto::bankruptcy_price_short(
+                initial_margin,
+                n_contracts,
+                initial_price,
+                multiplier,
+            );
+
+            Price::new(Decimal::from(liquidation_price))
+                .expect("liquidation price to fit into Price")
+        }
     }
-    price * leverage / (leverage - 1)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2489,17 +2544,6 @@ mod tests {
     use std::str::FromStr;
     use time::ext::NumericalDuration;
     use time::macros::datetime;
-
-    #[test]
-    fn given_default_values_then_expected_liquidation_price() {
-        let price = Price::new(dec!(46125)).unwrap();
-        let leverage = Leverage::new(5).unwrap();
-        let expected = Price::new(dec!(38437.5)).unwrap();
-
-        let liquidation_price = calculate_long_liquidation_price(leverage, price);
-
-        assert_eq!(liquidation_price, expected);
-    }
 
     #[test]
     fn given_leverage_of_one_and_equal_price_and_quantity_then_long_margin_is_one_btc() {
@@ -3530,39 +3574,6 @@ mod tests {
 
         assert_eq!(taker_payout, 119240);
         assert_eq!(maker_payout, 246306);
-    }
-
-    #[test]
-    fn test_calculate_long_liquidation_price() {
-        let leverage = Leverage::new(2).unwrap();
-        let price = Price::new(dec!(60_000)).unwrap();
-
-        let is_liquidation_price = calculate_long_liquidation_price(leverage, price);
-
-        let should_liquidation_price = Price::new(dec!(40_000)).unwrap();
-        assert_eq!(is_liquidation_price, should_liquidation_price);
-    }
-
-    #[test]
-    fn test_calculate_short_liquidation_price() {
-        let leverage = Leverage::new(2).unwrap();
-        let price = Price::new(dec!(60_000)).unwrap();
-
-        let is_liquidation_price = calculate_short_liquidation_price(leverage, price);
-
-        let should_liquidation_price = Price::new(dec!(120_000)).unwrap();
-        assert_eq!(is_liquidation_price, should_liquidation_price);
-    }
-
-    #[test]
-    fn test_calculate_infite_liquidation_price() {
-        let leverage = Leverage::new(1).unwrap();
-        let price = Price::new(dec!(60_000)).unwrap();
-
-        let is_liquidation_price = calculate_short_liquidation_price(leverage, price);
-
-        let should_liquidation_price = Price::INFINITE;
-        assert_eq!(is_liquidation_price, should_liquidation_price);
     }
 
     #[test]

@@ -82,3 +82,67 @@ pub fn calculate_payout_at_price(
 
     Ok(payout)
 }
+
+/// Calculate liquidation price for the party going long.
+pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
+    price * leverage / (leverage + 1)
+}
+
+/// Calculate liquidation price for the party going short.
+pub fn calculate_short_liquidation_price(leverage: Leverage, price: Price) -> Price {
+    // If the leverage is equal to 1, the liquidation price will go towards infinity
+    if leverage == Leverage::ONE {
+        return Price::INFINITE;
+    }
+    price * leverage / (leverage - 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn given_default_values_then_expected_liquidation_price() {
+        let price = Price::new(dec!(46125)).unwrap();
+        let leverage = Leverage::new(5).unwrap();
+        let expected = Price::new(dec!(38437.5)).unwrap();
+
+        let liquidation_price = calculate_long_liquidation_price(leverage, price);
+
+        assert_eq!(liquidation_price, expected);
+    }
+
+    #[test]
+    fn test_calculate_long_liquidation_price() {
+        let leverage = Leverage::new(2).unwrap();
+        let price = Price::new(dec!(60_000)).unwrap();
+
+        let is_liquidation_price = calculate_long_liquidation_price(leverage, price);
+
+        let should_liquidation_price = Price::new(dec!(40_000)).unwrap();
+        assert_eq!(is_liquidation_price, should_liquidation_price);
+    }
+
+    #[test]
+    fn test_calculate_short_liquidation_price() {
+        let leverage = Leverage::new(2).unwrap();
+        let price = Price::new(dec!(60_000)).unwrap();
+
+        let is_liquidation_price = calculate_short_liquidation_price(leverage, price);
+
+        let should_liquidation_price = Price::new(dec!(120_000)).unwrap();
+        assert_eq!(is_liquidation_price, should_liquidation_price);
+    }
+
+    #[test]
+    fn test_calculate_infite_liquidation_price() {
+        let leverage = Leverage::new(1).unwrap();
+        let price = Price::new(dec!(60_000)).unwrap();
+
+        let is_liquidation_price = calculate_short_liquidation_price(leverage, price);
+
+        let should_liquidation_price = Price::INFINITE;
+        assert_eq!(is_liquidation_price, should_liquidation_price);
+    }
+}

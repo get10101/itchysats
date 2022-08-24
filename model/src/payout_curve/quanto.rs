@@ -382,7 +382,7 @@ impl Pnl {
 }
 
 /// Compute the closing price under which the party going long should get liquidated.
-fn bankruptcy_price_long(
+pub fn bankruptcy_price_long(
     initial_margin: Amount,
     n_contracts: u64,
     initial_price: u64,
@@ -394,7 +394,7 @@ fn bankruptcy_price_long(
 }
 
 /// Compute the closing price over which the party going short should get liquidated.
-fn bankruptcy_price_short(
+pub fn bankruptcy_price_short(
     initial_margin: Amount,
     n_contracts: u64,
     initial_price: u64,

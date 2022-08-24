@@ -351,8 +351,18 @@ impl Cfd {
         );
 
         let liquidation_price = match position {
-            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
-            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+            Position::Long => calculate_long_liquidation_price(
+                initial_price,
+                quantity_usd,
+                our_leverage,
+                contract_symbol,
+            ),
+            Position::Short => calculate_short_liquidation_price(
+                initial_price,
+                quantity_usd,
+                our_leverage,
+                contract_symbol,
+            ),
         };
 
         let (long_leverage, short_leverage) =
@@ -853,8 +863,18 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
         );
 
         let liquidation_price = match position {
-            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
-            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+            Position::Long => calculate_long_liquidation_price(
+                initial_price,
+                quantity_usd,
+                our_leverage,
+                contract_symbol,
+            ),
+            Position::Short => calculate_short_liquidation_price(
+                initial_price,
+                quantity_usd,
+                our_leverage,
+                contract_symbol,
+            ),
         };
 
         let (details, closing_price, payout, state) = {
@@ -991,8 +1011,18 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
         );
 
         let liquidation_price = match position {
-            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
-            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+            Position::Long => calculate_long_liquidation_price(
+                initial_price,
+                quantity_usd,
+                our_leverage,
+                contract_symbol,
+            ),
+            Position::Short => calculate_short_liquidation_price(
+                initial_price,
+                quantity_usd,
+                our_leverage,
+                contract_symbol,
+            ),
         };
 
         // there are no events to apply at this stage for failed CFDs,
@@ -1342,8 +1372,18 @@ impl CfdOffer {
             .iter()
             .map(|leverage| {
                 let liquidation_price = match own_position {
-                    Position::Long => calculate_long_liquidation_price(*leverage, offer.price),
-                    Position::Short => calculate_short_liquidation_price(*leverage, offer.price),
+                    Position::Long => calculate_long_liquidation_price(
+                        offer.price,
+                        offer.max_quantity,
+                        *leverage,
+                        offer.contract_symbol,
+                    ),
+                    Position::Short => calculate_short_liquidation_price(
+                        offer.price,
+                        offer.max_quantity,
+                        *leverage,
+                        offer.contract_symbol,
+                    ),
                 };
                 // Margin per lot price is dependent on one's own leverage
                 let margin_per_lot = calculate_margin(
