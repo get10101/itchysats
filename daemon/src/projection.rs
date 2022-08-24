@@ -16,10 +16,10 @@ use maia_core::TransactionExt;
 use model::calculate_long_liquidation_price;
 use model::calculate_margin;
 use model::calculate_payout_at_price;
+use model::calculate_profit;
 use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::market_closing_price;
-use model::payout_curve::inverse;
 use model::CfdEvent;
 use model::ClosedCfd;
 use model::ContractSymbol;
@@ -588,7 +588,7 @@ impl Cfd {
 
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
-            let (profit_btc, profit_percent) = inverse::calculate_profit(payout, self.margin);
+            let (profit_btc, profit_percent) = calculate_profit(payout, self.margin);
 
             return Self {
                 payout: Some(payout),
@@ -645,7 +645,9 @@ impl Cfd {
             short_leverage,
             self.aggregated.fee_account,
         ) {
-            Ok((payout, profit_btc, profit_percent)) => {
+            Ok(payout) => {
+                let (profit_btc, profit_percent) = calculate_profit(payout, self.margin);
+
                 (profit_btc, profit_percent.round_dp(1).to_string(), payout)
             }
             Err(e) => {
@@ -911,7 +913,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             (CfdDetails { tx_url_list }, price, payout, state)
         };
 
-        let (profit_btc, profit_percent) = inverse::calculate_profit(payout.inner(), margin);
+        let (profit_btc, profit_percent) = calculate_profit(payout.inner(), margin);
 
         // there are no events to apply at this stage for closed CFDs,
         // which is why this field is mostly ignored

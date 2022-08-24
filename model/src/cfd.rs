@@ -1837,9 +1837,6 @@ pub fn calculate_margin(
 
 /// Compute the payout for the given CFD parameters at a particular `closing_price`.
 ///
-/// The PNL, both as a `bitcoin::SignedAmount` and as a percentage, is also returned for
-/// convenience.
-///
 /// The `Position` is determined based on the `FeeAccount`.
 ///
 /// The formulas used are independent of the payout curve implementations and are therefore
@@ -1849,11 +1846,11 @@ pub fn calculate_payout_at_price(
     contract_symbol: ContractSymbol,
     initial_price: Price,
     closing_price: Price,
-    quantity: Usd,
+    quantity: Contracts,
     long_leverage: Leverage,
     short_leverage: Leverage,
     fee_account: FeeAccount,
-) -> Result<(Amount, SignedAmount, Percent)> {
+) -> Result<Amount> {
     match contract_symbol {
         ContractSymbol::BtcUsd => inverse::calculate_payout_at_price(
             initial_price,
@@ -1889,16 +1886,29 @@ pub fn calculate_payout_at_price(
 
             let payout = quanto::calculate_payout(initial_margin, fee_offset, pnl)?;
 
-            let pnl_percent = {
-                let pnl = Decimal::from(pnl.as_sat());
-                let initial_margin = Decimal::from(initial_margin.as_sat());
-
-                Percent((pnl / initial_margin) * Decimal::ONE_HUNDRED)
-            };
-
-            Ok((payout, pnl, pnl_percent))
+            Ok(payout)
         }
     }
+}
+
+/// Compute the PNL for the given `payout` and `margin` amounts.
+///
+/// The PNL is returned as a `bitcoin::SignedAmount` and as a percentage of the original margin.
+pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percent) {
+    let payout = payout
+        .to_signed()
+        .expect("amount to fit into signed amount");
+    let margin = margin
+        .to_signed()
+        .expect("amount to fit into signed amount");
+
+    let profit = payout - margin;
+
+    let profit_sats = Decimal::from(profit.as_sat());
+    let margin_sats = Decimal::from(margin.as_sat());
+    let percent = dec!(100) * profit_sats / margin_sats;
+
+    (profit, Percent(percent))
 }
 
 pub fn calculate_long_liquidation_price(leverage: Leverage, price: Price) -> Price {
@@ -2681,8 +2691,8 @@ mod tests {
         initial_price: Price,
         closing_price: Price,
         quantity: Contracts,
-        leverage: Leverage,
-        counterparty_leverage: Leverage,
+        leverage_long: Leverage,
+        leverage_short: Leverage,
         fee_account: FeeAccount,
         should_profit: SignedAmount,
         should_profit_in_percent: Percent,
@@ -2690,16 +2700,27 @@ mod tests {
     ) {
         // TODO: Assert on payout as well
 
-        let (_, profit, in_percent) = calculate_payout_at_price(
+        let margin = match fee_account.position {
+            Position::Long => {
+                calculate_margin(contract_symbol, initial_price, quantity, leverage_long)
+            }
+            Position::Short => {
+                calculate_margin(contract_symbol, initial_price, quantity, leverage_short)
+            }
+        };
+
+        let payout = calculate_payout_at_price(
             contract_symbol,
             initial_price,
             closing_price,
             quantity,
-            leverage,
-            counterparty_leverage,
+            leverage_long,
+            leverage_short,
             fee_account,
         )
         .unwrap();
+
+        let (profit, in_percent) = calculate_profit(payout, margin);
 
         assert_eq!(profit, should_profit, "{}", msg);
         assert_eq!(in_percent, should_profit_in_percent, "{}", msg);
@@ -2710,8 +2731,7 @@ mod tests {
         let initial_price = Price::new(dec!(10_000)).unwrap();
         let closing_price = Price::new(dec!(16_000)).unwrap();
         let quantity = Contracts::new(10_000);
-        let leverage = Leverage::ONE;
-        let counterparty_leverage = Leverage::ONE;
+        let leverage = Leverage::ONE; // same leverage for both parties
         let contract_symbol = ContractSymbol::BtcUsd;
 
         let opening_fee = OpeningFee::new(Amount::from_sat(500));
@@ -2720,34 +2740,40 @@ mod tests {
             FundingRate::new(dec!(0.001)).unwrap(),
         );
 
-        let taker_long = FeeAccount::new(Position::Long, Role::Taker)
+        let fee_account_taker_long = FeeAccount::new(Position::Long, Role::Taker)
             .add_opening_fee(opening_fee)
             .add_funding_fee(funding_fee);
 
-        let maker_short = FeeAccount::new(Position::Short, Role::Maker)
+        let fee_account_maker_short = FeeAccount::new(Position::Short, Role::Maker)
             .add_opening_fee(opening_fee)
             .add_funding_fee(funding_fee);
 
-        let (_, profit, profit_in_percent) = calculate_payout_at_price(
+        // same margin for both parties
+        let margin = calculate_margin(contract_symbol, initial_price, quantity, leverage);
+
+        let payout_taker_long = calculate_payout_at_price(
             contract_symbol,
             initial_price,
             closing_price,
             quantity,
             leverage,
-            counterparty_leverage,
-            taker_long,
+            leverage,
+            fee_account_taker_long,
         )
         .unwrap();
-        let (_, loss, loss_in_percent) = calculate_payout_at_price(
+        let (profit, profit_in_percent) = calculate_profit(payout_taker_long, margin);
+
+        let payout_maker_short = calculate_payout_at_price(
             contract_symbol,
             initial_price,
             closing_price,
             quantity,
             leverage,
-            counterparty_leverage,
-            maker_short,
+            leverage,
+            fee_account_maker_short,
         )
         .unwrap();
+        let (loss, loss_in_percent) = calculate_profit(payout_maker_short, margin);
 
         assert_eq!(profit.checked_add(loss).unwrap(), SignedAmount::ZERO);
         // NOTE:
@@ -2766,14 +2792,6 @@ mod tests {
         let long_leverage = Leverage::TWO;
         let short_leverage = Leverage::ONE;
         let contract_symbol = ContractSymbol::BtcUsd;
-
-        let long_margin = calculate_margin(contract_symbol, initial_price, quantity, long_leverage)
-            .to_signed()
-            .unwrap();
-        let short_margin =
-            calculate_margin(contract_symbol, initial_price, quantity, short_leverage)
-                .to_signed()
-                .unwrap();
 
         let opening_fee = OpeningFee::new(Amount::from_sat(500));
         let funding_fee = FundingFee::new(
@@ -2800,7 +2818,9 @@ mod tests {
             Price::new(dec!(1_500_000)).unwrap(),
             Price::new(dec!(15_000_000)).unwrap(),
         ] {
-            let (_, long_profit, _) = calculate_payout_at_price(
+            let long_margin =
+                calculate_margin(contract_symbol, initial_price, quantity, long_leverage);
+            let long_payout = calculate_payout_at_price(
                 contract_symbol,
                 initial_price,
                 closing_price,
@@ -2810,7 +2830,12 @@ mod tests {
                 fee_account_taker_long,
             )
             .unwrap();
-            let (_, short_profit, _) = calculate_payout_at_price(
+            let (long_profit, _) = calculate_profit(long_payout, long_margin);
+            let long_margin = long_margin.to_signed().unwrap();
+
+            let short_margin =
+                calculate_margin(contract_symbol, initial_price, quantity, short_leverage);
+            let short_payout = calculate_payout_at_price(
                 contract_symbol,
                 initial_price,
                 closing_price,
@@ -2820,6 +2845,9 @@ mod tests {
                 fee_account_maker_short,
             )
             .unwrap();
+
+            let (short_profit, _) = calculate_profit(short_payout, short_margin);
+            let short_margin = short_margin.to_signed().unwrap();
 
             assert_eq!(
                 long_profit + long_margin + short_profit + short_margin,

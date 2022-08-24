@@ -15,7 +15,7 @@ use maia_core::Payout;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 
-pub mod inverse;
+pub(crate) mod inverse;
 #[cfg(test)]
 mod prop_compose;
 pub(crate) mod quanto;
