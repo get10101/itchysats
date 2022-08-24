@@ -252,9 +252,7 @@ impl ClosedCfdInputAggregate {
             contract_symbol,
             ..
         } = cfd;
-        let n_contracts = quantity
-            .try_into_u64()
-            .expect("number of contracts to fit into a u64");
+        let n_contracts = quantity.to_u64();
         let n_contracts = Contracts::new(n_contracts);
 
         let initial_funding_fee = {
