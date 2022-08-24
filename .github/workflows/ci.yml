@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ matrix.crate }}
+        working-directory: crates/${{ matrix.crate }}
     steps:
       - uses: actions/checkout@v3
       - name: Setup rust toolchain
@@ -156,7 +156,7 @@ jobs:
 
       - name: Run sqlx prepare
         run: |
-          cd sqlite-db
+          cd crates/sqlite-db
           ./prepare_db.sh
           git diff --exit-code sqlx-data.json
       - name: sqlx prepare was not run
