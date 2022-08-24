@@ -6,6 +6,7 @@ use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve::inverse;
 use crate::payout_curve::quanto;
 use crate::payout_curve::Payouts;
+use crate::payout_curve::ETHUSD_MULTIPLIER;
 use crate::rollover;
 use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;
@@ -1832,7 +1833,7 @@ pub fn calculate_margin(
             price.to_u64(),
             quantity.to_u64(),
             leverage,
-            dec!(0.000001),
+            ETHUSD_MULTIPLIER,
         ),
     }
 }
@@ -1863,7 +1864,7 @@ pub fn calculate_payout_at_price(
             fee_account,
         ),
         ContractSymbol::EthUsd => {
-            let multiplier = dec!(0.000001);
+            let multiplier = ETHUSD_MULTIPLIER;
 
             let position = fee_account.position;
             let leverage = match position {
@@ -1927,7 +1928,7 @@ pub fn calculate_long_liquidation_price(
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
             let n_contracts = quantity.to_u64();
-            let multiplier = dec!(0.000001);
+            let multiplier = ETHUSD_MULTIPLIER;
 
             let initial_margin =
                 quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);
@@ -1965,7 +1966,7 @@ pub fn calculate_short_liquidation_price(
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
             let n_contracts = quantity.to_u64();
-            let multiplier = dec!(0.000001);
+            let multiplier = ETHUSD_MULTIPLIER;
 
             let initial_margin =
                 quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);

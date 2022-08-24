@@ -14,12 +14,15 @@ use maia_core::generate_payouts;
 use maia_core::Announcement;
 use maia_core::Payout;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
 pub(crate) mod inverse;
 #[cfg(test)]
 mod prop_compose;
 pub(crate) mod quanto;
+
+pub const ETHUSD_MULTIPLIER: Decimal = dec!(0.000001);
 
 /// Payout combinations associated with the oracle events that may
 /// trigger them.
@@ -91,7 +94,7 @@ impl Payouts {
                 quantity.to_u64(),
                 (leverage_long, leverage_short),
                 n_payouts,
-                rust_decimal_macros::dec!(0.000001),
+                ETHUSD_MULTIPLIER,
                 fee,
             ),
         }
@@ -249,7 +252,6 @@ mod tests {
     use crate::payout_curve::quanto;
     use crate::ContractSymbol;
     use proptest::prelude::*;
-    use rust_decimal_macros::dec;
     use std::ops::Add;
     use time::ext::NumericalDuration;
     use time::macros::datetime;
@@ -329,7 +331,7 @@ mod tests {
                 n_contracts,
                 (leverage_long, leverage_short),
                 n_payouts,
-                dec!(0.000001),
+                ETHUSD_MULTIPLIER,
                 fee_offset
             ) {
                 Ok(payouts) => payouts,

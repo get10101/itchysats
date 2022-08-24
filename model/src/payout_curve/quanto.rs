@@ -430,6 +430,10 @@ mod api_tests {
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
 
+    // This happens to be the multiplier corresponding to the contract symbol ETHUSD, but it's
+    // arbitrarily chosen for these tests
+    const MULTIPLIER: Decimal = dec!(0.000001);
+
     #[test]
     fn quanto_curve_snapshot() {
         let initial_price = 1_000;
@@ -437,7 +441,6 @@ mod api_tests {
         let leverage_long = Leverage::TWO;
         let leverage_short = Leverage::ONE;
         let n_payouts = 20;
-        let multiplier = dec!(0.000001);
         let fee_offset = CompleteFee::None;
 
         let payouts = Payouts::new(
@@ -446,7 +449,7 @@ mod api_tests {
             leverage_long,
             leverage_short,
             n_payouts,
-            multiplier,
+            MULTIPLIER,
             fee_offset,
         )
         .unwrap()
@@ -493,7 +496,7 @@ mod api_tests {
                 leverage_long,
                 leverage_short,
                 n_payouts,
-                dec!(0.000001),
+                MULTIPLIER,
                 fee_offset
             )?;
 
@@ -523,7 +526,7 @@ mod api_tests {
                 leverage_long,
                 leverage_short,
                 n_payouts,
-                dec!(0.000001),
+                MULTIPLIER,
                 fee_offset
             )?;
             let payouts = payouts.0;
@@ -555,7 +558,7 @@ mod api_tests {
                 leverage_long,
                 leverage_short,
                 n_payouts,
-                dec!(0.000001),
+                MULTIPLIER,
                 fee_offset
             )?;
             let payouts = payouts.0;
@@ -617,9 +620,12 @@ mod api_tests {
 
 #[cfg(test)]
 mod unit_tests {
+    use super::*;
     use rust_decimal_macros::dec;
 
-    use super::*;
+    // This happens to be the multiplier corresponding to the contract symbol ETHUSD, but it's
+    // arbitrarily chosen for these tests
+    const MULTIPLIER: Decimal = dec!(0.000001);
 
     #[test]
     fn initial_margin_snapshot() {
@@ -629,7 +635,7 @@ mod unit_tests {
             Leverage::new(10).unwrap(),
             Leverage::ONE,
             200,
-            dec!(0.000001),
+            MULTIPLIER,
             CompleteFee::None,
         );
 
@@ -649,7 +655,7 @@ mod unit_tests {
             Leverage::new(10).unwrap(),
             Leverage::ONE,
             200,
-            dec!(0.000001),
+            MULTIPLIER,
             CompleteFee::None,
         );
 
@@ -681,7 +687,7 @@ mod unit_tests {
             Leverage::ONE,
             Leverage::new(4).unwrap(),
             200,
-            dec!(0.000001),
+            MULTIPLIER,
             CompleteFee::None,
         );
 
