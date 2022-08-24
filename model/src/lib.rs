@@ -98,6 +98,7 @@ impl Price {
 
     pub fn new(value: Decimal) -> Result<Self> {
         ensure!(value > Decimal::ZERO, "Non-positive price not supported");
+        ensure!(value <= Decimal::from(u64::MAX), "Price too large");
 
         Ok(Self(value))
     }
