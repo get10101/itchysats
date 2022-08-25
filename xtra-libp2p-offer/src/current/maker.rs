@@ -1,6 +1,9 @@
 use crate::current::protocol;
 use crate::current::PROTOCOL;
 use async_trait::async_trait;
+use model::ContractSymbol;
+use model::Position;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::spawn_fallible;
@@ -15,7 +18,7 @@ use xtra_productivity::xtra_productivity;
 pub struct Actor {
     endpoint: xtra::Address<Endpoint>,
     connected_peers: HashSet<PeerId>,
-    latest_offers: Vec<model::Offer>,
+    current_offers: Offers,
 }
 
 impl Actor {
@@ -23,13 +26,17 @@ impl Actor {
         Self {
             endpoint,
             connected_peers: HashSet::default(),
-            latest_offers: Vec::new(),
+            current_offers: Offers::default(),
         }
     }
 
-    async fn send_offers(&self, peer_id: PeerId, ctx: &mut xtra::Context<Self>) {
+    async fn send_offers(
+        &self,
+        peer_id: PeerId,
+        offers: Vec<model::Offer>,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         let endpoint = self.endpoint.clone();
-        let offers = self.latest_offers.clone();
 
         let span = tracing::debug_span!("Send offers", %peer_id).or_current();
         let task = async move {
@@ -63,11 +70,11 @@ impl Actor {
 #[xtra_productivity]
 impl Actor {
     async fn handle(&mut self, msg: NewOffers, ctx: &mut xtra::Context<Self>) {
-        self.latest_offers = msg.0;
+        self.current_offers.update(msg.0.clone());
 
         let quiet = quiet_spans::sometimes_quiet_children();
         for peer_id in self.connected_peers.iter().copied() {
-            self.send_offers(peer_id, ctx)
+            self.send_offers(peer_id, msg.0.clone(), ctx)
                 .instrument(quiet.in_scope(|| {
                     tracing::debug_span!("Broadcast offers to taker (libp2p)").or_current()
                 }))
@@ -76,7 +83,7 @@ impl Actor {
     }
 
     async fn handle(&mut self, _: GetLatestOffers) -> Vec<model::Offer> {
-        self.latest_offers.clone()
+        self.current_offers.to_vec()
     }
 }
 
@@ -89,7 +96,8 @@ impl Actor {
     ) {
         tracing::trace!("Adding newly established connection: {:?}", msg.peer_id);
         self.connected_peers.insert(msg.peer_id);
-        self.send_offers(msg.peer_id, ctx).await;
+        self.send_offers(msg.peer_id, self.current_offers.to_vec(), ctx)
+            .await;
     }
 
     async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
@@ -110,6 +118,22 @@ impl NewOffers {
 
 #[derive(Clone, Copy)]
 pub struct GetLatestOffers;
+
+#[derive(Clone, Default)]
+struct Offers(HashMap<(ContractSymbol, Position), model::Offer>);
+
+impl Offers {
+    fn update(&mut self, offers: Vec<model::Offer>) {
+        for offer in offers.into_iter() {
+            self.0
+                .insert((offer.contract_symbol, offer.position_maker), offer);
+        }
+    }
+
+    fn to_vec(&self) -> Vec<model::Offer> {
+        self.0.iter().map(|(_, offer)| offer).cloned().collect()
+    }
+}
 
 #[async_trait]
 impl xtra::Actor for Actor {
