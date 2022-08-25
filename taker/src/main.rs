@@ -294,8 +294,6 @@ async fn main() -> Result<()> {
 
     // Create actors
 
-    let (projection_actor, projection_context) = xtra::Context::new(None);
-
     let possible_addresses = resolve_maker_addresses(maker_url.as_str()).await?;
 
     // Assume that the first resolved ipv4 address is good enough for libp2p.
@@ -333,6 +331,24 @@ async fn main() -> Result<()> {
 
     tasks.add(supervisor.run_log_summary());
 
+    let (feed_senders, feed_receivers) = projection::feeds();
+    let feed_senders = Arc::new(feed_senders);
+
+    let (supervisor, projection_actor) = Supervisor::new({
+        let db = db.clone();
+        let price_feed = price_feed_actor.clone();
+        move || {
+            projection::Actor::new(
+                db.clone(),
+                bitcoin_network,
+                price_feed.clone().into(),
+                Role::Maker,
+                feed_senders.clone(),
+            )
+        }
+    });
+    tasks.add(supervisor.run_log_summary());
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
@@ -351,17 +367,6 @@ async fn main() -> Result<()> {
         maker_multiaddr,
         environment,
     )?;
-
-    let (feed_senders, feed_receivers) = projection::feeds();
-    let feed_senders = Arc::new(feed_senders);
-    let proj_actor = projection::Actor::new(
-        db.clone(),
-        bitcoin_network,
-        taker.price_feed_actor.clone().into(),
-        Role::Taker,
-        feed_senders,
-    );
-    tasks.add(projection_context.run(proj_actor));
 
     let mission_success = rocket::custom(figment)
         .manage(feed_receivers)

@@ -22,7 +22,6 @@ use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
 use shared_bin::logger;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio_extras::Tasks;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::Supervisor;
@@ -126,8 +125,6 @@ async fn main() -> Result<()> {
 
     // Create actors
 
-    let (projection_actor, projection_context) = xtra::Context::new(None);
-
     let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
     let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(
         &libp2p_socket.ip(),
@@ -142,6 +139,23 @@ async fn main() -> Result<()> {
         },
         always_restart::<xtra_bitmex_price_feed::Error>(),
     );
+    tasks.add(supervisor.run_log_summary());
+
+    let (feed_senders, feed_receivers) = projection::feeds();
+    let feed_senders = std::sync::Arc::new(feed_senders);
+
+    let (supervisor, projection_actor) = Supervisor::new({
+        let db = db.clone();
+        move || {
+            projection::Actor::new(
+                db.clone(),
+                bitcoin_network,
+                price_feed.clone().into(),
+                Role::Maker,
+                feed_senders.clone(),
+            )
+        }
+    });
     tasks.add(supervisor.run_log_summary());
 
     let maker = ActorSystem::new(
@@ -159,17 +173,6 @@ async fn main() -> Result<()> {
         identities,
         endpoint_listen,
     )?;
-
-    let (feed_senders, feed_receivers) = projection::feeds();
-    let feed_senders = Arc::new(feed_senders);
-    let proj_actor = projection::Actor::new(
-        db.clone(),
-        bitcoin_network,
-        price_feed.clone().into(),
-        Role::Maker,
-        feed_senders,
-    );
-    tasks.add(projection_context.run(proj_actor));
 
     let mission_success = rocket::custom(figment)
         .manage(feed_receivers)
