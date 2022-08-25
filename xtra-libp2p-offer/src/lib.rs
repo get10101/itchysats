@@ -93,6 +93,61 @@ mod tests {
         assert_eq!(new_offers, received_offers)
     }
 
+    #[tokio::test]
+    async fn given_taker_connects_then_taker_receives_all_current_offers() {
+        tracing_subscriber::fmt()
+            .with_env_filter("xtra_libp2p_offer=trace")
+            .with_test_writer()
+            .init();
+
+        let (maker_peer_id, maker_offer_addr, maker_endpoint_addr) =
+            create_endpoint_with_offer_maker();
+        let (offer_receiver_addr, taker_endpoint_addr) = create_endpoint_with_offer_taker();
+
+        maker_endpoint_addr
+            .send(ListenOn(Multiaddr::empty().with(Protocol::Memory(1000))))
+            .await
+            .unwrap();
+
+        let offer_btc_usd_long = dummy_offer(ContractSymbol::BtcUsd, Position::Long);
+        maker_offer_addr
+            .send(crate::maker::NewOffers::new(vec![
+                offer_btc_usd_long.clone()
+            ]))
+            .await
+            .unwrap();
+
+        let offer_eth_usd_short = dummy_offer(ContractSymbol::EthUsd, Position::Short);
+        maker_offer_addr
+            .send(crate::maker::NewOffers::new(vec![
+                offer_eth_usd_short.clone()
+            ]))
+            .await
+            .unwrap();
+
+        taker_endpoint_addr
+            .send(Connect(
+                Multiaddr::empty()
+                    .with(Protocol::Memory(1000))
+                    .with(Protocol::P2p(maker_peer_id.into())),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+
+        // taker retries until the connection is established and we
+        // get the maker's latest offers
+        let received_offers = retry_until_some(|| {
+            let offer_receiver_addr = offer_receiver_addr.clone();
+            async move { offer_receiver_addr.send(GetLatestOffers).await.unwrap() }
+        })
+        .await;
+
+        assert_eq!(received_offers.len(), 2);
+        assert!(received_offers.contains(&offer_btc_usd_long));
+        assert!(received_offers.contains(&offer_eth_usd_short));
+    }
+
     fn create_endpoint_with_offer_maker(
     ) -> (PeerId, Address<crate::maker::Actor>, Address<Endpoint>) {
         let (endpoint_addr, endpoint_context) = Context::new(None);
@@ -191,13 +246,16 @@ mod tests {
     }
 
     pub fn dummy_offers() -> Vec<model::Offer> {
-        vec![dummy_offer(Position::Long), dummy_offer(Position::Short)]
+        vec![
+            dummy_offer(ContractSymbol::BtcUsd, Position::Long),
+            dummy_offer(ContractSymbol::BtcUsd, Position::Short),
+        ]
     }
 
-    fn dummy_offer(position_maker: Position) -> model::Offer {
+    fn dummy_offer(contract_symbol: ContractSymbol, position_maker: Position) -> model::Offer {
         model::Offer {
             id: Default::default(),
-            contract_symbol: ContractSymbol::BtcUsd,
+            contract_symbol,
             position_maker,
             price: Price::new(dec!(1000)).unwrap(),
             min_quantity: Contracts::new(100),
