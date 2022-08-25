@@ -67,7 +67,8 @@ pub async fn maker_feed(
         yield Event::json(&offers.ethusd_short).event("ethusd_short_offer");
 
         let quote = rx_quote.borrow().clone();
-        yield quote.to_sse_event();
+        yield Event::json(&quote.get(&model::ContractSymbol::BtcUsd)).event("btcusd_quote");
+        yield Event::json(&quote.get(&model::ContractSymbol::EthUsd)).event("ethusd_quote");
 
         let cfds = rx_cfds.borrow().clone();
         if let Some(cfds) = cfds {
@@ -95,7 +96,8 @@ pub async fn maker_feed(
                 }
                 Ok(()) = rx_quote.changed() => {
                     let quote = rx_quote.borrow().clone();
-                    yield quote.to_sse_event();
+                    yield Event::json(&quote.get(&model::ContractSymbol::BtcUsd)).event("btcusd_quote");
+                    yield Event::json(&quote.get(&model::ContractSymbol::EthUsd)).event("ethusd_quote");
                 }
             }
         }

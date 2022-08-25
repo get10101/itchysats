@@ -1,3 +1,4 @@
+use crate::dummy_latest_quotes;
 use crate::maia::OliviaData;
 use crate::mocks::monitor::MockMonitor;
 use crate::mocks::oracle::MockOracle;
@@ -79,7 +80,9 @@ impl Mocks {
             .returning(|msg| wallet::build_party_params(msg));
     }
 
-    pub async fn mock_latest_quote(&mut self, latest_quote: Option<xtra_bitmex_price_feed::Quote>) {
-        self.price_feed().await.set_latest_quote(latest_quote);
+    pub async fn mock_latest_quotes(&mut self) {
+        self.price_feed()
+            .await
+            .set_latest_quotes(dummy_latest_quotes());
     }
 }

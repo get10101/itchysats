@@ -63,6 +63,7 @@ use tokio::sync::watch;
 use tokio_extras::Tasks;
 use tracing::instrument;
 use xtra::Actor;
+use xtra_bitmex_price_feed::LatestQuotes;
 use xtra_bitmex_price_feed::Quote;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
@@ -826,7 +827,7 @@ impl Taker {
         &mut self.feeds.offers
     }
 
-    pub fn quote_feed(&mut self) -> &mut watch::Receiver<Option<projection::Quote>> {
+    pub fn quote_feed(&mut self) -> &mut watch::Receiver<projection::LatestQuotes> {
         &mut self.feeds.quote
     }
 
@@ -973,12 +974,28 @@ impl Taker {
     }
 }
 
-pub fn dummy_quote() -> Quote {
+pub fn dummy_latest_quotes() -> LatestQuotes {
+    vec![dummy_btc_quote(), dummy_eth_quote()]
+        .iter()
+        .map(|quote| (quote.symbol, *quote))
+        .collect()
+}
+
+fn dummy_btc_quote() -> Quote {
     Quote {
         timestamp: OffsetDateTime::now_utc(),
         bid: dummy_price(),
         ask: dummy_price(),
         symbol: xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
+    }
+}
+
+fn dummy_eth_quote() -> Quote {
+    Quote {
+        timestamp: OffsetDateTime::now_utc(),
+        bid: dummy_price(),
+        ask: dummy_price(),
+        symbol: xtra_bitmex_price_feed::ContractSymbol::EthUsd,
     }
 }
 
@@ -1057,4 +1074,17 @@ pub async fn mock_oracle_announcements(
         .mocks
         .mock_oracle_announcement_with(announcements)
         .await;
+}
+
+pub async fn mock_quotes(maker: &mut Maker, taker: &mut Taker) {
+    taker.mocks.mock_latest_quotes().await;
+    maker.mocks.mock_latest_quotes().await;
+    let mut quote_receiver = taker.quote_feed().clone();
+
+    let non_empty_quote =
+        |quotes: projection::LatestQuotes| quotes.get(&ContractSymbol::BtcUsd).copied();
+
+    next_with(&mut quote_receiver, non_empty_quote)
+        .await
+        .unwrap(); // if quote is available on feed, it propagated through the system
 }

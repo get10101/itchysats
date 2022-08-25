@@ -1,8 +1,8 @@
 use daemon::projection::CfdState;
 use daemon_tests::confirm;
-use daemon_tests::dummy_quote;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
+use daemon_tests::mock_quotes;
 use daemon_tests::open_cfd;
 use daemon_tests::start_both;
 use daemon_tests::wait_next_state;
@@ -24,12 +24,7 @@ async fn collaboratively_close_an_open_cfd_maker_going_long() {
 async fn maker_rejects_collab_settlement_after_commit_finality() {
     let (mut maker, mut taker) = start_both().await;
     let order_id = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
-
-    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    let mut quote_receiver = taker.quote_feed().clone();
-    next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
-
+    mock_quotes(&mut maker, &mut taker).await;
     taker.system.propose_settlement(order_id).await.unwrap();
 
     wait_next_state!(
@@ -50,11 +45,7 @@ async fn maker_rejects_collab_settlement_after_commit_finality() {
 async fn maker_accepts_collab_settlement_after_commit_finality() {
     let (mut maker, mut taker) = start_both().await;
     let order_id = open_cfd(&mut taker, &mut maker, OpenCfdArgs::default()).await;
-
-    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    let mut quote_receiver = taker.quote_feed().clone();
-    next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+    mock_quotes(&mut maker, &mut taker).await;
 
     taker.system.propose_settlement(order_id).await.unwrap();
 
@@ -83,10 +74,7 @@ async fn collaboratively_close_an_open_cfd(position_maker: Position) {
         },
     )
     .await;
-    taker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    maker.mocks.mock_latest_quote(Some(dummy_quote())).await;
-    let mut quote_receiver = taker.quote_feed().clone();
-    next_with(&mut quote_receiver, |q| q).await.unwrap(); // if quote is available on feed, it propagated through the system
+    mock_quotes(&mut maker, &mut taker).await;
 
     taker.system.propose_settlement(order_id).await.unwrap();
 

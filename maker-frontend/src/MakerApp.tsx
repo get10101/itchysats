@@ -101,7 +101,21 @@ export default function App() {
     );
 
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
-    const priceInfo = useLatestEvent<PriceInfo>(source, "quote");
+    const btcPriceInfo = useLatestEvent<PriceInfo>(source, "btcusd_quote");
+    const ethPriceInfo = useLatestEvent<PriceInfo>(source, "ethusd_quote");
+
+    let [priceInfo, setPriceInfo] = useState<PriceInfo | null>(null);
+
+    useEffect(() => {
+        if (symbol === Symbol.btcusd) {
+            setPriceInfo(btcPriceInfo);
+        } else if (symbol === Symbol.ethusd) {
+            setPriceInfo(ethPriceInfo);
+        } else {
+            console.error("Unknown contract symbol: " + symbol);
+            setPriceInfo(null);
+        }
+    }, [btcPriceInfo, ethPriceInfo, symbol]);
 
     const toast = useToast();
 

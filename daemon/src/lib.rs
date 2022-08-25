@@ -106,8 +106,10 @@ where
         + Handler<wallet::Withdraw, Return = Result<Txid>>
         + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
-    P: Handler<xtra_bitmex_price_feed::LatestQuote, Return = Option<xtra_bitmex_price_feed::Quote>>
-        + Actor<Stop = xtra_bitmex_price_feed::Error>,
+    P: Handler<
+            xtra_bitmex_price_feed::GetLatestQuotes,
+            Return = xtra_bitmex_price_feed::LatestQuotes,
+        > + Actor<Stop = xtra_bitmex_price_feed::Error>,
 {
     #[instrument(
         name = "Create TakerActorSystem",
@@ -392,14 +394,17 @@ where
 
     #[instrument(skip(self), err)]
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
-        // TODO: we need to know which contract symbol the order is for
-        let latest_quote = self
+        let contract_symbol = self
+            .executor
+            .query(order_id, |cfd| Ok(cfd.contract_symbol()))
+            .await?;
+
+        let latest_quote = *self
             .price_feed_actor
-            .send(xtra_bitmex_price_feed::LatestQuote(
-                xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
-            ))
+            .send(xtra_bitmex_price_feed::GetLatestQuotes)
             .await
             .context("Price feed not available")?
+            .get(&into_price_feed_symbol(contract_symbol))
             .context("No quote available")?;
 
         let quote_timestamp = latest_quote
@@ -468,6 +473,13 @@ impl Environment {
             "docker" => Environment::Docker,
             _ => Environment::Unknown,
         }
+    }
+}
+
+fn into_price_feed_symbol(symbol: model::ContractSymbol) -> xtra_bitmex_price_feed::ContractSymbol {
+    match symbol {
+        model::ContractSymbol::BtcUsd => xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
+        model::ContractSymbol::EthUsd => xtra_bitmex_price_feed::ContractSymbol::EthUsd,
     }
 }
 

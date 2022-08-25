@@ -12,8 +12,9 @@ use xtra_productivity::xtra_productivity;
 
 pub const QUOTE_INTERVAL_MINUTES: i64 = 1;
 
+/// Subscribes to BitMEX and retrieves latest quotes for BTCUSD and ETHUSD.
 pub struct Actor {
-    latest_quote: HashMap<ContractSymbol, Quote>,
+    latest_quotes: LatestQuotes,
 
     /// Contains the reason we are stopping.
     stop_reason: Option<Error>,
@@ -23,7 +24,7 @@ pub struct Actor {
 impl Actor {
     pub fn new(network: Network) -> Self {
         Self {
-            latest_quote: HashMap::new(),
+            latest_quotes: HashMap::new(),
             stop_reason: None,
             network,
         }
@@ -45,7 +46,10 @@ impl xtra::Actor for Actor {
 
                 async move {
                     let mut stream = bitmex_stream::subscribe(
-                        [format!("quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD")],
+                        [
+                            format!("quoteBin{QUOTE_INTERVAL_MINUTES}m:XBTUSD"),
+                            format!("quoteBin{QUOTE_INTERVAL_MINUTES}m:ETHUSD"),
+                        ],
                         network,
                     );
 
@@ -107,11 +111,11 @@ impl Actor {
     }
 
     async fn handle(&mut self, msg: NewQuoteReceived) {
-        self.latest_quote.insert(msg.0.symbol, msg.0);
+        self.latest_quotes.insert(msg.0.symbol, msg.0);
     }
 
-    async fn handle(&mut self, lq: LatestQuote) -> Option<Quote> {
-        self.latest_quote.get(&lq.0).cloned()
+    async fn handle(&mut self, _msg: GetLatestQuotes) -> LatestQuotes {
+        self.latest_quotes.clone()
     }
 }
 
@@ -131,9 +135,11 @@ pub enum Error {
 #[derive(Debug)]
 struct NewQuoteReceived(Quote);
 
-/// Request the latest quote from the price feed.
+/// Request all latest quotes from the price feed.
 #[derive(Debug, Clone, Copy)]
-pub struct LatestQuote(pub ContractSymbol);
+pub struct GetLatestQuotes;
+
+pub type LatestQuotes = HashMap<ContractSymbol, Quote>;
 
 #[derive(Clone, Copy)]
 pub struct Quote {
@@ -149,6 +155,8 @@ pub struct Quote {
 pub enum ContractSymbol {
     #[strum(serialize = "XBTUSD")]
     BtcUsd,
+    #[strum(serialize = "ETHUSD")]
+    EthUsd,
 }
 
 impl fmt::Debug for Quote {

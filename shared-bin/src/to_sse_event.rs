@@ -4,7 +4,6 @@ use daemon::listen_protocols::does_maker_satisfy_taker_needs;
 use daemon::listen_protocols::REQUIRED_MAKER_LISTEN_PROTOCOLS;
 use daemon::online_status;
 use daemon::projection::Cfd;
-use daemon::projection::Quote;
 use model::Timestamp;
 use rocket::response::stream::Event;
 use serde::Serialize;
@@ -59,12 +58,6 @@ impl ToSseEvent for online_status::ConnectionStatus {
         };
 
         Event::json(&connected).event("maker_status")
-    }
-}
-
-impl ToSseEvent for Option<Quote> {
-    fn to_sse_event(&self) -> Event {
-        Event::json(self).event("quote")
     }
 }
 
