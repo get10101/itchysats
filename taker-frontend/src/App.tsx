@@ -56,6 +56,11 @@ export enum Symbol {
     ethusd = "ethusd",
 }
 
+const BTC_USD_LONG_EVENT = "btcusd_long_offer";
+const BTC_USD_SHORT_EVENT = "btcusd_short_offer";
+const ETH_USD_LONG_EVENT = "ethusd_long_offer";
+const ETH_USD_SHORT_EVENT = "ethusd_short_offer";
+
 export const App = () => {
     const toast = useToast();
     const navigate = useNavigate();
@@ -91,17 +96,41 @@ export const App = () => {
     const [source, isConnected] = useEventSource(`/api/feed`);
     const walletInfo = useLatestEvent<WalletInfo>(source, "wallet");
 
-    let { long_offer, short_offer } = offer_event_names(symbol);
-    const makerLong = useLatestEvent<MakerOffer>(
+    const makerLongBtcUsd = useLatestEvent<MakerOffer>(
         source,
-        long_offer,
+        BTC_USD_LONG_EVENT,
         intoMakerOffer,
     );
-    const makerShort = useLatestEvent<MakerOffer>(
+    const makerShortBtcUsd = useLatestEvent<MakerOffer>(
         source,
-        short_offer,
+        BTC_USD_SHORT_EVENT,
         intoMakerOffer,
     );
+    const makerLongEthUsd = useLatestEvent<MakerOffer>(
+        source,
+        ETH_USD_LONG_EVENT,
+        intoMakerOffer,
+    );
+    const makerShortEthUsd = useLatestEvent<MakerOffer>(
+        source,
+        ETH_USD_SHORT_EVENT,
+        intoMakerOffer,
+    );
+
+    let makerLong;
+    let makerShort;
+    switch (symbol) {
+        case Symbol.ethusd: {
+            makerLong = makerLongEthUsd;
+            makerShort = makerShortEthUsd;
+            break;
+        }
+        case Symbol.btcusd:
+        default:
+            makerLong = makerLongBtcUsd;
+            makerShort = makerShortBtcUsd;
+            break;
+    }
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
 
@@ -285,23 +314,6 @@ export const App = () => {
             </Route>
         </Routes>
     );
-};
-
-const offer_event_names = (symbol: Symbol) => {
-    switch (symbol) {
-        case Symbol.ethusd: {
-            return {
-                long_offer: "ethusd_long_offer",
-                short_offer: "ethusd_short_offer",
-            };
-        }
-        case Symbol.btcusd:
-        default:
-            return {
-                long_offer: "btcusd_long_offer",
-                short_offer: "btcusd_short_offer",
-            };
-    }
 };
 
 const bitmexWebSocketURL = (symbol: Symbol) => {
