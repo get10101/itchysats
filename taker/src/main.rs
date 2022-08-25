@@ -341,16 +341,18 @@ async fn main() -> Result<()> {
         environment,
     )?;
 
-    let (proj_actor, projection_feeds) = projection::Actor::new(
+    let (feed_senders, feed_receivers) = projection::feeds();
+    let proj_actor = projection::Actor::new(
         db.clone(),
         bitcoin_network,
         taker.price_feed_actor.clone().into(),
         Role::Taker,
+        feed_senders,
     );
     tasks.add(projection_context.run(proj_actor));
 
     let mission_success = rocket::custom(figment)
-        .manage(projection_feeds)
+        .manage(feed_receivers)
         .manage(wallet_feed_receiver)
         .manage(identity_info)
         .manage(bitcoin_network)

@@ -6,7 +6,7 @@ use daemon::bdk::blockchain::ElectrumBlockchain;
 use daemon::oracle;
 use daemon::projection::Cfd;
 use daemon::projection::CfdAction;
-use daemon::projection::Feeds;
+use daemon::projection::FeedReceivers;
 use daemon::wallet;
 use http_api_problem::HttpApiProblem;
 use http_api_problem::StatusCode;
@@ -46,7 +46,7 @@ pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sl
 #[rocket::get("/feed")]
 #[instrument(name = "GET /feed", skip_all)]
 pub async fn maker_feed(
-    rx: &State<Feeds>,
+    rx: &State<FeedReceivers>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     _auth: Authenticated,
 ) -> EventStream![] {
@@ -304,7 +304,7 @@ pub async fn put_sync_wallet(
 #[rocket::get("/cfds")]
 #[instrument(name = "GET /cfds", skip_all, err)]
 pub async fn get_cfds<'r>(
-    rx: &State<Feeds>,
+    rx: &State<FeedReceivers>,
     _auth: Authenticated,
 ) -> Result<Json<Vec<Cfd>>, HttpApiProblem> {
     let rx = rx.inner();

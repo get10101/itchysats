@@ -20,7 +20,7 @@ use daemon::oracle::Attestation;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
-use daemon::projection::Feeds;
+use daemon::projection::FeedReceivers;
 use daemon::projection::MakerOffers;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
@@ -572,7 +572,7 @@ impl Default for TakerConfig {
 pub struct Maker {
     pub system: maker::ActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
-    pub feeds: Feeds,
+    pub feeds: FeedReceivers,
     pub listen_addr: SocketAddr,
     pub identity: Identity,
     /// The address on which taker can dial in with libp2p protocols (includes
@@ -696,13 +696,19 @@ impl Maker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) =
-            projection::Actor::new(db, Network::Testnet, price_feed_addr.into(), Role::Maker);
+        let (feed_senders, feed_receivers) = projection::feeds();
+        let proj_actor = projection::Actor::new(
+            db,
+            Network::Testnet,
+            price_feed_addr.into(),
+            Role::Maker,
+            feed_senders,
+        );
         tasks.add(projection_context.run(proj_actor));
 
         Self {
             system: maker,
-            feeds,
+            feeds: feed_receivers,
             identity: model::Identity::new(identities.identity_pk),
             listen_addr: address,
             mocks,
@@ -759,7 +765,7 @@ pub struct Taker {
     pub id: Identity,
     pub system: daemon::TakerActorSystem<OracleActor, WalletActor, PriceFeedActor>,
     pub mocks: mocks::Mocks,
-    pub feeds: Feeds,
+    pub feeds: FeedReceivers,
     pub maker_peer_id: PeerId,
     db: sqlite_db::Connection,
     _tasks: Tasks,
@@ -892,18 +898,20 @@ impl Taker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) = projection::Actor::new(
+        let (feed_senders, feed_receivers) = projection::feeds();
+        let proj_actor = projection::Actor::new(
             db.clone(),
             Network::Testnet,
             taker.price_feed_actor.clone().into(),
             Role::Taker,
+            feed_senders,
         );
         tasks.add(projection_context.run(proj_actor));
 
         Self {
             id: model::Identity::new(identities.identity_pk),
             system: taker,
-            feeds,
+            feeds: feed_receivers,
             mocks,
             maker_peer_id: maker_multiaddr
                 .extract_peer_id()
