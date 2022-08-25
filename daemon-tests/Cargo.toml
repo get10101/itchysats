@@ -19,7 +19,7 @@ rand = "0.6"
 rust_decimal = "1.26"
 rust_decimal_macros = "1.26"
 sqlite-db = { path = "../sqlite-db" }
-time = "0.3.13"
+time = "0.3.14"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "tracing"] }
 tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tracing = { version = "0.1" }
