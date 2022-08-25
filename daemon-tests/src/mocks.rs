@@ -1,5 +1,5 @@
 use crate::dummy_latest_quotes;
-use crate::maia::OliviaData;
+use crate::maia::olivia::btc_example_0;
 use crate::mocks::monitor::MockMonitor;
 use crate::mocks::oracle::MockOracle;
 use crate::mocks::price_feed::MockPriceFeed;
@@ -61,7 +61,7 @@ impl Mocks {
     }
 
     pub async fn mock_oracle_announcement(&mut self) {
-        self.mock_oracle_announcement_with(OliviaData::example_0().announcements())
+        self.mock_oracle_announcement_with(btc_example_0().announcements())
             .await;
     }
 

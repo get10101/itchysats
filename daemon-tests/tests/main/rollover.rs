@@ -3,6 +3,8 @@ use daemon::bdk::bitcoin::Txid;
 use daemon::projection::CfdState;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
+use daemon_tests::maia::olivia::btc_example_0;
+use daemon_tests::maia::olivia::btc_example_1;
 use daemon_tests::maia::OliviaData;
 use daemon_tests::open_cfd;
 use daemon_tests::start_both;
@@ -20,7 +22,7 @@ use otel_tests::otel_test;
 #[otel_test]
 async fn rollover_an_open_cfd_maker_going_short() {
     let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+        prepare_rollover(Position::Short, btc_example_0()).await;
 
     // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
     // the settlement-event is already expired
@@ -28,7 +30,7 @@ async fn rollover_an_open_cfd_maker_going_short() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_0(),
+        btc_example_0(),
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -37,7 +39,7 @@ async fn rollover_an_open_cfd_maker_going_short() {
 #[otel_test]
 async fn rollover_an_open_cfd_maker_going_long() {
     let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Long, OliviaData::example_0()).await;
+        prepare_rollover(Position::Long, btc_example_0()).await;
 
     // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
     // the settlement-event is already expired
@@ -45,7 +47,7 @@ async fn rollover_an_open_cfd_maker_going_long() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_0(),
+        btc_example_0(),
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -56,7 +58,7 @@ async fn double_rollover_an_open_cfd() {
     // double rollover ensures that both parties properly succeeded and can do another rollover
 
     let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+        prepare_rollover(Position::Short, btc_example_0()).await;
 
     // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
     // the settlement-event is already expired
@@ -64,7 +66,7 @@ async fn double_rollover_an_open_cfd() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_0(),
+        btc_example_0(),
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -73,7 +75,7 @@ async fn double_rollover_an_open_cfd() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_0(),
+        btc_example_0(),
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
     .await;
@@ -116,14 +118,14 @@ async fn maker_rejects_rollover_of_open_cfd() {
 #[otel_test]
 async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
     let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+        prepare_rollover(Position::Short, btc_example_0()).await;
 
     // 1. Do two rollovers
     rollover(
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -137,7 +139,7 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         // The second rollover increases the complete fees to 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
@@ -158,7 +160,7 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         Some((
             taker_commit_txid_after_first_rollover,
             taker_settlement_event_id_after_first_rollover,
@@ -174,7 +176,7 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         // Additional rollover increases the complete fees to 72h
         fee_calculator.complete_fee_for_rollover_hours(72),
     )
@@ -184,7 +186,7 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
 #[otel_test]
 async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retry() {
     let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+        prepare_rollover(Position::Short, btc_example_0()).await;
 
     let taker_commit_txid_after_contract_setup = taker.latest_commit_txid();
     let taker_settlement_event_id_after_contract_setup = taker.latest_settlement_event_id();
@@ -197,7 +199,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -219,7 +221,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         Some((
             taker_commit_txid_after_contract_setup,
             taker_settlement_event_id_after_contract_setup,
@@ -237,7 +239,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
     .await;
@@ -246,7 +248,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
 #[otel_test]
 async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry() {
     let (mut maker, mut taker, order_id, fee_calculator) =
-        prepare_rollover(Position::Short, OliviaData::example_0()).await;
+        prepare_rollover(Position::Short, btc_example_0()).await;
 
     let taker_commit_txid_after_contract_setup = taker.latest_commit_txid();
     let taker_settlement_event_id_after_contract_setup = taker.latest_settlement_event_id();
@@ -258,7 +260,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         fee_calculator.complete_fee_for_rollover_hours(24),
     )
     .await;
@@ -267,7 +269,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         // The second rollover increases the complete fees to 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
     )
@@ -288,7 +290,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         Some((
             taker_commit_txid_after_contract_setup,
             taker_settlement_event_id_after_contract_setup,
@@ -305,7 +307,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
         &mut maker,
         &mut taker,
         order_id,
-        OliviaData::example_1(),
+        btc_example_1(),
         // After another rollover we expect to be charged for 48h
         fee_calculator.complete_fee_for_rollover_hours(48),
     )

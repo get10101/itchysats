@@ -26,6 +26,7 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::Environment;
 use daemon::N_PAYOUTS;
+use maia::olivia::btc_example_0;
 use maia::OliviaData;
 use maker::cfd::OfferParams;
 use model::libp2p::PeerId;
@@ -276,7 +277,7 @@ impl Default for OpenCfdArgs {
             initial_price: Price::new(dummy_price()).unwrap(),
             quantity: Contracts::new(100),
             taker_leverage: Leverage::TWO,
-            oracle_data: OliviaData::example_0(),
+            oracle_data: btc_example_0(),
         }
     }
 }
