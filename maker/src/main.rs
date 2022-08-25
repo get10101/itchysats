@@ -135,16 +135,23 @@ async fn main() -> Result<()> {
     )
     .expect("to parse properly");
 
+    let (supervisor, price_feed) = Supervisor::with_policy(
+        {
+            let network = opts.network.bitmex_network();
+            move || xtra_bitmex_price_feed::Actor::new(network)
+        },
+        always_restart::<xtra_bitmex_price_feed::Error>(),
+    );
+    tasks.add(supervisor.run_log_summary());
+
     let maker = ActorSystem::new(
         db.clone(),
         wallet.clone(),
         *olivia::PUBLIC_KEY,
         |executor| oracle::Actor::new(db.clone(), executor),
-        {
-            |executor| {
-                let electrum = opts.network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, executor)
-            }
+        |executor| {
+            let electrum = opts.network.electrum().to_string();
+            monitor::Actor::new(db.clone(), electrum, executor)
         },
         SETTLEMENT_INTERVAL,
         N_PAYOUTS,
@@ -152,13 +159,6 @@ async fn main() -> Result<()> {
         identities,
         endpoint_listen,
     )?;
-
-    let (supervisor, price_feed) = Supervisor::with_policy(
-        move || xtra_bitmex_price_feed::Actor::new(opts.network.bitmex_network()),
-        always_restart::<xtra_bitmex_price_feed::Error>(),
-    );
-
-    tasks.add(supervisor.run_log_summary());
 
     let (feed_senders, feed_receivers) = projection::feeds();
     let feed_senders = Arc::new(feed_senders);

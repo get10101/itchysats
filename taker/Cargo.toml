@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1"
 clap = { version = "3", features = ["derive"] }
@@ -35,6 +33,7 @@ x25519-dalek = "1.1"
 xtra = { version = "0.6", features = ["instrumentation"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
+xtras = { path = "../xtras" }
 
 [dev-dependencies]
 serde_test = "1"

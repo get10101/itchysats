@@ -42,7 +42,6 @@ use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p_ping::ping;
 use xtra_libp2p_ping::pong;
-use xtras::supervisor::always_restart;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
 
@@ -129,7 +128,7 @@ where
         identity: Identities,
         oracle_constructor: impl FnOnce(command::Executor) -> O,
         monitor_constructor: impl FnOnce(command::Executor) -> Result<M>,
-        price_feed_constructor: impl (Fn() -> P) + Send + 'static,
+        price_feed_actor: Address<P>,
         n_payouts: usize,
         connect_timeout: Duration,
         projection_actor: Address<projection::Actor>,
@@ -328,14 +327,6 @@ where
         tasks.add(dialer_supervisor.run_log_summary());
         tasks.add(offers_supervisor.run_log_summary());
         tasks.add(identify_listener_supervisor.run_log_summary());
-
-        let (supervisor, price_feed_actor) =
-            Supervisor::<_, xtra_bitmex_price_feed::Error>::with_policy(
-                price_feed_constructor,
-                always_restart(),
-            );
-
-        tasks.add(supervisor.run_log_summary());
 
         let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
             .create(None)

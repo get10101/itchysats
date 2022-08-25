@@ -856,9 +856,13 @@ impl Taker {
         let mut tasks = Tasks::default();
 
         let (wallet, wallet_mock) = WalletActor::new();
-        let (price_feed, price_feed_mock) = PriceFeedActor::new();
-
         let wallet_addr = wallet.create(None).spawn(&mut tasks);
+
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
+        let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
+        tasks.add(async move {
+            let _ = price_feed_fut.await;
+        });
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -883,7 +887,7 @@ impl Taker {
 
                 Ok(monitor)
             },
-            move || price_feed.clone(),
+            price_feed_addr,
             config.n_payouts,
             Duration::from_secs(10),
             projection_actor,

@@ -37,6 +37,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_extras::Tasks;
+use xtras::supervisor::always_restart;
+use xtras::supervisor::Supervisor;
 
 mod routes;
 
@@ -320,20 +322,28 @@ async fn main() -> Result<()> {
         Err(_) => Environment::Binary,
     };
 
-    let bitmex_network = network.bitmex_network();
+    let (supervisor, price_feed_actor) =
+        Supervisor::<_, xtra_bitmex_price_feed::Error>::with_policy(
+            {
+                let network = network.bitmex_network();
+                move || xtra_bitmex_price_feed::Actor::new(network)
+            },
+            always_restart(),
+        );
+
+    tasks.add(supervisor.run_log_summary());
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         *olivia::PUBLIC_KEY,
         identities,
         |executor| oracle::Actor::new(db.clone(), executor),
-        {
-            |executor| {
-                let electrum = network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, executor)
-            }
+        |executor| {
+            let electrum = network.electrum().to_string();
+            monitor::Actor::new(db.clone(), electrum, executor)
         },
-        move || xtra_bitmex_price_feed::Actor::new(bitmex_network),
+        price_feed_actor,
         N_PAYOUTS,
         Duration::from_secs(10),
         projection_actor.clone(),

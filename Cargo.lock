@@ -4584,6 +4584,7 @@ dependencies = [
  "xtra",
  "xtra-bitmex-price-feed",
  "xtra-libp2p",
+ "xtras",
 ]
 
 [[package]]
