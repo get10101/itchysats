@@ -69,7 +69,6 @@ pub async fn feed(
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
     let mut rx_offers = rx.offers.clone();
-    let mut rx_quote = rx.quote.clone();
 
     let mut rx_wallet = rx_wallet.inner().clone();
     let mut rx_maker_status = rx_maker_status.inner().clone();
@@ -96,10 +95,6 @@ pub async fn feed(
         yield Event::json(&offers.btcusd_short).event("btcusd_short_offer");
         yield Event::json(&offers.ethusd_long).event("ethusd_long_offer");
         yield Event::json(&offers.ethusd_short).event("ethusd_short_offer");
-
-        let quote = rx_quote.borrow().clone();
-        yield Event::json(&quote.get(&model::ContractSymbol::BtcUsd)).event("btcusd_quote");
-        yield Event::json(&quote.get(&model::ContractSymbol::EthUsd)).event("ethusd_quote");
 
         let cfds = rx_cfds.borrow().clone();
         if let Some(cfds) = cfds {
@@ -132,11 +127,6 @@ pub async fn feed(
                     if let Some(cfds) = cfds {
                         yield cfds.to_sse_event()
                     }
-                }
-                Ok(()) = rx_quote.changed() => {
-                    let quote = rx_quote.borrow().clone();
-                    yield Event::json(&quote.get(&model::ContractSymbol::BtcUsd)).event("btcusd_quote");
-                    yield Event::json(&quote.get(&model::ContractSymbol::EthUsd)).event("ethusd_quote");
                 }
                 _ = heartbeat.tick() => {
                     yield Event::json(&Heartbeat::new()).event("heartbeat")
