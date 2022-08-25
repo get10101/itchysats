@@ -34,6 +34,7 @@ use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_extras::Tasks;
 
@@ -342,6 +343,7 @@ async fn main() -> Result<()> {
     )?;
 
     let (feed_senders, feed_receivers) = projection::feeds();
+    let feed_senders = Arc::new(feed_senders);
     let proj_actor = projection::Actor::new(
         db.clone(),
         bitcoin_network,

@@ -22,6 +22,7 @@ use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
 use shared_bin::logger;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio_extras::Tasks;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::Supervisor;
@@ -160,6 +161,7 @@ async fn main() -> Result<()> {
     tasks.add(supervisor.run_log_summary());
 
     let (feed_senders, feed_receivers) = projection::feeds();
+    let feed_senders = Arc::new(feed_senders);
     let proj_actor = projection::Actor::new(
         db.clone(),
         bitcoin_network,

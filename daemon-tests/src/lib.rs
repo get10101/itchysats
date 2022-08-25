@@ -56,6 +56,7 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
@@ -697,6 +698,7 @@ impl Maker {
         );
 
         let (feed_senders, feed_receivers) = projection::feeds();
+        let feed_senders = Arc::new(feed_senders);
         let proj_actor = projection::Actor::new(
             db,
             Network::Testnet,
@@ -899,6 +901,7 @@ impl Taker {
         );
 
         let (feed_senders, feed_receivers) = projection::feeds();
+        let feed_senders = Arc::new(feed_senders);
         let proj_actor = projection::Actor::new(
             db.clone(),
             Network::Testnet,

@@ -51,6 +51,7 @@ use sqlite_db;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -118,21 +119,11 @@ impl Actor {
         network: Network,
         price_feed: MessageChannel<GetLatestQuotes, xtra_bitmex_price_feed::LatestQuotes>,
         role: Role,
-        feed_senders: FeedSenders,
+        feed_senders: Arc<FeedSenders>,
     ) -> Self {
-        let FeedSenders {
-            quote,
-            offers,
-            cfds,
-        } = feed_senders;
-
         Self {
             db,
-            tx: Tx {
-                cfds,
-                offers,
-                quote,
-            },
+            tx: Tx(feed_senders),
             state: State::new(network),
             price_feed,
             role,
@@ -776,11 +767,7 @@ impl Cfd {
 }
 
 /// Internal struct to keep all the senders around in one place
-struct Tx {
-    cfds: watch::Sender<Option<Vec<Cfd>>>,
-    pub offers: watch::Sender<MakerOffers>,
-    pub quote: watch::Sender<LatestQuotes>,
-}
+struct Tx(Arc<FeedSenders>);
 
 impl Tx {
     fn send_cfds_update(&self, cfds: HashMap<OrderId, Cfd>, quotes: &LatestQuotes) {
@@ -795,15 +782,15 @@ impl Tx {
             })
             .collect();
 
-        let _ = self.cfds.send(Some(cfds_with_quote));
+        let _ = self.0.cfds.send(Some(cfds_with_quote));
     }
 
     fn send_quotes_update(&self, quotes: LatestQuotes) {
-        let _ = self.quote.send(quotes);
+        let _ = self.0.quote.send(quotes);
     }
 
     fn send_offer_update(&self, offers: MakerOffers) -> Result<()> {
-        self.offers.send(offers)?;
+        self.0.offers.send(offers)?;
 
         Ok(())
     }
