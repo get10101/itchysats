@@ -287,6 +287,7 @@ where
                         complete_fee,
                         punish_params,
                         Role::Maker,
+                        contract_symbol,
                     )
                     .await?;
 

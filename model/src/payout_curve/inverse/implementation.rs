@@ -90,12 +90,8 @@ fn calculate_payout_parameters(
     n_payouts: usize,
     fee: CompleteFee,
 ) -> Result<Vec<PayoutParameter>> {
-    let initial_rate = price
-        .try_into_f64()
-        .context("Cannot convert price to f64")?;
-    let quantity = quantity
-        .try_into_u64()
-        .context("Cannot convert quantity to u64")? as usize;
+    let initial_rate = price.to_f64();
+    let quantity = quantity.to_u64() as usize;
 
     let payout_curve = PayoutCurve::new(
         initial_rate,
@@ -486,10 +482,10 @@ fn create_long_payout_function(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::payouts::prop_compose::arb_contracts;
-    use crate::payouts::prop_compose::arb_fee_flow;
-    use crate::payouts::prop_compose::arb_leverage;
-    use crate::payouts::prop_compose::arb_price;
+    use crate::payout_curve::prop_compose::arb_contracts;
+    use crate::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payout_curve::prop_compose::arb_leverage;
+    use crate::payout_curve::prop_compose::arb_price;
     use bdk::bitcoin::Amount;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
@@ -763,7 +759,7 @@ mod tests {
 
     #[test]
     fn verify_effect_of_funding_fee() {
-        let price = Price::new(dec!(54000.00)).unwrap();
+        let price = Price::new(dec!(54000)).unwrap();
         let quantity = Contracts::new(3500);
 
         let payouts = calculate_payout_parameters(

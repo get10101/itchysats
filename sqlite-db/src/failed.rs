@@ -182,6 +182,7 @@ async fn insert_failed_cfd(
             short_leverage,
             cfd.initial_funding_rate,
             cfd.settlement_interval.whole_hours(),
+            cfd.contract_symbol,
         )
         .expect("values from db to be sane");
 

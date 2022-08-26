@@ -1,6 +1,7 @@
 use crate::olivia;
-use crate::payouts;
+use crate::payout_curve;
 use crate::CompleteFee;
+use crate::ContractSymbol;
 use crate::Contracts;
 use crate::Leverage;
 use crate::Position;
@@ -13,12 +14,15 @@ use maia_core::generate_payouts;
 use maia_core::Announcement;
 use maia_core::Payout;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
-mod inverse;
+pub(crate) mod inverse;
 #[cfg(test)]
 mod prop_compose;
-mod quanto;
+pub(crate) mod quanto;
+
+pub const ETHUSD_MULTIPLIER: Decimal = dec!(0.000001);
 
 /// Payout combinations associated with the oracle events that may
 /// trigger them.
@@ -65,23 +69,51 @@ pub struct Payouts {
 }
 
 impl Payouts {
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(err)]
-    pub fn new_inverse(
-        position: Position,
-        role: Role,
+    pub fn new(
+        contract_symbol: ContractSymbol,
+        (position, role): (Position, Role),
         price: Price,
         quantity: Contracts,
-        long_leverage: Leverage,
-        short_leverage: Leverage,
+        (leverage_long, leverage_short): (Leverage, Leverage),
         n_payouts: usize,
         fee: CompleteFee,
     ) -> Result<Self> {
-        let mut payouts = payouts::inverse::calculate(
+        match contract_symbol {
+            ContractSymbol::BtcUsd => Self::new_inverse(
+                (position, role),
+                price,
+                quantity,
+                (leverage_long, leverage_short),
+                n_payouts,
+                fee,
+            ),
+            ContractSymbol::EthUsd => Self::new_quanto(
+                (position, role),
+                price.to_u64(),
+                quantity.to_u64(),
+                (leverage_long, leverage_short),
+                n_payouts,
+                ETHUSD_MULTIPLIER,
+                fee,
+            ),
+        }
+    }
+
+    #[tracing::instrument(err)]
+    fn new_inverse(
+        (position, role): (Position, Role),
+        price: Price,
+        quantity: Contracts,
+        (leverage_long, leverage_short): (Leverage, Leverage),
+        n_payouts: usize,
+        fee: CompleteFee,
+    ) -> Result<Self> {
+        let mut payouts = payout_curve::inverse::calculate(
             price,
             quantity,
-            long_leverage,
-            short_leverage,
+            leverage_long,
+            leverage_short,
             n_payouts,
             fee,
         )?;
@@ -118,7 +150,8 @@ impl Payouts {
         })
     }
 
-    pub fn new_quanto(
+    #[tracing::instrument(err)]
+    fn new_quanto(
         (position, role): (Position, Role),
         initial_price: u64,
         n_contracts: u64,
@@ -212,14 +245,13 @@ mod tests {
     use super::*;
     use crate::olivia::Announcement;
     use crate::olivia::BitMexPriceEventId;
-    use crate::payouts::prop_compose::arb_contracts;
-    use crate::payouts::prop_compose::arb_fee_flow;
-    use crate::payouts::prop_compose::arb_leverage;
-    use crate::payouts::prop_compose::arb_price;
-    use crate::payouts::quanto;
+    use crate::payout_curve::prop_compose::arb_contracts;
+    use crate::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payout_curve::prop_compose::arb_leverage;
+    use crate::payout_curve::prop_compose::arb_price;
+    use crate::payout_curve::quanto;
     use crate::ContractSymbol;
     use proptest::prelude::*;
-    use rust_decimal_macros::dec;
     use std::ops::Add;
     use time::ext::NumericalDuration;
     use time::macros::datetime;
@@ -235,12 +267,10 @@ mod tests {
             fee_flow in arb_fee_flow(-100_000_000, 100_000_000),
         ) {
             let payouts = Payouts::new_inverse(
-                position,
-                role,
+                (position, role),
                 price,
                 n_contracts,
-                Leverage::ONE,
-                short_leverage,
+                (Leverage::ONE, short_leverage),
                 200,
                 fee_flow,
             )
@@ -301,7 +331,7 @@ mod tests {
                 n_contracts,
                 (leverage_long, leverage_short),
                 n_payouts,
-                dec!(0.000001),
+                ETHUSD_MULTIPLIER,
                 fee_offset
             ) {
                 Ok(payouts) => payouts,

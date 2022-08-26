@@ -107,8 +107,8 @@ impl Curve {
 
     /// Discretize the payout curve into distinct payouts.
     pub fn discretized_payouts(&self) -> Result<Vec<Payout>, Error> {
-        let initial_margin_long = self.initial_margin_long()?;
-        let initial_margin_short = self.initial_margin_short()?;
+        let initial_margin_long = self.initial_margin_long();
+        let initial_margin_short = self.initial_margin_short();
         let initial_margin_total = initial_margin_long + initial_margin_short;
 
         match self.fee_offset {
@@ -204,9 +204,6 @@ impl Curve {
 
     /// Build the `Payout` for an arbitrary interval.
     fn payout_at_interval(&self, interval: RangeInclusive<u64>) -> Result<Payout> {
-        let fee_offset_long = self.fee_offset.as_signed_amount(Position::Long);
-        let fee_offset_short = self.fee_offset.as_signed_amount(Position::Short);
-
         // We take the value of the closing price for this interval as the midpoint of the
         // interval
         let midpoint = interval.start() + ((interval.end() - interval.start()) / 2);
@@ -214,19 +211,15 @@ impl Curve {
             .pnl_at_closing_price(midpoint)
             .with_context(|| format!("Could not calculate PNL at price {midpoint}"))?;
 
-        let long = self
-            .initial_margin_long()?
-            .to_signed()
-            .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
-        let long = long + fee_offset_long + pnl.long();
-        let long = long.to_unsigned().unwrap_or(Amount::ZERO);
+        let long = {
+            let fee_offset = self.fee_offset.as_signed_amount(Position::Long);
+            calculate_payout(self.initial_margin_long(), fee_offset, pnl.long())?
+        };
 
-        let short = self
-            .initial_margin_short()?
-            .to_signed()
-            .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
-        let short = short + fee_offset_short + pnl.short();
-        let short = short.to_unsigned().unwrap_or(Amount::ZERO);
+        let short = {
+            let fee_offset = self.fee_offset.as_signed_amount(Position::Short);
+            calculate_payout(self.initial_margin_short(), fee_offset, pnl.short())?
+        };
 
         Ok(Payout {
             interval,
@@ -240,8 +233,6 @@ impl Curve {
     fn long_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
         let initial_margin = self
             .initial_margin_long()
-            .context("Could not calculate long's initial margin")?;
-        let initial_margin = initial_margin
             .to_signed()
             .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
         let effective_initial_margin =
@@ -255,8 +246,7 @@ impl Curve {
             self.n_contracts,
             self.initial_price,
             self.multiplier,
-        )
-        .context("Could not calculate long's bankruptcy price")?;
+        );
 
         Ok(0..=bankruptcy_price)
     }
@@ -266,8 +256,6 @@ impl Curve {
     fn short_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
         let initial_margin = self
             .initial_margin_short()
-            .context("Could not calculate short's initial margin")?;
-        let initial_margin = initial_margin
             .to_signed()
             .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
         let effective_initial_margin =
@@ -281,32 +269,29 @@ impl Curve {
             self.n_contracts,
             self.initial_price,
             self.multiplier,
-        )
-        .context("Could not calculate short's bankruptcy price")?;
+        );
 
         Ok(bankruptcy_price..=maia_core::interval::MAX_PRICE_DEC)
     }
 
     /// Compute the initial BTC margin that the party going long has to put up.
-    fn initial_margin_long(&self) -> Result<Amount> {
+    fn initial_margin_long(&self) -> Amount {
         calculate_initial_margin(
             self.initial_price,
             self.n_contracts,
             self.leverage_long,
             self.multiplier,
         )
-        .context("Could not calculate long's initial margin")
     }
 
     /// Compute the initial BTC margin that the party going short has to put up.
-    fn initial_margin_short(&self) -> Result<Amount> {
+    fn initial_margin_short(&self) -> Amount {
         calculate_initial_margin(
             self.initial_price,
             self.n_contracts,
             self.leverage_short,
             self.multiplier,
         )
-        .context("Could not calculate short's initial margin")
     }
 
     /// Compute the profit and loss (PNL) at the given `closing_price`.
@@ -321,22 +306,37 @@ impl Curve {
 }
 
 /// Compute the initial BTC margin that a party has to put up, according to their `leverage`.
-fn calculate_initial_margin(
+pub fn calculate_initial_margin(
     initial_price: u64,
     n_contracts: u64,
     leverage: Leverage,
     multiplier: Decimal,
-) -> Result<Amount> {
+) -> Amount {
     let n_contracts = Decimal::from(n_contracts);
     let leverage = Decimal::from(leverage.get());
     let initial_price = Decimal::from(initial_price);
 
     let margin = (n_contracts * initial_price * multiplier) / leverage;
     let margin = margin.round_dp_with_strategy(8, RoundingStrategy::MidpointAwayFromZero);
-    let margin = margin.to_f64().context("Could not convert margin to f64")?;
-    let margin = Amount::from_btc(margin).context("Could not convert margin to bitcoin::Amount")?;
+    let margin = margin.to_f64().expect("margin to fit into f64");
 
-    Ok(margin)
+    Amount::from_btc(margin).expect("margin to fit into bitcoin::Amount")
+}
+
+/// Compute the payout in BTC.
+pub fn calculate_payout(
+    initial_margin: Amount,
+    fee_offset: SignedAmount,
+    pnl: SignedAmount,
+) -> Result<Amount> {
+    let initial_margin = initial_margin
+        .to_signed()
+        .context("Could not convert initial margin to bitcoin::SignedAmount")?;
+
+    let payout = initial_margin + fee_offset + pnl;
+    let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
+
+    Ok(payout)
 }
 
 /// The profit and loss (PNL).
@@ -344,14 +344,15 @@ fn calculate_initial_margin(
 /// It is convenient to model the calculations for long and short together, because one party's gain
 /// is the other one's loss and vice-versa. That is, the absolute value of PNL will be the same,
 /// with only the sign changing between the two parties.
-struct Pnl(SignedAmount);
+#[derive(Clone, Copy)]
+pub struct Pnl(SignedAmount);
 
 impl Pnl {
     /// Compute the PNL of the contract.
     ///
     /// Call `Self::new().long()` and `Self::new().short()` to access the PNL values for long and
     /// short respectively.
-    fn new(
+    pub fn new(
         initial_price: u64,
         closing_price: u64,
         multiplier: Decimal,
@@ -370,40 +371,38 @@ impl Pnl {
     }
 
     /// The profit and loss (PNL) from the perspective of the party going long.
-    fn long(&self) -> SignedAmount {
+    pub fn long(&self) -> SignedAmount {
         self.0
     }
 
     /// The profit and loss (PNL) from the perspective of the party going short.
-    fn short(&self) -> SignedAmount {
+    pub fn short(&self) -> SignedAmount {
         self.0 * -1
     }
 }
 
 /// Compute the closing price under which the party going long should get liquidated.
-fn bankruptcy_price_long(
+pub fn bankruptcy_price_long(
     initial_margin: Amount,
     n_contracts: u64,
     initial_price: u64,
     multiplier: Decimal,
-) -> Result<u64> {
-    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts)
-        .context("Could not calculate long's bankruptcy price shift")?;
+) -> u64 {
+    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts);
 
-    Ok(initial_price.saturating_sub(shift))
+    initial_price.saturating_sub(shift)
 }
 
 /// Compute the closing price over which the party going short should get liquidated.
-fn bankruptcy_price_short(
+pub fn bankruptcy_price_short(
     initial_margin: Amount,
     n_contracts: u64,
     initial_price: u64,
     multiplier: Decimal,
-) -> Result<u64> {
-    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts)
-        .context("Could not calculate short's bankruptcy price shift")?;
+) -> u64 {
+    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts);
 
-    Ok(initial_price + shift)
+    initial_price + shift
 }
 
 /// By how much the price of the asset needs to shift from the initial price in order to reach the
@@ -411,33 +410,29 @@ fn bankruptcy_price_short(
 ///
 /// This is an absolute value. How to apply it in order to calculate the bankruptcy price will
 /// depend on the party's position.
-fn bankruptcy_price_shift(
-    initial_margin: Amount,
-    multiplier: Decimal,
-    n_contracts: u64,
-) -> Result<u64> {
-    let initial_margin = Decimal::from_f64(initial_margin.as_btc())
-        .context("Could not create Decimal from initial margin")?;
+fn bankruptcy_price_shift(initial_margin: Amount, multiplier: Decimal, n_contracts: u64) -> u64 {
+    let initial_margin =
+        Decimal::from_f64(initial_margin.as_btc()).expect("f64 to fit into Decimal");
 
     let n_contracts = Decimal::from(n_contracts);
 
     let price = initial_margin / (multiplier * n_contracts);
-    let price = price
-        .to_u64()
-        .context("Could not convert bankruptcy price to u64")?;
-
-    Ok(price)
+    price.to_u64().expect("price to fit into u64")
 }
 
 #[cfg(test)]
 mod api_tests {
     use super::*;
-    use crate::payouts::prop_compose::arb_fee_flow;
-    use crate::payouts::prop_compose::arb_leverage;
-    use crate::payouts::quanto;
+    use crate::payout_curve::prop_compose::arb_fee_flow;
+    use crate::payout_curve::prop_compose::arb_leverage;
+    use crate::payout_curve::quanto;
     use itertools::Itertools;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
+
+    // This happens to be the multiplier corresponding to the contract symbol ETHUSD, but it's
+    // arbitrarily chosen for these tests
+    const MULTIPLIER: Decimal = dec!(0.000001);
 
     #[test]
     fn quanto_curve_snapshot() {
@@ -446,7 +441,6 @@ mod api_tests {
         let leverage_long = Leverage::TWO;
         let leverage_short = Leverage::ONE;
         let n_payouts = 20;
-        let multiplier = dec!(0.000001);
         let fee_offset = CompleteFee::None;
 
         let payouts = Payouts::new(
@@ -455,7 +449,7 @@ mod api_tests {
             leverage_long,
             leverage_short,
             n_payouts,
-            multiplier,
+            MULTIPLIER,
             fee_offset,
         )
         .unwrap()
@@ -502,7 +496,7 @@ mod api_tests {
                 leverage_long,
                 leverage_short,
                 n_payouts,
-                dec!(0.000001),
+                MULTIPLIER,
                 fee_offset
             )?;
 
@@ -532,7 +526,7 @@ mod api_tests {
                 leverage_long,
                 leverage_short,
                 n_payouts,
-                dec!(0.000001),
+                MULTIPLIER,
                 fee_offset
             )?;
             let payouts = payouts.0;
@@ -564,7 +558,7 @@ mod api_tests {
                 leverage_long,
                 leverage_short,
                 n_payouts,
-                dec!(0.000001),
+                MULTIPLIER,
                 fee_offset
             )?;
             let payouts = payouts.0;
@@ -626,9 +620,12 @@ mod api_tests {
 
 #[cfg(test)]
 mod unit_tests {
+    use super::*;
     use rust_decimal_macros::dec;
 
-    use super::*;
+    // This happens to be the multiplier corresponding to the contract symbol ETHUSD, but it's
+    // arbitrarily chosen for these tests
+    const MULTIPLIER: Decimal = dec!(0.000001);
 
     #[test]
     fn initial_margin_snapshot() {
@@ -638,12 +635,12 @@ mod unit_tests {
             Leverage::new(10).unwrap(),
             Leverage::ONE,
             200,
-            dec!(0.000001),
+            MULTIPLIER,
             CompleteFee::None,
         );
 
-        let initial_margin_long = curve.initial_margin_long().unwrap();
-        let initial_margin_short = curve.initial_margin_short().unwrap();
+        let initial_margin_long = curve.initial_margin_long();
+        let initial_margin_short = curve.initial_margin_short();
 
         assert_eq!(initial_margin_long, Amount::from_sat(1_000_000));
         assert_eq!(initial_margin_short, Amount::from_sat(10_000_000));
@@ -658,7 +655,7 @@ mod unit_tests {
             Leverage::new(10).unwrap(),
             Leverage::ONE,
             200,
-            dec!(0.000001),
+            MULTIPLIER,
             CompleteFee::None,
         );
 
@@ -690,7 +687,7 @@ mod unit_tests {
             Leverage::ONE,
             Leverage::new(4).unwrap(),
             200,
-            dec!(0.000001),
+            MULTIPLIER,
             CompleteFee::None,
         );
 

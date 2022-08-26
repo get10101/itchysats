@@ -33,15 +33,15 @@ mod contract_setup;
 pub mod hex_transaction;
 pub mod libp2p;
 pub mod olivia;
-mod payouts;
+pub mod payout_curve;
 mod rollover;
 pub mod shared_protocol;
 pub mod transaction_ext;
 
 pub use cfd::*;
 pub use contract_setup::SetupParams;
-pub use payouts::OraclePayouts;
-pub use payouts::Payouts;
+pub use payout_curve::OraclePayouts;
+pub use payout_curve::Payouts;
 pub use rollover::BaseDlcParams;
 pub use rollover::RolloverParams;
 pub use rollover::Version as RolloverVersion;
@@ -54,14 +54,6 @@ pub use transaction_ext::TransactionExt;
 /// with the non-collaborative settlement of the CFD.
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
-#[derive(thiserror::Error, Debug, Clone, Copy)]
-pub enum Error {
-    #[error("Price of zero is not allowed")]
-    ZeroPrice,
-    #[error("Negative Price is unimplemented")]
-    NegativePrice,
-}
-
 /// Represents "quantity" or "contract size" in Cfd terms
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Contracts(Decimal);
@@ -73,8 +65,8 @@ impl Contracts {
         Self(Decimal::from(value))
     }
 
-    pub fn try_into_u64(&self) -> Result<u64> {
-        self.0.to_u64().context("could not fit decimal into u64")
+    pub fn to_u64(&self) -> u64 {
+        self.0.to_u64().expect("usd to fit into u64")
     }
 
     #[must_use]
@@ -104,24 +96,19 @@ pub struct Price(Decimal);
 impl Price {
     const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
 
-    pub fn new(value: Decimal) -> Result<Self, Error> {
-        if value == Decimal::ZERO {
-            return Result::Err(Error::ZeroPrice);
-        }
-
-        if value < Decimal::ZERO {
-            return Result::Err(Error::NegativePrice);
-        }
+    pub fn new(value: Decimal) -> Result<Self> {
+        ensure!(value > Decimal::ZERO, "Non-positive price not supported");
+        ensure!(value <= Decimal::from(u64::MAX), "Price too large");
 
         Ok(Self(value))
     }
 
-    pub fn try_into_u64(&self) -> Result<u64> {
-        self.0.to_u64().context("Could not fit decimal into u64")
+    pub fn to_u64(&self) -> u64 {
+        self.0.to_u64().expect("price to fit into u64")
     }
 
-    pub fn try_into_f64(&self) -> Result<f64> {
-        self.0.to_f64().context("Could not fit decimal into f64")
+    pub fn to_f64(&self) -> f64 {
+        self.0.to_f64().expect("price to fit into f64")
     }
 
     #[must_use]
@@ -142,27 +129,6 @@ impl str::FromStr for Price {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let dec = Decimal::from_str(s)?;
         Ok(Price(dec))
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct InversePrice(Decimal);
-
-impl InversePrice {
-    pub fn new(value: Price) -> Result<Self, Error> {
-        if value.0 == Decimal::ZERO {
-            return Result::Err(Error::ZeroPrice);
-        }
-
-        if value.0 < Decimal::ZERO {
-            return Result::Err(Error::NegativePrice);
-        }
-
-        Ok(Self(Decimal::ONE / value.0))
-    }
-
-    pub fn try_into_u64(&self) -> Result<u64> {
-        self.0.to_u64().context("Could not fit decimal into u64")
     }
 }
 
@@ -301,46 +267,6 @@ impl Div<Leverage> for Price {
     }
 }
 
-impl Mul<InversePrice> for Contracts {
-    type Output = Amount;
-
-    fn mul(self, rhs: InversePrice) -> Self::Output {
-        let mut btc = self.0 * rhs.0;
-        btc.rescale(8);
-        // we need to set to 0 because it can happen that we get a negative 0 which is invalid
-        let btc = if btc.is_zero() { Decimal::ZERO } else { btc };
-        Amount::from_str_in(&btc.to_string(), Denomination::Bitcoin)
-            .expect("Error computing BTC amount")
-    }
-}
-
-impl Mul<Leverage> for InversePrice {
-    type Output = InversePrice;
-
-    fn mul(self, rhs: Leverage) -> Self::Output {
-        let value = self.0 * Decimal::from(rhs.0);
-        Self(value)
-    }
-}
-
-impl Mul<InversePrice> for Leverage {
-    type Output = InversePrice;
-
-    fn mul(self, rhs: InversePrice) -> Self::Output {
-        let value = Decimal::from(self.0) * rhs.0;
-        InversePrice(value)
-    }
-}
-
-impl Div<Leverage> for InversePrice {
-    type Output = InversePrice;
-
-    fn div(self, rhs: Leverage) -> Self::Output {
-        let value = self.0 / Decimal::from(rhs.0);
-        Self(value)
-    }
-}
-
 impl Add<Price> for Price {
     type Output = Price;
 
@@ -353,22 +279,6 @@ impl Sub<Price> for Price {
     type Output = Price;
 
     fn sub(self, rhs: Price) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl Add<InversePrice> for InversePrice {
-    type Output = InversePrice;
-
-    fn add(self, rhs: InversePrice) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl Sub<InversePrice> for InversePrice {
-    type Output = InversePrice;
-
-    fn sub(self, rhs: InversePrice) -> Self::Output {
         Self(self.0 - rhs.0)
     }
 }
@@ -688,6 +598,7 @@ impl FundingFee {
         short_leverage: Leverage,
         funding_rate: FundingRate,
         hours_to_charge: i64,
+        contract_symbol: ContractSymbol,
     ) -> Result<Self> {
         if funding_rate.0.is_zero() {
             return Ok(Self {
@@ -697,9 +608,9 @@ impl FundingFee {
         }
 
         let margin = if funding_rate.short_pays_long() {
-            calculate_margin(price, quantity, long_leverage)
+            calculate_margin(contract_symbol, price, quantity, long_leverage)
         } else {
-            calculate_margin(price, quantity, short_leverage)
+            calculate_margin(contract_symbol, price, quantity, short_leverage)
         };
 
         let fraction_of_funding_period =
@@ -1036,12 +947,6 @@ impl Payout {
     }
 }
 
-impl From<Payout> for SignedAmount {
-    fn from(payout: Payout) -> Self {
-        payout.0.to_signed().expect("Amount to fit in SignedAmount")
-    }
-}
-
 impl TryFrom<i64> for Payout {
     type Error = anyhow::Error;
 
@@ -1160,43 +1065,12 @@ mod tests {
     }
 
     #[test]
-    fn quantity_for_1_btc_buys_1_btc() {
-        let quantity = Contracts::new(61234);
-        let price = Price::new(dec!(61234)).unwrap();
-        let inv_price = InversePrice::new(price).unwrap();
-        let res_0 = quantity / price;
-        let res_1 = quantity * inv_price;
-
-        assert_eq!(res_0, Amount::ONE_BTC);
-        assert_eq!(res_1, Amount::ONE_BTC);
-    }
-
-    #[test]
     fn leverage_does_not_alter_type() {
         let quantity = Contracts::new(61234);
         let leverage = Leverage::new(3).unwrap();
         let res = quantity * leverage / leverage;
 
         assert_eq!(res.0, quantity.0);
-    }
-
-    #[test]
-    fn test_algebra_with_types() {
-        let quantity = Contracts::new(61234);
-        let leverage = Leverage::new(5).unwrap();
-        let price = Price::new(dec!(61234)).unwrap();
-        let expected_buying = Amount::from_btc(0.2).unwrap();
-
-        let liquidation_price = price * leverage / (leverage + 1);
-        let inv_price = InversePrice::new(price).unwrap();
-        let inv_liquidation_price = InversePrice::new(liquidation_price).unwrap();
-
-        let long_buying = quantity / (price * leverage);
-        let long_payout =
-            (quantity / leverage) * ((leverage + 1) * inv_price - leverage * inv_liquidation_price);
-
-        assert_eq!(long_buying, expected_buying);
-        assert_eq!(long_payout, Amount::ZERO);
     }
 
     #[test]
@@ -1499,6 +1373,7 @@ mod tests {
     fn proportional_funding_fees_if_sign_of_funding_rate_changes() {
         let long_leverage = Leverage::TWO;
         let short_leverage = Leverage::ONE;
+        let dummy_contract_symbol = dummy_contract_symbol();
 
         let funding_rate_pos = FundingRate::new(dec!(0.01)).unwrap();
         let long_pays_short_fee = FundingFee::calculate(
@@ -1508,6 +1383,7 @@ mod tests {
             short_leverage,
             funding_rate_pos,
             dummy_settlement_interval(),
+            dummy_contract_symbol,
         )
         .unwrap();
 
@@ -1519,6 +1395,7 @@ mod tests {
             short_leverage,
             funding_rate_neg,
             dummy_settlement_interval(),
+            dummy_contract_symbol,
         )
         .unwrap();
 
@@ -1539,6 +1416,7 @@ mod tests {
             dummy_leverage,
             zero_funding_rate,
             dummy_settlement_interval(),
+            dummy_contract_symbol(),
         )
         .unwrap();
 
@@ -1664,5 +1542,9 @@ mod tests {
 
     fn dummy_settlement_interval() -> i64 {
         8
+    }
+
+    fn dummy_contract_symbol() -> ContractSymbol {
+        ContractSymbol::BtcUsd
     }
 }

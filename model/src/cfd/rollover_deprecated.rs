@@ -74,6 +74,7 @@ impl Cfd {
             self.short_leverage,
             funding_rate,
             hours_to_charge as i64,
+            self.contract_symbol,
         )?;
 
         tracing::debug!(
@@ -136,6 +137,7 @@ impl Cfd {
             self.short_leverage,
             funding_rate,
             hours_to_charge as i64,
+            self.contract_symbol,
         )?;
 
         Ok((

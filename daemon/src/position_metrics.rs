@@ -161,9 +161,18 @@ impl sqlite_db::CfdAggregate for Cfd {
             Role::Taker => (cfd.taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(cfd.initial_price, cfd.quantity, our_leverage);
-        let margin_counterparty =
-            calculate_margin(cfd.initial_price, cfd.quantity, counterparty_leverage);
+        let margin = calculate_margin(
+            cfd.contract_symbol,
+            cfd.initial_price,
+            cfd.quantity,
+            our_leverage,
+        );
+        let margin_counterparty = calculate_margin(
+            cfd.contract_symbol,
+            cfd.initial_price,
+            cfd.quantity,
+            counterparty_leverage,
+        );
 
         Self {
             id: cfd.id,
@@ -302,8 +311,13 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = calculate_margin(contract_symbol, initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(
+            contract_symbol,
+            initial_price,
+            quantity,
+            counterparty_leverage,
+        );
 
         Self {
             id,
@@ -323,6 +337,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
     fn new_failed(_: Self::CtorArgs, cfd: FailedCfd) -> Self {
         let FailedCfd {
             id,
+            contract_symbol,
             position,
             n_contracts: quantity,
             kind,
@@ -343,8 +358,13 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = calculate_margin(contract_symbol, initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(
+            contract_symbol,
+            initial_price,
+            quantity,
+            counterparty_leverage,
+        );
 
         Self {
             id,

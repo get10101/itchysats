@@ -15,8 +15,8 @@ use itertools::Itertools;
 use maia_core::TransactionExt;
 use model::calculate_long_liquidation_price;
 use model::calculate_margin;
+use model::calculate_payout_at_price;
 use model::calculate_profit;
-use model::calculate_profit_at_price;
 use model::calculate_short_liquidation_price;
 use model::long_and_short_leverage;
 use model::market_closing_price;
@@ -168,8 +168,6 @@ pub struct Cfd {
     /// Projected or final profit percent
     pub profit_percent: Option<String>,
 
-    // TODO: Payout should not be a signed amount but should be converted to a `bitcoin::Amount`
-    // when calculating
     /// Projected or final payout
     ///
     /// If we don't know the final payout yet then we calculate this based on the projected profit.
@@ -177,7 +175,7 @@ pub struct Cfd {
     /// represented as option. If we already know the final payout (based on CET or
     /// collborative close) then this is the final payout.
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc::opt")]
-    pub payout: Option<SignedAmount>,
+    pub payout: Option<Amount>,
     pub closing_price: Option<Price>,
 
     pub state: CfdState,
@@ -344,12 +342,27 @@ impl Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = calculate_margin(contract_symbol, initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(
+            contract_symbol,
+            initial_price,
+            quantity,
+            counterparty_leverage,
+        );
 
         let liquidation_price = match position {
-            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
-            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+            Position::Long => calculate_long_liquidation_price(
+                initial_price,
+                quantity,
+                our_leverage,
+                contract_symbol,
+            ),
+            Position::Short => calculate_short_liquidation_price(
+                initial_price,
+                quantity,
+                our_leverage,
+                contract_symbol,
+            ),
         };
 
         let (long_leverage, short_leverage) =
@@ -362,6 +375,7 @@ impl Cfd {
             short_leverage,
             initial_funding_rate,
             SETTLEMENT_INTERVAL.whole_hours(),
+            contract_symbol,
         )
         .expect("values from db to be sane");
 
@@ -585,16 +599,7 @@ impl Cfd {
 
         // If we have a dedicated closing price, use that one.
         if let Some(payout) = self.aggregated.clone().payout(self.role) {
-            let payout = payout
-                .to_signed()
-                .expect("Amount to fit into signed amount");
-
-            let (profit_btc, profit_percent) = calculate_profit(
-                payout,
-                self.margin
-                    .to_signed()
-                    .expect("Amount to fit into signed amount"),
-            );
+            let (profit_btc, profit_percent) = calculate_profit(payout, self.margin);
 
             return Self {
                 payout: Some(payout),
@@ -642,7 +647,8 @@ impl Cfd {
         let (long_leverage, short_leverage) =
             long_and_short_leverage(self.leverage_taker, self.role, self.position);
 
-        let (profit_btc, profit_percent, payout) = match calculate_profit_at_price(
+        let (profit_btc, profit_percent, payout) = match calculate_payout_at_price(
+            self.contract_symbol,
             self.initial_price,
             closing_price,
             self.quantity,
@@ -650,7 +656,9 @@ impl Cfd {
             short_leverage,
             self.aggregated.fee_account,
         ) {
-            Ok((profit_btc, profit_percent, payout)) => {
+            Ok(payout) => {
+                let (profit_btc, profit_percent) = calculate_profit(payout, self.margin);
+
                 (profit_btc, profit_percent.round_dp(1).to_string(), payout)
             }
             Err(e) => {
@@ -846,12 +854,27 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = calculate_margin(contract_symbol, initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(
+            contract_symbol,
+            initial_price,
+            quantity,
+            counterparty_leverage,
+        );
 
         let liquidation_price = match position {
-            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
-            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+            Position::Long => calculate_long_liquidation_price(
+                initial_price,
+                quantity,
+                our_leverage,
+                contract_symbol,
+            ),
+            Position::Short => calculate_short_liquidation_price(
+                initial_price,
+                quantity,
+                our_leverage,
+                contract_symbol,
+            ),
         };
 
         let (details, closing_price, payout, state) = {
@@ -908,20 +931,10 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
                 }
             };
 
-            (
-                CfdDetails { tx_url_list },
-                price,
-                SignedAmount::from(payout),
-                state,
-            )
+            (CfdDetails { tx_url_list }, price, payout, state)
         };
 
-        let (profit_btc, profit_percent) = calculate_profit(
-            payout,
-            margin
-                .to_signed()
-                .expect("Amount to fit into signed amount"),
-        );
+        let (profit_btc, profit_percent) = calculate_profit(payout.inner(), margin);
 
         // there are no events to apply at this stage for closed CFDs,
         // which is why this field is mostly ignored
@@ -946,7 +959,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
 
             profit_btc: Some(profit_btc),
             profit_percent: Some(profit_percent.to_string()),
-            payout: Some(payout),
+            payout: Some(payout.inner()),
             closing_price,
 
             state,
@@ -989,12 +1002,27 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             Role::Taker => (taker_leverage, Leverage::ONE),
         };
 
-        let margin = calculate_margin(initial_price, quantity, our_leverage);
-        let margin_counterparty = calculate_margin(initial_price, quantity, counterparty_leverage);
+        let margin = calculate_margin(contract_symbol, initial_price, quantity, our_leverage);
+        let margin_counterparty = calculate_margin(
+            contract_symbol,
+            initial_price,
+            quantity,
+            counterparty_leverage,
+        );
 
         let liquidation_price = match position {
-            Position::Long => calculate_long_liquidation_price(our_leverage, initial_price),
-            Position::Short => calculate_short_liquidation_price(our_leverage, initial_price),
+            Position::Long => calculate_long_liquidation_price(
+                initial_price,
+                quantity,
+                our_leverage,
+                contract_symbol,
+            ),
+            Position::Short => calculate_short_liquidation_price(
+                initial_price,
+                quantity,
+                our_leverage,
+                contract_symbol,
+            ),
         };
 
         // there are no events to apply at this stage for failed CFDs,
@@ -1344,11 +1372,26 @@ impl CfdOffer {
             .iter()
             .map(|leverage| {
                 let liquidation_price = match own_position {
-                    Position::Long => calculate_long_liquidation_price(*leverage, offer.price),
-                    Position::Short => calculate_short_liquidation_price(*leverage, offer.price),
+                    Position::Long => calculate_long_liquidation_price(
+                        offer.price,
+                        offer.max_quantity,
+                        *leverage,
+                        offer.contract_symbol,
+                    ),
+                    Position::Short => calculate_short_liquidation_price(
+                        offer.price,
+                        offer.max_quantity,
+                        *leverage,
+                        offer.contract_symbol,
+                    ),
                 };
                 // Margin per lot price is dependent on one's own leverage
-                let margin_per_lot = calculate_margin(offer.price, lot_size.into(), *leverage);
+                let margin_per_lot = calculate_margin(
+                    offer.contract_symbol,
+                    offer.price,
+                    lot_size.into(),
+                    *leverage,
+                );
 
                 let (long_leverage, short_leverage) =
                     long_and_short_leverage(*leverage, role, own_position);
@@ -1360,6 +1403,7 @@ impl CfdOffer {
                     short_leverage,
                     offer.funding_rate,
                     SETTLEMENT_INTERVAL.whole_hours(),
+                    offer.contract_symbol,
                 )
                 .context("unable to calculate initial funding fee")?;
 

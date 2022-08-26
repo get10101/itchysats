@@ -1,7 +1,7 @@
-use crate::payouts::inverse::basis::BSplineBasis;
-use crate::payouts::inverse::curve::Curve;
-use crate::payouts::inverse::utils::cmp_f64;
-use crate::payouts::inverse::Error;
+use crate::payout_curve::inverse::implementation::basis::BSplineBasis;
+use crate::payout_curve::inverse::implementation::curve::Curve;
+use crate::payout_curve::inverse::implementation::utils::cmp_f64;
+use crate::payout_curve::inverse::implementation::Error;
 use ndarray::prelude::*;
 
 /// Perform general spline interpolation on a provided basis.
