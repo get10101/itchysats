@@ -1657,9 +1657,9 @@ dependencies = [
 
 [[package]]
 name = "http-api-problem"
-version = "0.53.0"
+version = "0.54.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef2c3fff5b9b0a4cdbdb81fd1380573f6bf7af9360deb27123a67d878d36d78c"
+checksum = "a47a5bc22f1da0d38ce6476f92c0c20208321faec7128065bc3343b03e628f0f"
 dependencies = [
  "http",
  "rocket",
