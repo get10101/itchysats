@@ -20,7 +20,7 @@ use daemon::oracle::Attestation;
 use daemon::projection;
 use daemon::projection::Cfd;
 use daemon::projection::CfdState;
-use daemon::projection::Feeds;
+use daemon::projection::FeedReceivers;
 use daemon::projection::MakerOffers;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
@@ -56,6 +56,7 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
@@ -572,7 +573,7 @@ impl Default for TakerConfig {
 pub struct Maker {
     pub system: maker::ActorSystem<OracleActor, WalletActor>,
     pub mocks: mocks::Mocks,
-    pub feeds: Feeds,
+    pub feeds: FeedReceivers,
     pub listen_addr: SocketAddr,
     pub identity: Identity,
     /// The address on which taker can dial in with libp2p protocols (includes
@@ -696,13 +697,20 @@ impl Maker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) =
-            projection::Actor::new(db, Network::Testnet, price_feed_addr.into(), Role::Maker);
+        let (feed_senders, feed_receivers) = projection::feeds();
+        let feed_senders = Arc::new(feed_senders);
+        let proj_actor = projection::Actor::new(
+            db,
+            Network::Testnet,
+            price_feed_addr.into(),
+            Role::Maker,
+            feed_senders,
+        );
         tasks.add(projection_context.run(proj_actor));
 
         Self {
             system: maker,
-            feeds,
+            feeds: feed_receivers,
             identity: model::Identity::new(identities.identity_pk),
             listen_addr: address,
             mocks,
@@ -759,7 +767,7 @@ pub struct Taker {
     pub id: Identity,
     pub system: daemon::TakerActorSystem<OracleActor, WalletActor, PriceFeedActor>,
     pub mocks: mocks::Mocks,
-    pub feeds: Feeds,
+    pub feeds: FeedReceivers,
     pub maker_peer_id: PeerId,
     db: sqlite_db::Connection,
     _tasks: Tasks,
@@ -848,9 +856,13 @@ impl Taker {
         let mut tasks = Tasks::default();
 
         let (wallet, wallet_mock) = WalletActor::new();
-        let (price_feed, price_feed_mock) = PriceFeedActor::new();
-
         let wallet_addr = wallet.create(None).spawn(&mut tasks);
+
+        let (price_feed, price_feed_mock) = PriceFeedActor::new();
+        let (price_feed_addr, price_feed_fut) = price_feed.create(None).run();
+        tasks.add(async move {
+            let _ = price_feed_fut.await;
+        });
 
         let (projection_actor, projection_context) = xtra::Context::new(None);
 
@@ -875,7 +887,7 @@ impl Taker {
 
                 Ok(monitor)
             },
-            move || price_feed.clone(),
+            price_feed_addr,
             config.n_payouts,
             Duration::from_secs(10),
             projection_actor,
@@ -892,18 +904,21 @@ impl Taker {
             oracle_mock.unwrap(),
         );
 
-        let (proj_actor, feeds) = projection::Actor::new(
+        let (feed_senders, feed_receivers) = projection::feeds();
+        let feed_senders = Arc::new(feed_senders);
+        let proj_actor = projection::Actor::new(
             db.clone(),
             Network::Testnet,
             taker.price_feed_actor.clone().into(),
             Role::Taker,
+            feed_senders,
         );
         tasks.add(projection_context.run(proj_actor));
 
         Self {
             id: model::Identity::new(identities.identity_pk),
             system: taker,
-            feeds,
+            feeds: feed_receivers,
             mocks,
             maker_peer_id: maker_multiaddr
                 .extract_peer_id()

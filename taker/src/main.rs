@@ -34,8 +34,11 @@ use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_extras::Tasks;
+use xtras::supervisor::always_restart;
+use xtras::supervisor::Supervisor;
 
 mod routes;
 
@@ -291,8 +294,6 @@ async fn main() -> Result<()> {
 
     // Create actors
 
-    let (projection_actor, projection_context) = xtra::Context::new(None);
-
     let possible_addresses = resolve_maker_addresses(maker_url.as_str()).await?;
 
     // Assume that the first resolved ipv4 address is good enough for libp2p.
@@ -319,20 +320,46 @@ async fn main() -> Result<()> {
         Err(_) => Environment::Binary,
     };
 
-    let bitmex_network = network.bitmex_network();
+    let (supervisor, price_feed_actor) =
+        Supervisor::<_, xtra_bitmex_price_feed::Error>::with_policy(
+            {
+                let network = network.bitmex_network();
+                move || xtra_bitmex_price_feed::Actor::new(network)
+            },
+            always_restart(),
+        );
+
+    tasks.add(supervisor.run_log_summary());
+
+    let (feed_senders, feed_receivers) = projection::feeds();
+    let feed_senders = Arc::new(feed_senders);
+
+    let (supervisor, projection_actor) = Supervisor::new({
+        let db = db.clone();
+        let price_feed = price_feed_actor.clone();
+        move || {
+            projection::Actor::new(
+                db.clone(),
+                bitcoin_network,
+                price_feed.clone().into(),
+                Role::Maker,
+                feed_senders.clone(),
+            )
+        }
+    });
+    tasks.add(supervisor.run_log_summary());
+
     let taker = TakerActorSystem::new(
         db.clone(),
         wallet.clone(),
         *olivia::PUBLIC_KEY,
         identities,
         |executor| oracle::Actor::new(db.clone(), executor),
-        {
-            |executor| {
-                let electrum = network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, executor)
-            }
+        |executor| {
+            let electrum = network.electrum().to_string();
+            monitor::Actor::new(db.clone(), electrum, executor)
         },
-        move || xtra_bitmex_price_feed::Actor::new(bitmex_network),
+        price_feed_actor,
         N_PAYOUTS,
         Duration::from_secs(10),
         projection_actor.clone(),
@@ -341,16 +368,8 @@ async fn main() -> Result<()> {
         environment,
     )?;
 
-    let (proj_actor, projection_feeds) = projection::Actor::new(
-        db.clone(),
-        bitcoin_network,
-        taker.price_feed_actor.clone().into(),
-        Role::Taker,
-    );
-    tasks.add(projection_context.run(proj_actor));
-
     let mission_success = rocket::custom(figment)
-        .manage(projection_feeds)
+        .manage(feed_receivers)
         .manage(wallet_feed_receiver)
         .manage(identity_info)
         .manage(bitcoin_network)

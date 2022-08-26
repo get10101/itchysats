@@ -125,8 +125,6 @@ async fn main() -> Result<()> {
 
     // Create actors
 
-    let (projection_actor, projection_context) = xtra::Context::new(None);
-
     let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
     let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(
         &libp2p_socket.ip(),
@@ -134,16 +132,40 @@ async fn main() -> Result<()> {
     )
     .expect("to parse properly");
 
+    let (supervisor, price_feed) = Supervisor::with_policy(
+        {
+            let network = opts.network.bitmex_network();
+            move || xtra_bitmex_price_feed::Actor::new(network)
+        },
+        always_restart::<xtra_bitmex_price_feed::Error>(),
+    );
+    tasks.add(supervisor.run_log_summary());
+
+    let (feed_senders, feed_receivers) = projection::feeds();
+    let feed_senders = std::sync::Arc::new(feed_senders);
+
+    let (supervisor, projection_actor) = Supervisor::new({
+        let db = db.clone();
+        move || {
+            projection::Actor::new(
+                db.clone(),
+                bitcoin_network,
+                price_feed.clone().into(),
+                Role::Maker,
+                feed_senders.clone(),
+            )
+        }
+    });
+    tasks.add(supervisor.run_log_summary());
+
     let maker = ActorSystem::new(
         db.clone(),
         wallet.clone(),
         *olivia::PUBLIC_KEY,
         |executor| oracle::Actor::new(db.clone(), executor),
-        {
-            |executor| {
-                let electrum = opts.network.electrum().to_string();
-                monitor::Actor::new(db.clone(), electrum, executor)
-            }
+        |executor| {
+            let electrum = opts.network.electrum().to_string();
+            monitor::Actor::new(db.clone(), electrum, executor)
         },
         SETTLEMENT_INTERVAL,
         N_PAYOUTS,
@@ -152,23 +174,8 @@ async fn main() -> Result<()> {
         endpoint_listen,
     )?;
 
-    let (supervisor, price_feed) = Supervisor::with_policy(
-        move || xtra_bitmex_price_feed::Actor::new(opts.network.bitmex_network()),
-        always_restart::<xtra_bitmex_price_feed::Error>(),
-    );
-
-    tasks.add(supervisor.run_log_summary());
-
-    let (proj_actor, projection_feeds) = projection::Actor::new(
-        db.clone(),
-        bitcoin_network,
-        price_feed.clone().into(),
-        Role::Maker,
-    );
-    tasks.add(projection_context.run(proj_actor));
-
     let mission_success = rocket::custom(figment)
-        .manage(projection_feeds)
+        .manage(feed_receivers)
         .manage(wallet_feed_receiver)
         .manage(maker)
         .manage(auth_username)

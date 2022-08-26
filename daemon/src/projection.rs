@@ -51,6 +51,7 @@ use sqlite_db;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -81,10 +82,35 @@ pub struct Actor {
     role: Role,
 }
 
-pub struct Feeds {
+pub struct FeedReceivers {
     pub quote: watch::Receiver<LatestQuotes>,
     pub offers: watch::Receiver<MakerOffers>,
     pub cfds: watch::Receiver<Option<Vec<Cfd>>>,
+}
+
+pub struct FeedSenders {
+    pub quote: watch::Sender<LatestQuotes>,
+    pub offers: watch::Sender<MakerOffers>,
+    pub cfds: watch::Sender<Option<Vec<Cfd>>>,
+}
+
+pub fn feeds() -> (FeedSenders, FeedReceivers) {
+    let (tx_quote, rx_quote) = watch::channel(LatestQuotes::default());
+    let (tx_offers, rx_offers) = watch::channel(MakerOffers::default());
+    let (tx_cfds, rx_cfds) = watch::channel(None);
+
+    (
+        FeedSenders {
+            quote: tx_quote,
+            offers: tx_offers,
+            cfds: tx_cfds,
+        },
+        FeedReceivers {
+            quote: rx_quote,
+            offers: rx_offers,
+            cfds: rx_cfds,
+        },
+    )
 }
 
 impl Actor {
@@ -93,29 +119,15 @@ impl Actor {
         network: Network,
         price_feed: MessageChannel<GetLatestQuotes, xtra_bitmex_price_feed::LatestQuotes>,
         role: Role,
-    ) -> (Self, Feeds) {
-        let (tx_cfds, rx_cfds) = watch::channel(None);
-        let (tx_offer, rx_offer) = watch::channel(MakerOffers::default());
-        let (tx_quote, rx_quote) = watch::channel(LatestQuotes::default());
-
-        let actor = Self {
+        feed_senders: Arc<FeedSenders>,
+    ) -> Self {
+        Self {
             db,
-            tx: Tx {
-                cfds: tx_cfds,
-                offer: tx_offer,
-                quote: tx_quote,
-            },
+            tx: Tx(feed_senders),
             state: State::new(network),
             price_feed,
             role,
-        };
-        let feeds = Feeds {
-            cfds: rx_cfds,
-            offers: rx_offer,
-            quote: rx_quote,
-        };
-
-        (actor, feeds)
+        }
     }
 }
 
@@ -755,11 +767,7 @@ impl Cfd {
 }
 
 /// Internal struct to keep all the senders around in one place
-struct Tx {
-    cfds: watch::Sender<Option<Vec<Cfd>>>,
-    pub offer: watch::Sender<MakerOffers>,
-    pub quote: watch::Sender<LatestQuotes>,
-}
+struct Tx(Arc<FeedSenders>);
 
 impl Tx {
     fn send_cfds_update(&self, cfds: HashMap<OrderId, Cfd>, quotes: &LatestQuotes) {
@@ -774,15 +782,15 @@ impl Tx {
             })
             .collect();
 
-        let _ = self.cfds.send(Some(cfds_with_quote));
+        let _ = self.0.cfds.send(Some(cfds_with_quote));
     }
 
     fn send_quotes_update(&self, quotes: LatestQuotes) {
-        let _ = self.quote.send(quotes);
+        let _ = self.0.quote.send(quotes);
     }
 
     fn send_offer_update(&self, offers: MakerOffers) -> Result<()> {
-        self.offer.send(offers)?;
+        self.0.offers.send(offers)?;
 
         Ok(())
     }

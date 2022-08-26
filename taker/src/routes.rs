@@ -9,7 +9,7 @@ use daemon::online_status::ConnectionStatus;
 use daemon::oracle;
 use daemon::projection;
 use daemon::projection::CfdAction;
-use daemon::projection::Feeds;
+use daemon::projection::FeedReceivers;
 use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
@@ -59,7 +59,7 @@ pub struct IdentityInfo {
 #[rocket::get("/feed")]
 #[instrument(name = "GET /feed", skip_all)]
 pub async fn feed(
-    rx: &State<Feeds>,
+    rx: &State<FeedReceivers>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
     rx_maker_status: &State<watch::Receiver<ConnectionStatus>>,
     rx_maker_identity: &State<watch::Receiver<Option<identify::PeerInfo>>>,
