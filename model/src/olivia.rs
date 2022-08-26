@@ -84,7 +84,7 @@ impl fmt::Display for IndexPrice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             IndexPrice::Bxbt => "BXBT",
-            IndexPrice::Beth => "BETH",
+            IndexPrice::Beth => "BXBT", // TODO: Change back to "BETH" once Olivia supports it
         };
 
         s.fmt(f)
