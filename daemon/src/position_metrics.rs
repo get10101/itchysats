@@ -1,4 +1,3 @@
-use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::Amount;
@@ -29,15 +28,16 @@ pub struct Actor {
 }
 
 /// Internal struct to keep state in one place
+#[derive(Default)]
 struct State {
-    cfds: Option<HashMap<OrderId, Cfd>>,
+    cfds: HashMap<OrderId, Cfd>,
 }
 
 impl Actor {
     pub fn new(db: sqlite_db::Connection) -> Self {
         Self {
             db,
-            state: State::new(),
+            state: State::default(),
         }
     }
 }
@@ -71,48 +71,29 @@ impl Actor {
             cfds.insert(cfd.id, cfd);
         }
 
-        self.state.cfds = Some(cfds);
+        self.state.cfds = cfds;
 
         for symbol in ContractSymbol::iter() {
-            metrics::update_position_metrics(
-                self.state.cfds.clone().expect("We've initialized it above"),
-                symbol,
-            );
+            metrics::update_position_metrics(&self.state.cfds, symbol);
         }
     }
 
     async fn handle(&mut self, msg: CfdChanged) {
-        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
+        if let Err(e) = self.state.update_cfd(&self.db, msg.0).await {
             tracing::error!("Failed to rehydrate CFD: {e:#}");
             return;
         };
 
         for symbol in ContractSymbol::iter() {
-            metrics::update_position_metrics(
-                self.state
-                    .cfds
-                    .clone()
-                    .expect("updating metrics failed. Internal list has not been initialized yet"),
-                symbol,
-            )
+            metrics::update_position_metrics(&self.state.cfds, symbol)
         }
     }
 }
 
 impl State {
-    fn new() -> Self {
-        Self { cfds: None }
-    }
-
-    async fn update_cfd(&mut self, db: sqlite_db::Connection, id: OrderId) -> Result<()> {
+    async fn update_cfd(&mut self, db: &sqlite_db::Connection, id: OrderId) -> Result<()> {
         let cfd = db.load_open_cfd(id, ()).await?;
-
-        let cfds = self
-            .cfds
-            .as_mut()
-            .context("CFD list has not been initialized yet")?;
-
-        cfds.insert(id, cfd);
+        self.cfds.insert(id, cfd);
 
         Ok(())
     }
@@ -437,12 +418,12 @@ mod metrics {
             .unwrap()
         });
 
-    pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>, symbol: ContractSymbol) {
+    pub fn update_position_metrics(cfds: &HashMap<OrderId, Cfd>, symbol: ContractSymbol) {
         let cfds = cfds
-            .into_iter()
+            .iter()
             .filter_map(|(_, cfd)| {
                 if cfd.contract_symbol == symbol {
-                    Some(cfd)
+                    Some(*cfd)
                 } else {
                     None
                 }
