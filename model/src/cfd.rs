@@ -191,8 +191,10 @@ impl Offer {
         contract_symbol: ContractSymbol,
         lot_size: LotSize,
     ) -> Self {
-        let oracle_event_id =
-            olivia::next_announcement_after(time::OffsetDateTime::now_utc() + settlement_interval);
+        let oracle_event_id = olivia::next_announcement_after(
+            time::OffsetDateTime::now_utc() + settlement_interval,
+            contract_symbol,
+        );
 
         Offer {
             id: OfferId::default(),
@@ -871,7 +873,8 @@ impl Cfd {
         }
 
         let now = OffsetDateTime::now_utc();
-        let to_event_ids = olivia::hourly_events(now, now + self.settlement_interval)?;
+        let to_event_ids =
+            olivia::hourly_events(now, now + self.settlement_interval, self.contract_symbol)?;
         let settlement_event_id = to_event_ids.last().context("Empty to_event_ids")?;
 
         // If a `from_event_id` was specified we use it, otherwise we use the
@@ -960,7 +963,8 @@ impl Cfd {
 
         let now = OffsetDateTime::now_utc();
 
-        let to_event_ids = olivia::hourly_events(now, now + self.settlement_interval)?;
+        let to_event_ids =
+            olivia::hourly_events(now, now + self.settlement_interval, self.contract_symbol)?;
 
         ensure!(
             to_event_ids == maker_to_event_ids,
@@ -2906,8 +2910,11 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //                                                          now
 
-        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long();
+        let contract_symbol = cfd.contract_symbol;
+        let cfd = cfd.dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            contract_symbol,
         ));
         let result = cfd.can_auto_rollover_taker(datetime!(2021-11-19 10:00:00).assume_utc());
 
@@ -2921,8 +2928,11 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //        now
 
-        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long();
+        let contract_symbol = cfd.contract_symbol;
+        let cfd = cfd.dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            contract_symbol,
         ));
 
         let result = cfd.can_auto_rollover_taker(datetime!(2021-11-18 11:00:00).assume_utc());
@@ -2937,8 +2947,11 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //    now
 
-        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long();
+        let contract_symbol = cfd.contract_symbol;
+        let cfd = cfd.dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            contract_symbol,
         ));
         let cannot_roll_over = cfd
             .can_auto_rollover_taker(datetime!(2021-11-18 10:00:01).assume_utc())
@@ -2954,8 +2967,11 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //  now
 
-        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long();
+        let contract_symbol = cfd.contract_symbol;
+        let cfd = cfd.dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            contract_symbol,
         ));
         let cannot_roll_over = cfd
             .can_auto_rollover_taker(datetime!(2021-11-18 09:59:59).assume_utc())
@@ -2971,8 +2987,11 @@ mod tests {
         // --|----|<--------------------rollover------------------->|--
         //       now
 
-        let cfd = Cfd::dummy_taker_long().dummy_open(BitMexPriceEventId::with_20_digits(
+        let cfd = Cfd::dummy_taker_long();
+        let contract_symbol = cfd.contract_symbol;
+        let cfd = cfd.dummy_open(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            contract_symbol,
         ));
         let cannot_roll_over = cfd
             .can_auto_rollover_taker(datetime!(2021-11-18 10:59:59).assume_utc())
@@ -2994,6 +3013,7 @@ mod tests {
     fn given_cfd_has_attestation_then_no_rollover() {
         let cfd = Cfd::dummy_with_attestation(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            ContractSymbol::BtcUsd,
         ));
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
@@ -3005,6 +3025,7 @@ mod tests {
     fn given_cfd_final_then_no_rollover() {
         let cfd = Cfd::dummy_final(BitMexPriceEventId::with_20_digits(
             datetime!(2021-11-19 10:00:00).assume_utc(),
+            ContractSymbol::BtcUsd,
         ));
 
         let cannot_roll_over = cfd.can_rollover().unwrap_err();
@@ -3508,8 +3529,10 @@ mod tests {
     #[test]
     fn given_current_settlement_in_12_hours_and_candidate_in_19_then_7_hour_extension() {
         for now in common_time_boundaries() {
-            let from_event_id = BitMexPriceEventId::with_20_digits(now + 12.hours());
-            let to_event_id = BitMexPriceEventId::with_20_digits(now + 19.hours());
+            let from_event_id =
+                BitMexPriceEventId::with_20_digits(now + 12.hours(), ContractSymbol::BtcUsd);
+            let to_event_id =
+                BitMexPriceEventId::with_20_digits(now + 19.hours(), ContractSymbol::BtcUsd);
 
             let taker = Cfd::dummy_taker_long().dummy_open(from_event_id);
             let maker = Cfd::dummy_maker_short().dummy_open(from_event_id);
@@ -3540,10 +3563,14 @@ mod tests {
         for now in common_time_boundaries() {
             let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
 
-            let to_event_id = BitMexPriceEventId::with_20_digits(now + settlement_interval.hours());
+            let to_event_id = BitMexPriceEventId::with_20_digits(
+                now + settlement_interval.hours(),
+                ContractSymbol::BtcUsd,
+            );
 
             for hour in 0..settlement_interval {
-                let from_event_id = BitMexPriceEventId::with_20_digits(now + hour.hours());
+                let from_event_id =
+                    BitMexPriceEventId::with_20_digits(now + hour.hours(), ContractSymbol::BtcUsd);
 
                 let taker = Cfd::dummy_taker_long().dummy_open(from_event_id);
                 let maker = Cfd::dummy_maker_short().dummy_open(from_event_id);
@@ -3573,12 +3600,14 @@ mod tests {
     fn given_cfd_can_be_settled_when_calculating_hours_to_extend_based_on_event_then_return_settlement_interval(
     ) {
         for now in common_time_boundaries() {
-            let event_id_1_hour_ago = BitMexPriceEventId::with_20_digits(now - 1.hours());
+            let event_id_1_hour_ago =
+                BitMexPriceEventId::with_20_digits(now - 1.hours(), ContractSymbol::BtcUsd);
 
             let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
             let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
 
-            let event_id_in_24_hours = BitMexPriceEventId::with_20_digits(now - 24.hours());
+            let event_id_in_24_hours =
+                BitMexPriceEventId::with_20_digits(now - 24.hours(), ContractSymbol::BtcUsd);
 
             assert_eq!(
                 taker
@@ -3612,8 +3641,10 @@ mod tests {
     fn given_candidate_settlement_before_current_settlement_then_fails_to_calculate_hours_to_extend_based_on_event(
     ) {
         for now in common_time_boundaries() {
-            let from_event_id = BitMexPriceEventId::with_20_digits(now + 2.hours());
-            let earlier_event_id = BitMexPriceEventId::with_20_digits(now + 1.hours());
+            let from_event_id =
+                BitMexPriceEventId::with_20_digits(now + 2.hours(), ContractSymbol::BtcUsd);
+            let earlier_event_id =
+                BitMexPriceEventId::with_20_digits(now + 1.hours(), ContractSymbol::BtcUsd);
 
             let taker = Cfd::dummy_taker_long().dummy_open(from_event_id);
             let maker = Cfd::dummy_maker_short().dummy_open(from_event_id);
@@ -3632,7 +3663,8 @@ mod tests {
         for now in common_time_boundaries() {
             let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
             for hour in 0..settlement_interval {
-                let event_id_in_x_hours = BitMexPriceEventId::with_20_digits(now + hour.hours());
+                let event_id_in_x_hours =
+                    BitMexPriceEventId::with_20_digits(now + hour.hours(), ContractSymbol::BtcUsd);
 
                 let taker = Cfd::dummy_taker_long().dummy_open(event_id_in_x_hours);
                 let maker = Cfd::dummy_maker_short().dummy_open(event_id_in_x_hours);
@@ -3657,7 +3689,8 @@ mod tests {
     #[test]
     fn rollover_extends_time_to_live_by_settlement_interval_if_cfd_can_be_settled() {
         for now in common_time_boundaries() {
-            let event_id_1_hour_ago = BitMexPriceEventId::with_20_digits(now - 1.hours());
+            let event_id_1_hour_ago =
+                BitMexPriceEventId::with_20_digits(now - 1.hours(), ContractSymbol::BtcUsd);
 
             let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
             let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
@@ -3684,6 +3717,7 @@ mod tests {
             let more_than_settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours() + 2;
             let event_id_way_in_the_future = BitMexPriceEventId::with_20_digits(
                 now + more_than_settlement_interval_hours.hours(),
+                ContractSymbol::BtcUsd,
             );
 
             let taker = Cfd::dummy_taker_long().dummy_open(event_id_way_in_the_future);
@@ -3700,7 +3734,7 @@ mod tests {
             for now in common_time_boundaries() {
                 let close_to_settlement_interval = SETTLEMENT_INTERVAL + minutes.minutes();
                 let event_id_within_the_hour = BitMexPriceEventId::with_20_digits(
-                    now + close_to_settlement_interval,
+                    now + close_to_settlement_interval, ContractSymbol::BtcUsd
                 );
 
                 let taker = Cfd::dummy_taker_long().dummy_open(event_id_within_the_hour);
@@ -3734,7 +3768,7 @@ mod tests {
         let order_id = OrderId::default();
 
         let taker_long = Cfd::taker_long_from_order(
-            Offer::dummy_short()
+            Offer::dummy_btc_usd_short()
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
@@ -3743,7 +3777,7 @@ mod tests {
         .with_id(order_id);
 
         let maker_short = Cfd::maker_short_from_order(
-            Offer::dummy_short()
+            Offer::dummy_btc_usd_short()
                 .with_price(opening_price)
                 .with_funding_rate(FundingRate::new(funding_rate).unwrap()),
             quantity,
@@ -3811,7 +3845,8 @@ mod tests {
     #[test]
     fn given_order_creation_timestamp_outdated_then_order_outdated() {
         let creation_timestamp = Timestamp::now();
-        let order = Offer::dummy_short().with_creation_timestamp(creation_timestamp);
+        let order =
+            Offer::dummy_short(ContractSymbol::BtcUsd).with_creation_timestamp(creation_timestamp);
 
         let now =
             OffsetDateTime::now_utc() + Duration::seconds(Offer::OUTDATED_AFTER_MINS * 60 + 1);
@@ -3822,7 +3857,8 @@ mod tests {
     #[test]
     fn given_order_creation_timestamp_not_outdated_then_order_not_outdated() {
         let creation_timestamp = Timestamp::now();
-        let order = Offer::dummy_short().with_creation_timestamp(creation_timestamp);
+        let order =
+            Offer::dummy_short(ContractSymbol::BtcUsd).with_creation_timestamp(creation_timestamp);
 
         let now =
             OffsetDateTime::now_utc() + Duration::seconds(Offer::OUTDATED_AFTER_MINS * 60 - 1);
@@ -3837,9 +3873,13 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //             now
 
-        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
+        let contract_symbol = ContractSymbol::BtcUsd;
+        let order = Offer::dummy_short(contract_symbol).with_oracle_event_id(
+            BitMexPriceEventId::with_20_digits(
+                datetime!(2021-11-19 10:00:00).assume_utc(),
+                contract_symbol,
+            ),
+        );
 
         let sane =
             order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 10:00:00).assume_utc());
@@ -3853,9 +3893,13 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //                       now
 
-        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
+        let contract_symbol = ContractSymbol::BtcUsd;
+        let order = Offer::dummy_short(contract_symbol).with_oracle_event_id(
+            BitMexPriceEventId::with_20_digits(
+                datetime!(2021-11-19 10:00:00).assume_utc(),
+                contract_symbol,
+            ),
+        );
 
         let sane =
             order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 11:00:00).assume_utc());
@@ -3869,9 +3913,13 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //   now
 
-        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
+        let contract_symbol = ContractSymbol::BtcUsd;
+        let order = Offer::dummy_short(contract_symbol).with_oracle_event_id(
+            BitMexPriceEventId::with_20_digits(
+                datetime!(2021-11-19 10:00:00).assume_utc(),
+                contract_symbol,
+            ),
+        );
 
         let sane =
             order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 09:00:00).assume_utc());
@@ -3885,9 +3933,13 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //   now
 
-        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
+        let contract_symbol = ContractSymbol::BtcUsd;
+        let order = Offer::dummy_short(contract_symbol).with_oracle_event_id(
+            BitMexPriceEventId::with_20_digits(
+                datetime!(2021-11-19 10:00:00).assume_utc(),
+                contract_symbol,
+            ),
+        );
 
         let sane =
             order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 08:59:59).assume_utc());
@@ -3904,9 +3956,13 @@ mod tests {
         // --|---------|<--------|--------------------------------->|--
         //                       now
 
-        let order = Offer::dummy_short().with_oracle_event_id(BitMexPriceEventId::with_20_digits(
-            datetime!(2021-11-19 10:00:00).assume_utc(),
-        ));
+        let contract_symbol = ContractSymbol::BtcUsd;
+        let order = Offer::dummy_short(contract_symbol).with_oracle_event_id(
+            BitMexPriceEventId::with_20_digits(
+                datetime!(2021-11-19 10:00:00).assume_utc(),
+                contract_symbol,
+            ),
+        );
 
         let sane =
             order.is_oracle_event_timestamp_sane(datetime!(2021-11-18 11:00:01).assume_utc());
@@ -4046,7 +4102,7 @@ mod tests {
         fn dummy_taker_long() -> Self {
             Cfd::from_order(
                 OrderId::default(),
-                &Offer::dummy_short(),
+                &Offer::dummy_btc_usd_short(),
                 Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4058,7 +4114,7 @@ mod tests {
         fn dummy_maker_short() -> Self {
             Cfd::from_order(
                 OrderId::default(),
-                &Offer::dummy_short(),
+                &Offer::dummy_btc_usd_short(),
                 Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4070,7 +4126,7 @@ mod tests {
         fn dummy_not_open_yet() -> Self {
             Cfd::from_order(
                 OrderId::default(),
-                &Offer::dummy_short(),
+                &Offer::dummy_btc_usd_short(),
                 Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4242,9 +4298,10 @@ mod tests {
         }
 
         fn dummy_with_attestation(event_id: BitMexPriceEventId) -> Self {
+            let contract_symbol = event_id.contract_symbol();
             let cfd = Cfd::from_order(
                 OrderId::default(),
-                &Offer::dummy_short(),
+                &Offer::dummy_short(contract_symbol),
                 Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4258,9 +4315,10 @@ mod tests {
         }
 
         fn dummy_final(event_id: BitMexPriceEventId) -> Self {
+            let contract_symbol = event_id.contract_symbol();
             let cfd = Cfd::from_order(
                 OrderId::default(),
-                &Offer::dummy_short(),
+                &Offer::dummy_short(contract_symbol),
                 Contracts::new(1000),
                 dummy_identity(),
                 dummy_peer_id(),
@@ -4295,7 +4353,7 @@ mod tests {
     }
 
     impl Offer {
-        fn dummy_short() -> Self {
+        fn dummy_short(contract_symbol: ContractSymbol) -> Self {
             Offer::new(
                 Position::Short,
                 Price::new(dec!(1000)).unwrap(),
@@ -4306,9 +4364,13 @@ mod tests {
                 FundingRate::default(),
                 OpeningFee::default(),
                 vec![Leverage::TWO],
-                ContractSymbol::BtcUsd,
+                contract_symbol,
                 LotSize::new(100),
             )
+        }
+
+        fn dummy_btc_usd_short() -> Self {
+            Self::dummy_short(ContractSymbol::BtcUsd)
         }
 
         fn with_price(mut self, price: Price) -> Self {
@@ -4422,7 +4484,10 @@ mod tests {
 
             let mut dummy_cet_with_zero_price_range = HashMap::new();
             dummy_cet_with_zero_price_range.insert(
-                BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+                BitMexPriceEventId::with_20_digits(
+                    OffsetDateTime::now_utc(),
+                    ContractSymbol::BtcUsd,
+                ),
                 vec![Cet {
                     maker_amount: Amount::from_sat(0),
                     taker_amount: Amount::from_sat(0),
@@ -4497,7 +4562,7 @@ mod tests {
     }
 
     pub fn dummy_event_id() -> BitMexPriceEventId {
-        BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc())
+        BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc(), ContractSymbol::BtcUsd)
     }
 
     fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {

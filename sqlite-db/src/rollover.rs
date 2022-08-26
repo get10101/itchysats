@@ -135,6 +135,7 @@ mod tests {
             event,
             datetime!(2021-06-01 10:00:00).assume_utc(),
             cfd.id(),
+            cfd.contract_symbol(),
         )?;
         db.append_event(rollover_completed.clone()).await?;
 
@@ -245,6 +246,7 @@ mod tests {
             event.clone(),
             datetime!(2021-06-01 10:00:00).assume_utc(),
             cfd.id(),
+            cfd.contract_symbol(),
         )?;
         db.append_event(second_rollover_completed_event.clone())
             .await
@@ -312,6 +314,7 @@ mod tests {
         event: EventKind,
         settlement_event_timestamp: OffsetDateTime,
         id: OrderId,
+        contract_symbol: ContractSymbol,
     ) -> Result<CfdEvent> {
         match event {
             EventKind::RolloverCompleted {
@@ -320,7 +323,7 @@ mod tests {
                 complete_fee,
             } => {
                 dlc.settlement_event_id =
-                    BitMexPriceEventId::with_20_digits(settlement_event_timestamp);
+                    BitMexPriceEventId::with_20_digits(settlement_event_timestamp, contract_symbol);
 
                 Ok(CfdEvent {
                     timestamp,

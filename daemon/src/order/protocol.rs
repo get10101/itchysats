@@ -22,7 +22,7 @@ use std::ops::RangeInclusive;
 pub(crate) enum TakerMessage {
     PlaceOrder {
         id: OrderId,
-        offer: Offer,
+        offer: Box<Offer>,
         quantity: Contracts,
         leverage: Leverage,
     },

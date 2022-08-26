@@ -35,7 +35,8 @@ impl Cfd {
         }
 
         let now = OffsetDateTime::now_utc();
-        let to_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+        let to_event_id =
+            olivia::next_announcement_after(now + self.settlement_interval, self.contract_symbol);
 
         // If a `from_event_id` was specified we use it, otherwise we use the
         // `settlement_event_id` of the current dlc to calculate the costs.
@@ -120,7 +121,8 @@ impl Cfd {
 
         let now = OffsetDateTime::now_utc();
 
-        let to_event_id = olivia::next_announcement_after(now + self.settlement_interval);
+        let to_event_id =
+            olivia::next_announcement_after(now + self.settlement_interval, self.contract_symbol);
 
         // TODO: This should not be calculated here but we should just rely on `complete_fee`
         //  This requires more refactoring because the `RolloverCompleted` event currently depends
