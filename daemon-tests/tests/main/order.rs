@@ -92,7 +92,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup(contract_symbol
         .await
         .unwrap();
 
-    first_contract_setup(&mut maker, &mut taker, order_id).await;
+    contract_setup(&mut maker, &mut taker, order_id).await;
 }
 
 #[otel_test]
@@ -121,7 +121,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
         .await
         .unwrap();
 
-    first_contract_setup(&mut maker, &mut taker, first_order_id).await;
+    contract_setup(&mut maker, &mut taker, first_order_id).await;
 
     let second_order_id = taker
         .system
@@ -129,7 +129,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
         .await
         .unwrap();
 
-    additional_contract_setup(&mut maker, &mut taker, second_order_id).await;
+    contract_setup(&mut maker, &mut taker, second_order_id).await;
 
     let taker_cfds = taker.cfds();
     assert_eq!(
@@ -198,29 +198,10 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     );
 }
 
-/// To be used for the first contract setup
-async fn first_contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: OrderId) {
-    wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
-
-    maker.mocks.mock_party_params().await;
-    taker.mocks.mock_party_params().await;
-
-    maker.mocks.mock_wallet_sign_and_broadcast().await;
-    taker.mocks.mock_wallet_sign_and_broadcast().await;
-
-    maker.system.accept_order(order_id).await.unwrap();
-    wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
-
-    wait_next_state!(order_id, maker, taker, CfdState::PendingOpen);
-
-    confirm!(lock transaction, order_id, maker, taker);
-    wait_next_state!(order_id, maker, taker, CfdState::Open);
-}
-
-/// To be used for any additional contract setup
+/// Perform and validate contract setup
 ///
 /// Note that we don't assert on the number of cfds, but just try to find the cfd with the given id.
-async fn additional_contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: OrderId) {
+async fn contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: OrderId) {
     wait_next_state_multi_cfd!(order_id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;
