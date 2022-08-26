@@ -1,4 +1,3 @@
-use crate::position_metrics::metrics::BTCUSD_LABEL;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,6 +6,7 @@ use futures::StreamExt;
 use model::calculate_margin;
 use model::CfdEvent;
 use model::ClosedCfd;
+use model::ContractSymbol;
 use model::Contracts;
 use model::EventKind;
 use model::FailedCfd;
@@ -19,6 +19,7 @@ use model::Role;
 use model::Settlement;
 use sqlite_db;
 use std::collections::HashMap;
+use strum::IntoEnumIterator;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncNext;
 
@@ -71,11 +72,13 @@ impl Actor {
         }
 
         self.state.cfds = Some(cfds);
-        metrics::update_position_metrics(
-            self.state.cfds.clone().expect("We've initialized it above"),
-            // TODO: once we have multiple contract symbols, this needs to come from the positions
-            BTCUSD_LABEL,
-        );
+
+        for symbol in ContractSymbol::iter() {
+            metrics::update_position_metrics(
+                self.state.cfds.clone().expect("We've initialized it above"),
+                symbol,
+            );
+        }
     }
 
     async fn handle(&mut self, msg: CfdChanged) {
@@ -84,14 +87,15 @@ impl Actor {
             return;
         };
 
-        metrics::update_position_metrics(
-            self.state
-                .cfds
-                .clone()
-                .expect("updating metrics failed. Internal list has not been initialized yet"),
-            // TODO: once we have multiple contract symbols, this needs to come from the positions
-            BTCUSD_LABEL,
-        );
+        for symbol in ContractSymbol::iter() {
+            metrics::update_position_metrics(
+                self.state
+                    .cfds
+                    .clone()
+                    .expect("updating metrics failed. Internal list has not been initialized yet"),
+                symbol,
+            )
+        }
     }
 }
 
@@ -133,6 +137,7 @@ pub struct Cfd {
     state: AggregatedState,
     counterparty_network_identity: Identity,
 
+    contract_symbol: ContractSymbol,
     version: u32,
 }
 
@@ -168,6 +173,7 @@ impl sqlite_db::CfdAggregate for Cfd {
             margin_counterparty,
             state: AggregatedState::New,
             counterparty_network_identity: cfd.counterparty_network_identity,
+            contract_symbol: cfd.contract_symbol,
             version: 0,
         }
     }
@@ -282,6 +288,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             role,
             taker_leverage,
             initial_price,
+            contract_symbol,
             ..
         } = closed_cfd;
 
@@ -306,6 +313,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             margin_counterparty,
             state,
             counterparty_network_identity,
+            contract_symbol,
             version: 0,
         }
     }
@@ -346,6 +354,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             margin_counterparty,
             state,
             counterparty_network_identity,
+            contract_symbol: cfd.contract_symbol,
             version: 0,
         }
     }
@@ -356,6 +365,7 @@ mod metrics {
     use crate::position_metrics::Cfd;
     use bdk::bitcoin::Amount;
     use itertools::Itertools;
+    use model::ContractSymbol;
     use model::Contracts;
     use model::OrderId;
     use model::Position;
@@ -376,7 +386,6 @@ mod metrics {
     const STATUS_REFUNDED_LABEL: &str = "refunded";
 
     const SYMBOL_LABEL: &str = "symbol";
-    pub const BTCUSD_LABEL: &str = "BTCUSD";
 
     static POSITION_QUANTITY_GAUGE: conquer_once::Lazy<prometheus::GaugeVec> =
         conquer_once::Lazy::new(|| {
@@ -428,8 +437,17 @@ mod metrics {
             .unwrap()
         });
 
-    pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>, symbol: &str) {
-        let cfds = cfds.into_iter().map(|(_, cfd)| cfd).collect::<Vec<_>>();
+    pub fn update_position_metrics(cfds: HashMap<OrderId, Cfd>, symbol: ContractSymbol) {
+        let cfds = cfds
+            .into_iter()
+            .filter_map(|(_, cfd)| {
+                if cfd.contract_symbol == symbol {
+                    Some(cfd)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
         set_position_metrics(
             cfds.iter().filter(|cfd| cfd.state == AggregatedState::New),
@@ -467,7 +485,11 @@ mod metrics {
         );
     }
 
-    fn set_position_metrics<'a>(cfds: impl Iterator<Item = &'a Cfd>, status: &str, symbol: &str) {
+    fn set_position_metrics<'a>(
+        cfds: impl Iterator<Item = &'a Cfd>,
+        status: &str,
+        symbol: ContractSymbol,
+    ) {
         let (long, short): (Vec<_>, Vec<_>) = cfds.partition(|cfd| cfd.position == Position::Long);
 
         set_metrics_for(POSITION_LONG_LABEL, status, &long, symbol);
@@ -482,17 +504,22 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, POSITION_ANY_LABEL),
                 (STATUS_LABEL, status),
-                (SYMBOL_LABEL, symbol),
+                (SYMBOL_LABEL, symbol.to_string().as_str()),
             ]))
             .set(counterparties as i64);
     }
 
-    fn set_metrics_for(position_label: &str, status: &str, position: &[&Cfd], symbol: &str) {
+    fn set_metrics_for(
+        position_label: &str,
+        status: &str,
+        position: &[&Cfd],
+        symbol: ContractSymbol,
+    ) {
         POSITION_QUANTITY_GAUGE
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
-                (SYMBOL_LABEL, symbol),
+                (SYMBOL_LABEL, symbol.to_string().as_str()),
             ]))
             .set(
                 sum_amounts(position)
@@ -504,7 +531,7 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
-                (SYMBOL_LABEL, symbol),
+                (SYMBOL_LABEL, symbol.to_string().as_str()),
             ]))
             .set(position.len() as i64);
 
@@ -518,7 +545,7 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
-                (SYMBOL_LABEL, symbol),
+                (SYMBOL_LABEL, symbol.to_string().as_str()),
             ]))
             .set(counterparties as i64);
 
@@ -536,7 +563,7 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
-                (SYMBOL_LABEL, symbol),
+                (SYMBOL_LABEL, symbol.to_string().as_str()),
             ]))
             .set(margin.as_sat() as i64);
 
@@ -544,7 +571,7 @@ mod metrics {
             .with(&HashMap::from([
                 (POSITION_LABEL, position_label),
                 (STATUS_LABEL, status),
-                (SYMBOL_LABEL, symbol),
+                (SYMBOL_LABEL, symbol.to_string().as_str()),
             ]))
             .set(margin_counterparty.as_sat() as i64);
     }
