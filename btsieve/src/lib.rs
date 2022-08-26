@@ -185,7 +185,7 @@ fn print_status_change(txid: Txid, old: Option<&ScriptStatus>, new: &ScriptStatu
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Confirmed {
     /// The depth of this transaction within the blockchain.
     ///
@@ -215,7 +215,7 @@ impl Confirmed {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd)]
 pub enum ScriptStatus {
     Unseen,
     InMempool,

@@ -214,14 +214,14 @@ mod wire {
     use super::*;
     use serde::Deserialize;
 
-    #[derive(Debug, Clone, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
     pub struct TableMessage {
         pub table: String,
         // we always just expect a single quote, hence the use of an array instead of a vec
         pub data: [QuoteData; 1],
     }
 
-    #[derive(Debug, Clone, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
     #[serde(rename_all = "camelCase")]
     pub struct QuoteData {
         pub bid_size: u64,

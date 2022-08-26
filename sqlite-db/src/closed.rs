@@ -1036,11 +1036,7 @@ mod tests {
         db.move_to_closed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
-        let load_from_events = {
-            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
-
-            res
-        };
+        let load_from_events = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
         let load_from_closed = db.load_closed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_err());
@@ -1068,11 +1064,7 @@ mod tests {
         db.move_to_closed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
-        let load_from_events = {
-            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
-
-            res
-        };
+        let load_from_events = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
         let load_from_closed = db.load_closed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_ok());

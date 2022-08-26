@@ -445,7 +445,7 @@ where
     }
 }
 
-#[derive(Debug, Copy, Clone, Display, PartialEq)]
+#[derive(Debug, Copy, Clone, Display, PartialEq, Eq)]
 pub enum Environment {
     Umbrel,
     RaspiBlitz,

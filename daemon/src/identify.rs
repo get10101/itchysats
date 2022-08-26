@@ -7,7 +7,7 @@ pub mod protocol;
 
 pub const PROTOCOL: &str = "/itchysats/id/1.0.0";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerInfo {
     pub wire_version: String,
     pub daemon_version: String,
