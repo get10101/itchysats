@@ -140,7 +140,7 @@ impl Actor {
                 framed
                     .send(TakerMessage::PlaceOrder {
                         id: order_id,
-                        offer,
+                        offer: Box::new(offer),
                         quantity,
                         leverage,
                     })

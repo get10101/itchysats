@@ -265,6 +265,7 @@ mod tests {
             settlement_interval: time::Duration::hours(24),
             oracle_event_id: BitMexPriceEventId::with_20_digits(
                 datetime!(2021-10-04 22:00:00).assume_utc(),
+                contract_symbol,
             ),
             tx_fee_rate: TxFeeRate::default(),
             funding_rate: FundingRate::new(Decimal::ONE).unwrap(),

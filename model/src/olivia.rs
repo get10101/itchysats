@@ -1,3 +1,4 @@
+use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
@@ -19,6 +20,8 @@ use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 use time::Time;
 use url::Url;
+
+use crate::ContractSymbol;
 
 pub const EVENT_TIME_FORMAT: &[FormatItem] =
     format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
@@ -60,10 +63,57 @@ pub struct BitMexPriceEventId {
         Hash = "ignore"
     )]
     digits: usize,
+    /// The index this price event refers to.
+    #[derivative(
+        PartialEq = "ignore",
+        PartialOrd = "ignore",
+        Ord = "ignore",
+        Hash = "ignore"
+    )]
+    index: IndexPrice,
+}
+
+#[derive(Derivative, Debug, Clone, Copy)]
+#[derivative(PartialEq, Eq, Hash)]
+pub enum IndexPrice {
+    Bxbt,
+    Beth,
+}
+
+impl fmt::Display for IndexPrice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            IndexPrice::Bxbt => "BXBT",
+            IndexPrice::Beth => "BETH",
+        };
+
+        s.fmt(f)
+    }
+}
+
+impl FromStr for IndexPrice {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "BXBT" => Self::Bxbt,
+            "BETH" => Self::Beth,
+            _ => bail!("Index price {s} not supported"),
+        })
+    }
+}
+
+impl From<ContractSymbol> for IndexPrice {
+    fn from(contract_symbol: ContractSymbol) -> Self {
+        match contract_symbol {
+            ContractSymbol::BtcUsd => Self::Bxbt,
+            ContractSymbol::EthUsd => Self::Beth,
+        }
+    }
 }
 
 impl BitMexPriceEventId {
-    pub fn new(timestamp: OffsetDateTime, digits: usize) -> Self {
+    pub fn new(timestamp: OffsetDateTime, digits: usize, index: impl Into<IndexPrice>) -> Self {
         let (hours, minutes, seconds) = timestamp.time().as_hms();
         let time_without_nanos =
             Time::from_hms(hours, minutes, seconds).expect("original timestamp was valid");
@@ -73,11 +123,12 @@ impl BitMexPriceEventId {
         Self {
             timestamp: timestamp_without_nanos,
             digits,
+            index: index.into(),
         }
     }
 
-    pub fn with_20_digits(timestamp: OffsetDateTime) -> Self {
-        Self::new(timestamp, 20)
+    pub fn with_20_digits(timestamp: OffsetDateTime, index: impl Into<IndexPrice>) -> Self {
+        Self::new(timestamp, 20, index)
     }
 
     /// Checks whether this event has likely already occurred.
@@ -104,13 +155,25 @@ impl BitMexPriceEventId {
     pub fn digits(&self) -> usize {
         self.digits
     }
+
+    pub fn index_price(&self) -> IndexPrice {
+        self.index
+    }
+
+    pub fn contract_symbol(&self) -> ContractSymbol {
+        match self.index {
+            IndexPrice::Bxbt => ContractSymbol::BtcUsd,
+            IndexPrice::Beth => ContractSymbol::EthUsd,
+        }
+    }
 }
 
 impl fmt::Display for BitMexPriceEventId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "/x/BitMEX/BXBT/{}.price?n={}",
+            "/x/BitMEX/{}/{}.price?n={}",
+            self.index,
             self.timestamp
                 .format(&EVENT_TIME_FORMAT)
                 .expect("should always format and we can't return an error here"),
@@ -123,8 +186,19 @@ impl FromStr for BitMexPriceEventId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let remaining = s.trim_start_matches("/x/BitMEX/BXBT/");
-        let (timestamp, rest) = remaining.split_at(19);
+        let rest = s.trim_start_matches("/x/BitMEX/");
+
+        let [index, rest]: [&str; 2] = rest
+            .split('/')
+            .collect::<Vec<_>>()
+            .try_into()
+            .ok()
+            .context("Failed to parse index")?;
+
+        let index = IndexPrice::from_str(index)?;
+
+        let (timestamp, rest) = rest.split_at(19);
+
         let digits = rest.trim_start_matches(".price?n=");
 
         Ok(Self {
@@ -132,6 +206,7 @@ impl FromStr for BitMexPriceEventId {
                 .with_context(|| format!("Failed to parse {timestamp} as timestamp"))?
                 .assume_utc(),
             digits: digits.parse()?,
+            index,
         })
     }
 }
@@ -150,10 +225,11 @@ impl From<Announcement> for maia_core::Announcement {
 pub fn hourly_events(
     start: OffsetDateTime,
     end: OffsetDateTime,
+    index: impl Into<IndexPrice>,
 ) -> Result<Vec<BitMexPriceEventId>> {
     let start_adjusted = ceil_to_next_hour(start);
     let end_adjusted = ceil_to_next_hour(end);
-    let announcements = spaced_events(start_adjusted, end_adjusted, Duration::HOUR)?;
+    let announcements = spaced_events(start_adjusted, end_adjusted, Duration::HOUR, index)?;
 
     Ok(announcements)
 }
@@ -165,21 +241,26 @@ pub fn spaced_events(
     start: OffsetDateTime,
     end: OffsetDateTime,
     interval: Duration,
+    index: impl Into<IndexPrice>,
 ) -> Result<Vec<BitMexPriceEventId>> {
     ensure!(end > start, "end must be later than start");
 
+    let index = index.into();
     Ok((start.unix_timestamp()..=end.unix_timestamp())
         .step_by(interval.whole_seconds() as usize)
         .map(OffsetDateTime::from_unix_timestamp)
         .map(Result::unwrap) // roundtrip should work
-        .map(BitMexPriceEventId::with_20_digits)
+        .map(|timestamp| BitMexPriceEventId::with_20_digits(timestamp, index))
         .collect())
 }
 
-pub fn next_announcement_after(timestamp: OffsetDateTime) -> BitMexPriceEventId {
+pub fn next_announcement_after(
+    timestamp: OffsetDateTime,
+    index: impl Into<IndexPrice>,
+) -> BitMexPriceEventId {
     let adjusted = ceil_to_next_hour(timestamp);
 
-    BitMexPriceEventId::with_20_digits(adjusted)
+    BitMexPriceEventId::with_20_digits(adjusted, index)
 }
 
 fn ceil_to_next_hour(original: OffsetDateTime) -> OffsetDateTime {
@@ -302,6 +383,7 @@ mod olivia_api {
 
         use crate::olivia;
         use crate::olivia::BitMexPriceEventId;
+        use crate::olivia::IndexPrice;
         use time::macros::datetime;
 
         #[test]
@@ -310,7 +392,10 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<olivia::Announcement>(json).unwrap();
             let expected = olivia::Announcement {
-                id: BitMexPriceEventId::with_20_digits(datetime!(2021-10-04 22:00:00).assume_utc()),
+                id: BitMexPriceEventId::with_20_digits(
+                    datetime!(2021-10-04 22:00:00).assume_utc(),
+                    IndexPrice::Bxbt,
+                ),
                 expected_outcome_time: datetime!(2021-10-04 22:00:00).assume_utc(),
                 nonce_pks: vec![
                     "8d72028eeaf4b85aec0f750f05a4a320cac193f5d8494bfe05cd4b29f3df4239"
@@ -385,7 +470,10 @@ mod olivia_api {
 
             let deserialized = serde_json::from_str::<olivia::Attestation>(json).unwrap();
             let expected = olivia::Attestation {
-                id: BitMexPriceEventId::with_20_digits(datetime!(2021-10-04 22:00:00).assume_utc()),
+                id: BitMexPriceEventId::with_20_digits(
+                    datetime!(2021-10-04 22:00:00).assume_utc(),
+                    IndexPrice::Bxbt,
+                ),
                 price: 48935,
                 scalars: vec![
                     "1327b3bd0f1faf45d6fed6c96d0c158da22a2033a6fed98bed036df0a4eef484"
@@ -464,8 +552,11 @@ mod tests {
 
     #[test]
     fn to_olivia_url() {
-        let url = BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc())
-            .to_olivia_url();
+        let url = BitMexPriceEventId::with_20_digits(
+            datetime!(2021-09-23 10:00:00).assume_utc(),
+            IndexPrice::Bxbt,
+        )
+        .to_olivia_url();
 
         assert_eq!(
             url,
@@ -480,30 +571,37 @@ mod tests {
         let parsed = "/x/BitMEX/BXBT/2021-09-23T10:00:00.price?n=20"
             .parse::<BitMexPriceEventId>()
             .unwrap();
-        let expected =
-            BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
+        let expected = BitMexPriceEventId::with_20_digits(
+            datetime!(2021-09-23 10:00:00).assume_utc(),
+            IndexPrice::Bxbt,
+        );
 
         assert_eq!(parsed, expected);
     }
 
     #[test]
     fn new_event_has_no_nanos() {
-        let now = BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc());
+        let now = BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc(), IndexPrice::Bxbt);
 
         assert_eq!(now.timestamp.nanosecond(), 0);
     }
 
     #[test]
     fn has_occured_if_in_the_past() {
-        let past_event =
-            BitMexPriceEventId::with_20_digits(datetime!(2021-09-23 10:00:00).assume_utc());
+        let past_event = BitMexPriceEventId::with_20_digits(
+            datetime!(2021-09-23 10:00:00).assume_utc(),
+            IndexPrice::Bxbt,
+        );
 
         assert!(past_event.has_likely_occurred());
     }
 
     #[test]
     fn next_event_id_after_timestamp() {
-        let event_id = next_announcement_after(datetime!(2021-09-23 10:40:00).assume_utc());
+        let event_id = next_announcement_after(
+            datetime!(2021-09-23 10:40:00).assume_utc(),
+            IndexPrice::Bxbt,
+        );
 
         assert_eq!(
             event_id.to_string(),
@@ -513,7 +611,10 @@ mod tests {
 
     #[test]
     fn next_event_id_is_midnight_next_day() {
-        let event_id = next_announcement_after(datetime!(2021-09-23 23:40:00).assume_utc());
+        let event_id = next_announcement_after(
+            datetime!(2021-09-23 23:40:00).assume_utc(),
+            IndexPrice::Bxbt,
+        );
 
         assert_eq!(
             event_id.to_string(),
@@ -526,6 +627,7 @@ mod tests {
         let actual = hourly_events(
             datetime!(2022-07-05 23:40:00).assume_utc(),
             datetime!(2022-07-06 23:40:00).assume_utc(),
+            IndexPrice::Bxbt,
         )
         .unwrap()
         .iter()
@@ -569,6 +671,7 @@ mod tests {
             datetime!(2022-07-05 00:00:00).assume_utc(),
             datetime!(2022-07-05 00:30:00).assume_utc(),
             Duration::MINUTE,
+            IndexPrice::Bxbt,
         )
         .unwrap()
         .iter()

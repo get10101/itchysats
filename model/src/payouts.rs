@@ -217,6 +217,7 @@ mod tests {
     use crate::payouts::prop_compose::arb_leverage;
     use crate::payouts::prop_compose::arb_price;
     use crate::payouts::quanto;
+    use crate::ContractSymbol;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
     use std::ops::Add;
@@ -251,7 +252,7 @@ mod tests {
                     let timestamp = datetime!(2022-07-29 13:00:00).assume_utc().add(i.hours());
 
                     Announcement {
-                        id: BitMexPriceEventId::new(timestamp, 1),
+                        id: BitMexPriceEventId::new(timestamp, 1, ContractSymbol::BtcUsd),
                         expected_outcome_time: timestamp,
                         nonce_pks: vec![
                             "d02d163cf9623f567c4e3faf851a9266ac1ede13da4ca4141f3a7717fba9a739"
@@ -322,7 +323,7 @@ mod tests {
                     let timestamp = datetime!(2022-07-29 13:00:00).assume_utc().add(i.hours());
 
                     Announcement {
-                        id: BitMexPriceEventId::new(timestamp, 1),
+                        id: BitMexPriceEventId::new(timestamp, 1, ContractSymbol::EthUsd),
                         expected_outcome_time: timestamp,
                         nonce_pks: vec![
                             "d02d163cf9623f567c4e3faf851a9266ac1ede13da4ca4141f3a7717fba9a739"

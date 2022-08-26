@@ -41,7 +41,12 @@ impl OliviaData {
         let oracle_pk = XOnlyPublicKey::from_str(Self::OLIVIA_PK).unwrap();
 
         let id = id.parse::<BitMexPriceEventId>().unwrap();
-        let ids = olivia::hourly_events(id.timestamp(), id.timestamp() + 24.hours()).unwrap();
+        let ids = olivia::hourly_events(
+            id.timestamp(),
+            id.timestamp() + 24.hours(),
+            id.index_price(),
+        )
+        .unwrap();
 
         let nonce_pks = nonce_pks
             .iter()

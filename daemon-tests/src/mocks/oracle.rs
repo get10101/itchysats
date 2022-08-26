@@ -87,16 +87,12 @@ impl MockOracle {
 /// announcement/attestation is hard-coded in OliviaData struct (along with event id's).
 /// Therefore, an attestation based on current utc time will always be wrong.
 pub fn dummy_wrong_attestation() -> oracle::Attestation {
-    let olivia::Attestation {
-        id: _,
-        price,
-        scalars,
-    } = OliviaData::example_0().attestations()[0]
+    let olivia::Attestation { id, price, scalars } = OliviaData::example_0().attestations()[0]
         .clone()
         .into_inner();
 
     oracle::Attestation::new(olivia::Attestation {
-        id: BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc()),
+        id: BitMexPriceEventId::with_20_digits(OffsetDateTime::now_utc(), id.index_price()),
         price,
         scalars,
     })

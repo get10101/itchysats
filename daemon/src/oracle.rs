@@ -9,10 +9,12 @@ use model::olivia;
 use model::olivia::next_announcement_after;
 use model::olivia::BitMexPriceEventId;
 use model::CfdEvent;
+use model::ContractSymbol;
 use model::EventKind;
 use sqlite_db;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use strum::IntoEnumIterator;
 use time::Duration;
 use time::OffsetDateTime;
 use tracing::Instrument;
@@ -156,10 +158,16 @@ impl Actor {
         }
     }
 
-    fn ensure_having_announcements(&mut self, ctx: &mut xtra::Context<Self>) {
+    fn ensure_having_announcements(
+        &mut self,
+        contract_symbol: ContractSymbol,
+        ctx: &mut xtra::Context<Self>,
+    ) {
         for hour in 1..ANNOUNCEMENT_LOOKAHEAD.whole_hours() {
-            let event_id =
-                next_announcement_after(OffsetDateTime::now_utc() + Duration::hours(hour));
+            let event_id = next_announcement_after(
+                OffsetDateTime::now_utc() + Duration::hours(hour),
+                contract_symbol,
+            );
 
             if self.announcements.get(&event_id).is_some() {
                 continue;
@@ -301,7 +309,9 @@ impl Actor {
     }
 
     fn handle_sync_announcements(&mut self, _: SyncAnnouncements, ctx: &mut xtra::Context<Self>) {
-        self.ensure_having_announcements(ctx);
+        for contract_symbol in ContractSymbol::iter() {
+            self.ensure_having_announcements(contract_symbol, ctx);
+        }
     }
 
     fn handle_sync_attestations(&mut self, _: SyncAttestations, ctx: &mut xtra::Context<Self>) {

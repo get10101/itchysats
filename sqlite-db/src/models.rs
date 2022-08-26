@@ -712,6 +712,7 @@ pub struct BitMexPriceEventId {
     /// The timestamp this price event refers to.
     timestamp: OffsetDateTime,
     digits: usize,
+    index: IndexPrice,
 }
 
 impl fmt::Display for BitMexPriceEventId {
@@ -731,8 +732,19 @@ impl FromStr for BitMexPriceEventId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let remaining = s.trim_start_matches("/x/BitMEX/BXBT/");
-        let (timestamp, rest) = remaining.split_at(19);
+        let rest = s.trim_start_matches("/x/BitMEX/");
+
+        let [index, rest]: [&str; 2] = rest
+            .split('/')
+            .collect::<Vec<_>>()
+            .try_into()
+            .ok()
+            .context("Failed to parse index")?;
+
+        let index = IndexPrice::from_str(index)?;
+
+        let (timestamp, rest) = rest.split_at(19);
+
         let digits = rest.trim_start_matches(".price?n=");
 
         Ok(Self {
@@ -740,6 +752,7 @@ impl FromStr for BitMexPriceEventId {
                 .with_context(|| format!("Failed to parse {timestamp} as timestamp"))?
                 .assume_utc(),
             digits: digits.parse()?,
+            index,
         })
     }
 }
@@ -749,17 +762,67 @@ impl From<model::olivia::BitMexPriceEventId> for BitMexPriceEventId {
         Self {
             timestamp: id.timestamp(),
             digits: id.digits(),
+            index: id.index_price().into(),
         }
     }
 }
 
 impl From<BitMexPriceEventId> for model::olivia::BitMexPriceEventId {
     fn from(id: BitMexPriceEventId) -> Self {
-        model::olivia::BitMexPriceEventId::new(id.timestamp, id.digits)
+        model::olivia::BitMexPriceEventId::new(id.timestamp, id.digits, id.index)
     }
 }
 
 impl_sqlx_type_display_from_str!(BitMexPriceEventId);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum IndexPrice {
+    Bxbt,
+    Beth,
+}
+
+impl fmt::Display for IndexPrice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            IndexPrice::Bxbt => "BXBT",
+            IndexPrice::Beth => "BETH",
+        };
+
+        s.fmt(f)
+    }
+}
+
+impl FromStr for IndexPrice {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "BXBT" => Self::Bxbt,
+            "BETH" => Self::Beth,
+            _ => bail!("Index price {s} not supported"),
+        })
+    }
+}
+
+impl From<model::olivia::IndexPrice> for IndexPrice {
+    fn from(index: model::olivia::IndexPrice) -> Self {
+        match index {
+            model::olivia::IndexPrice::Bxbt => IndexPrice::Bxbt,
+            model::olivia::IndexPrice::Beth => IndexPrice::Beth,
+        }
+    }
+}
+
+impl From<IndexPrice> for model::olivia::IndexPrice {
+    fn from(index: IndexPrice) -> Self {
+        match index {
+            IndexPrice::Bxbt => model::olivia::IndexPrice::Bxbt,
+            IndexPrice::Beth => model::olivia::IndexPrice::Beth,
+        }
+    }
+}
+
+impl_sqlx_type_display_from_str!(IndexPrice);
 
 /// The type of failed CFD.
 #[derive(Debug, Clone, Copy)]
