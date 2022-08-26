@@ -3,7 +3,9 @@ use daemon::projection::MakerOffers;
 use daemon_tests::flow::ensure_null_next_offers;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::start_both;
+use daemon_tests::Maker;
 use daemon_tests::OfferParamsBuilder;
+use daemon_tests::Taker;
 use model::ContractSymbol;
 use model::Leverage;
 use otel_tests::otel_test;
@@ -18,13 +20,16 @@ async fn taker_receives_eth_usd_offer_from_maker_on_publication() {
     taker_receives_offer_from_maker_on_publication(ContractSymbol::EthUsd).await;
 }
 
-// TODO: Potentially create a test where we send out both and ensure we receive as expected
-
-async fn taker_receives_offer_from_maker_on_publication(contract_symbol: ContractSymbol) {
+#[otel_test]
+async fn taker_can_receive_offers_with_different_symbols_from_maker() {
     let (mut maker, mut taker) = start_both().await;
-
     ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
+    test_offer(&mut maker, &mut taker, ContractSymbol::BtcUsd).await;
+    test_offer(&mut maker, &mut taker, ContractSymbol::EthUsd).await;
+}
+
+async fn publish_offer(maker: &mut Maker, contract_symbol: ContractSymbol) {
     let leverage = Leverage::TWO;
     maker
         .set_offer_params(
@@ -34,13 +39,23 @@ async fn taker_receives_offer_from_maker_on_publication(contract_symbol: Contrac
                 .build(),
         )
         .await;
+}
 
+/// Verify that an offer with a given contract symbol gets published by the
+/// maker an is received by the taker
+async fn test_offer(maker: &mut Maker, taker: &mut Taker, symbol: ContractSymbol) {
+    publish_offer(maker, symbol).await;
     let (published, received) =
-        next_maker_offers(maker.offers_feed(), taker.offers_feed(), &contract_symbol)
+        next_maker_offers(maker.offers_feed(), taker.offers_feed(), &symbol)
             .await
             .unwrap();
-
     assert_eq_offers(published, received);
+}
+
+async fn taker_receives_offer_from_maker_on_publication(contract_symbol: ContractSymbol) {
+    let (mut maker, mut taker) = start_both().await;
+    ensure_null_next_offers(taker.offers_feed()).await.unwrap();
+    test_offer(&mut maker, &mut taker, contract_symbol).await;
 }
 
 fn assert_eq_offers(published: MakerOffers, received: MakerOffers) {
