@@ -26,14 +26,12 @@ async fn rollover_an_open_btc_usd_cfd_maker_going_short() {
     let (mut maker, mut taker, order_id, fee_calculator) =
         prepare_rollover(Position::Short, ContractSymbol::BtcUsd, btc_example_0()).await;
 
-    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
-    // the settlement-event is already expired
     rollover(
         &mut maker,
         &mut taker,
         order_id,
         btc_example_0(),
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 }
@@ -43,14 +41,12 @@ async fn rollover_an_open_eth_usd_cfd_maker_going_short() {
     let (mut maker, mut taker, order_id, fee_calculator) =
         prepare_rollover(Position::Short, ContractSymbol::EthUsd, eth_example_0()).await;
 
-    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
-    // the settlement-event is already expired
     rollover(
         &mut maker,
         &mut taker,
         order_id,
         eth_example_0(),
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 }
@@ -60,14 +56,12 @@ async fn rollover_an_open_cfd_maker_going_long() {
     let (mut maker, mut taker, order_id, fee_calculator) =
         prepare_rollover(Position::Long, ContractSymbol::BtcUsd, btc_example_0()).await;
 
-    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
-    // the settlement-event is already expired
     rollover(
         &mut maker,
         &mut taker,
         order_id,
         btc_example_0(),
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 }
@@ -79,14 +73,12 @@ async fn double_rollover_an_open_cfd() {
     let (mut maker, mut taker, order_id, fee_calculator) =
         prepare_rollover(Position::Short, ContractSymbol::BtcUsd, btc_example_0()).await;
 
-    // We charge 24 hours for the rollover because that is the fallback strategy if the timestamp of
-    // the settlement-event is already expired
     rollover(
         &mut maker,
         &mut taker,
         order_id,
         btc_example_0(),
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 
@@ -145,7 +137,7 @@ async fn given_rollover_completed_when_taker_fails_rollover_can_retry() {
         &mut taker,
         order_id,
         btc_example_1(),
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 
@@ -219,7 +211,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         &mut taker,
         order_id,
         btc_example_1(),
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 
@@ -234,8 +226,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
         )
         .await;
 
-    // When retrying the rollover we expect to be charged the same amount (i.e. 24h, no fee
-    // increase)
+    // When retrying the rollover we expect to be charged the same amount
     rollover_from_commit_tx(
         &mut maker,
         &mut taker,
@@ -245,10 +236,7 @@ async fn given_contract_setup_completed_when_taker_fails_first_rollover_can_retr
             taker_commit_txid_after_contract_setup,
             taker_settlement_event_id_after_contract_setup,
         )),
-        // Only one term of 24h is charged, so the expected fees are for 24h.
-        // This is due to the rollover falling back to charging one full term if the event is
-        // already past expiry.
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 
@@ -314,10 +302,7 @@ async fn given_contract_setup_completed_when_taker_fails_two_rollovers_can_retry
             taker_commit_txid_after_contract_setup,
             taker_settlement_event_id_after_contract_setup,
         )),
-        // The expected to be charged for 24h because we only charge one full term
-        // This is due to the rollover falling back to charging one full term if the event is
-        // already past expiry.
-        fee_calculator.complete_fee_for_rollover_hours(24),
+        fee_calculator.complete_fee_for_expired_settlement_event(),
     )
     .await;
 

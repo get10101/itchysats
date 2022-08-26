@@ -515,6 +515,13 @@ impl FeeCalculator {
 
         (maker_fee_account.balance(), taker_fee_account.balance())
     }
+
+    pub fn complete_fee_for_expired_settlement_event(&self) -> (SignedAmount, SignedAmount) {
+        // The expected to be charged for 24h because we only charge one full term
+        // This is due to the rollover falling back to charging one full term if the event is
+        // already past expiry.
+        self.complete_fee_for_rollover_hours(24)
+    }
 }
 
 fn oracle_pk() -> XOnlyPublicKey {
