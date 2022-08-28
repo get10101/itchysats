@@ -34,6 +34,7 @@ export interface Offer {
     fundingRateAnnualized?: number;
     fundingRateHourly?: number;
     leverageDetails: LeverageDetails[];
+    contractSymbol: string;
 
     // defaulted for display purposes
     minQuantity: number;
@@ -148,6 +149,7 @@ export const App = () => {
                 maxQuantity: offer.max_quantity,
                 lotSize: offer.lot_size,
                 leverageDetails: offer.leverage_details,
+                contractSymbol: offer.contract_symbol.toUpperCase(),
             };
         }
 
@@ -156,6 +158,7 @@ export const App = () => {
             minQuantity: 0,
             maxQuantity: 0,
             lotSize: 100,
+            contractSymbol: "BTCUSD",
         };
     }
 

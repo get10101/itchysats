@@ -68,6 +68,7 @@ export default function Trade({
         maxQuantity,
         lotSize,
         leverageDetails,
+        contractSymbol,
     },
     connectedToMaker,
     walletBalance,
@@ -296,6 +297,7 @@ export default function Trade({
                                 feeForFirstSettlementInterval={feeForFirstSettlementInterval}
                                 fundingRateHourly={fundingRateHourly || 0}
                                 fundingRateAnnualized={fundingRateAnnualized || 0}
+                                contractSymbol={contractSymbol}
                             />
                         </Center>
                     </GridItem>
