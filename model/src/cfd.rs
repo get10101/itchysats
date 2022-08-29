@@ -1917,7 +1917,6 @@ pub fn calculate_profit(payout: Amount, margin: Amount) -> (SignedAmount, Percen
 /// Compute the liquidation price for the party going long.
 pub fn calculate_long_liquidation_price(
     initial_price: Price,
-    quantity: Contracts,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
 ) -> Price {
@@ -1927,18 +1926,8 @@ pub fn calculate_long_liquidation_price(
         }
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
-            let n_contracts = quantity.to_u64();
-            let multiplier = ETHUSD_MULTIPLIER;
 
-            let initial_margin =
-                quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);
-
-            let liquidation_price = quanto::bankruptcy_price_long(
-                initial_margin,
-                n_contracts,
-                initial_price,
-                multiplier,
-            );
+            let liquidation_price = quanto::bankruptcy_price_long(initial_price, leverage);
 
             // The `model::Price` type does not allow non-positive values, but the quanto long
             // liquidation price can easily be 0. We avoid this problem by defaulting to 1
@@ -1955,7 +1944,6 @@ pub fn calculate_long_liquidation_price(
 /// Compute the liquidation price for the party going short.
 pub fn calculate_short_liquidation_price(
     initial_price: Price,
-    quantity: Contracts,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
 ) -> Price {
@@ -1965,18 +1953,8 @@ pub fn calculate_short_liquidation_price(
         }
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
-            let n_contracts = quantity.to_u64();
-            let multiplier = ETHUSD_MULTIPLIER;
 
-            let initial_margin =
-                quanto::calculate_initial_margin(initial_price, n_contracts, leverage, multiplier);
-
-            let liquidation_price = quanto::bankruptcy_price_short(
-                initial_margin,
-                n_contracts,
-                initial_price,
-                multiplier,
-            );
+            let liquidation_price = quanto::bankruptcy_price_short(initial_price, leverage);
 
             Price::new(Decimal::from(liquidation_price))
                 .expect("liquidation price to fit into Price")

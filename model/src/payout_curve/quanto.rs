@@ -5,7 +5,6 @@ use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::SignedAmount;
-use num::FromPrimitive;
 use num::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
@@ -231,22 +230,7 @@ impl Curve {
     /// Price interval at which the party going long gets liquidated i.e. their payout amount equals
     /// zero.
     fn long_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
-        let initial_margin = self
-            .initial_margin_long()
-            .to_signed()
-            .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
-        let effective_initial_margin =
-            initial_margin + self.fee_offset.as_signed_amount(Position::Long);
-        let effective_initial_margin = effective_initial_margin
-            .to_unsigned()
-            .context("Could not convert long's effective initial margin to bitcoin::Amount")?;
-
-        let bankruptcy_price = bankruptcy_price_long(
-            effective_initial_margin,
-            self.n_contracts,
-            self.initial_price,
-            self.multiplier,
-        );
+        let bankruptcy_price = bankruptcy_price_long(self.initial_price, self.leverage_long);
 
         Ok(0..=bankruptcy_price)
     }
@@ -254,22 +238,7 @@ impl Curve {
     /// Price interval at which the party going short gets liquidated i.e. their payout amount
     /// equals zero.
     fn short_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
-        let initial_margin = self
-            .initial_margin_short()
-            .to_signed()
-            .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
-        let effective_initial_margin =
-            initial_margin + self.fee_offset.as_signed_amount(Position::Short);
-        let effective_initial_margin = effective_initial_margin
-            .to_unsigned()
-            .context("Could not convert short's effective initial margin to bitcoin::Amount")?;
-
-        let bankruptcy_price = bankruptcy_price_short(
-            effective_initial_margin,
-            self.n_contracts,
-            self.initial_price,
-            self.multiplier,
-        );
+        let bankruptcy_price = bankruptcy_price_short(self.initial_price, self.leverage_short);
 
         Ok(bankruptcy_price..=maia_core::interval::MAX_PRICE_DEC)
     }
@@ -382,25 +351,15 @@ impl Pnl {
 }
 
 /// Compute the closing price under which the party going long should get liquidated.
-pub fn bankruptcy_price_long(
-    initial_margin: Amount,
-    n_contracts: u64,
-    initial_price: u64,
-    multiplier: Decimal,
-) -> u64 {
-    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts);
+pub fn bankruptcy_price_long(initial_price: u64, leverage: Leverage) -> u64 {
+    let shift = bankruptcy_price_shift(initial_price, leverage);
 
     initial_price.saturating_sub(shift)
 }
 
 /// Compute the closing price over which the party going short should get liquidated.
-pub fn bankruptcy_price_short(
-    initial_margin: Amount,
-    n_contracts: u64,
-    initial_price: u64,
-    multiplier: Decimal,
-) -> u64 {
-    let shift = bankruptcy_price_shift(initial_margin, multiplier, n_contracts);
+pub fn bankruptcy_price_short(initial_price: u64, leverage: Leverage) -> u64 {
+    let shift = bankruptcy_price_shift(initial_price, leverage);
 
     initial_price + shift
 }
@@ -410,14 +369,8 @@ pub fn bankruptcy_price_short(
 ///
 /// This is an absolute value. How to apply it in order to calculate the bankruptcy price will
 /// depend on the party's position.
-fn bankruptcy_price_shift(initial_margin: Amount, multiplier: Decimal, n_contracts: u64) -> u64 {
-    let initial_margin =
-        Decimal::from_f64(initial_margin.as_btc()).expect("f64 to fit into Decimal");
-
-    let n_contracts = Decimal::from(n_contracts);
-
-    let price = initial_margin / (multiplier * n_contracts);
-    price.to_u64().expect("price to fit into u64")
+fn bankruptcy_price_shift(initial_price: u64, leverage: Leverage) -> u64 {
+    initial_price / leverage.0 as u64
 }
 
 #[cfg(test)]
@@ -621,7 +574,6 @@ mod api_tests {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    use crate::payout_curve::ETHUSD_MULTIPLIER;
     use rust_decimal_macros::dec;
 
     // This happens to be the multiplier corresponding to the contract symbol ETHUSD, but it's
@@ -701,27 +653,19 @@ mod unit_tests {
 
     #[test]
     fn test_bankruptcy_price_long() {
-        let contracts = 100;
         let init_price = 1000;
         let leverage = Leverage::new(3).unwrap();
 
-        let margin = calculate_initial_margin(init_price, contracts, leverage, ETHUSD_MULTIPLIER);
-        assert_eq!(margin, Amount::from_btc(0.03333333).unwrap());
-
-        let price_long = bankruptcy_price_long(margin, contracts, init_price, ETHUSD_MULTIPLIER);
+        let price_long = bankruptcy_price_long(init_price, leverage);
         assert_eq!(price_long, 667);
     }
 
     #[test]
     fn test_bankruptcy_price_short() {
-        let contracts = 100;
         let init_price = 1000;
         let leverage = Leverage::new(3).unwrap();
 
-        let margin = calculate_initial_margin(init_price, contracts, leverage, ETHUSD_MULTIPLIER);
-        assert_eq!(margin, Amount::from_btc(0.03333333).unwrap());
-
-        let price_short = bankruptcy_price_short(margin, contracts, init_price, ETHUSD_MULTIPLIER);
+        let price_short = bankruptcy_price_short(init_price, leverage);
         assert_eq!(price_short, 1333);
     }
 }
