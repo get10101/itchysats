@@ -81,6 +81,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
     const closing_price = cfd.closing_price || 0;
     const contracts = `${cfd.quantity}`;
     const symbol = cfd.contract_symbol.toUpperCase();
+    const expiry = timeConverter(cfd.expiry_timestamp || 0);
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
     const txCommit = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Commit);
@@ -227,6 +228,17 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                 <BitcoinAmount btc={cfd.accumulated_fees} />
                             </Td>
                         </Tr>
+                        {showExtraInfo
+                            && (
+                                <Tr>
+                                    <Td>
+                                        <Text as={"b"}>Expiry</Text>
+                                    </Td>
+                                    <Td textAlign="right">
+                                        <Text>{expiry}</Text>
+                                    </Td>
+                                </Tr>
+                            )}
                     </Tbody>
                 </Table>
             </VStack>
@@ -350,3 +362,13 @@ const TxIcon = ({ tx }: TxIconProps) => {
         );
     }
 };
+
+function timeConverter(timestamp: number) {
+    const a = new Date(timestamp * 1000);
+    const year = a.getFullYear();
+    const month = a.getMonth();
+    const date = a.getDate();
+    const hour = a.getHours();
+    const min = a.getMinutes() === 0 ? "00" : a.getMinutes();
+    return date + "." + month + "." + year + " " + hour + ":" + min;
+}
