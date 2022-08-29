@@ -35,7 +35,6 @@ export interface MakerOffer {
 
 export interface LeverageDetails {
     leverage: number;
-    liquidation_price: number;
     margin_per_lot: number;
     initial_funding_fee_per_lot: number;
 }

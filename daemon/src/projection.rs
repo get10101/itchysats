@@ -1340,9 +1340,6 @@ pub struct CfdOffer {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct LeverageDetails {
     pub leverage: Leverage,
-    /// Own liquidation price according to position and leverage
-    #[serde(with = "round_to_two_dp")]
-    pub liquidation_price: Price,
     /// Margin per lot from the perspective of the role
     ///
     /// Since this is a calculated value that we need in the UI this value is based on the
@@ -1371,20 +1368,6 @@ impl CfdOffer {
             .leverage_choices
             .iter()
             .map(|leverage| {
-                let liquidation_price = match own_position {
-                    Position::Long => calculate_long_liquidation_price(
-                        offer.price,
-                        offer.max_quantity,
-                        *leverage,
-                        offer.contract_symbol,
-                    ),
-                    Position::Short => calculate_short_liquidation_price(
-                        offer.price,
-                        offer.max_quantity,
-                        *leverage,
-                        offer.contract_symbol,
-                    ),
-                };
                 // Margin per lot price is dependent on one's own leverage
                 let margin_per_lot = calculate_margin(
                     offer.contract_symbol,
@@ -1415,7 +1398,6 @@ impl CfdOffer {
 
                 Ok(LeverageDetails {
                     leverage: *leverage,
-                    liquidation_price,
                     margin_per_lot,
                     initial_funding_fee_per_lot,
                 })
