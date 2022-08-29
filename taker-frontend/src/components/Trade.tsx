@@ -46,7 +46,7 @@ import BitcoinAmount from "./BitcoinAmount";
 import ConfirmOrderModal from "./ConfirmOrderModal";
 import DollarAmount from "./DollarAmount";
 import { FundingRateTooltip } from "./FundingRateTooltip";
-import { liquidationPriceQuantoContracts } from "./LiquidationPrice";
+import { liquidationPriceInverseContracts, liquidationPriceQuantoContracts } from "./LiquidationPrice";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -121,7 +121,7 @@ export default function Trade({
             break;
         case "BTCUSD":
         default:
-            liquidationPrice = currentLeverageDetails?.liquidation_price || 0;
+            liquidationPrice = liquidationPriceInverseContracts(leverage, priceAsNumber!, isLong);
     }
 
     if (connectedToMaker.online) {
