@@ -202,7 +202,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                             : (
                                 <Tr>
                                     <Td>
-                                        <Text as={"b"}>Liquidation</Text>
+                                        <Text as={"b"}>Liquidation price</Text>
                                     </Td>
                                     <Td textAlign="right">
                                         <DollarAmount amount={liquidationPrice} />
