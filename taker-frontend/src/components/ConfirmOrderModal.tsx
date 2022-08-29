@@ -37,6 +37,7 @@ interface Props {
     feeForFirstSettlementInterval: number;
     fundingRateHourly: number;
     fundingRateAnnualized: number;
+    contractSymbol: string;
 }
 
 export default function ConfirmOrderModal({
@@ -54,6 +55,7 @@ export default function ConfirmOrderModal({
     feeForFirstSettlementInterval,
     fundingRateHourly,
     fundingRateAnnualized,
+    contractSymbol,
 }: Props) {
     const confirmRef = useRef<HTMLButtonElement | null>(null);
 
@@ -74,7 +76,7 @@ export default function ConfirmOrderModal({
                     <HStack>
                         <Text>
                             Market {buy_or_sell}&nbsp;
-                            <b>{quantity}</b> of BTC/USD @
+                            <b>{quantity}</b> of {contractSymbol} @
                         </Text>
                         <DollarAmount amount={price} />
                     </HStack>
