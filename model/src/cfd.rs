@@ -1396,14 +1396,12 @@ impl Cfd {
         };
 
         match event {
-            EventKind::ContractSetupFailed => {
-                tracing::error!(order_id = %self.id, peer_id=?self.counterparty_peer_id, message);
-            }
-            EventKind::OfferRejected
-            | EventKind::RolloverRejected
-            | EventKind::CollaborativeSettlementRejected
+            EventKind::ContractSetupFailed
             | EventKind::RolloverFailed
             | EventKind::CollaborativeSettlementFailed
+            | EventKind::OfferRejected
+            | EventKind::RolloverRejected
+            | EventKind::CollaborativeSettlementRejected
             | EventKind::RefundConfirmed
             | EventKind::RevokeConfirmed => {
                 tracing::warn!(order_id = %self.id, peer_id=?self.counterparty_peer_id, message);
