@@ -40,7 +40,7 @@ sha2 = "0.10"
 snow = "0.9"
 sqlite-db = { path = "../sqlite-db" }
 sqlx = { version = "0.6.1", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
-statrs = "0.15"
+statrs = "0.16"
 strum = "0.24"
 thiserror = "1"
 time = { version = "0.3.14", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
