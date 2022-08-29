@@ -1402,6 +1402,7 @@ impl Cfd {
             | EventKind::OfferRejected
             | EventKind::RolloverRejected
             | EventKind::CollaborativeSettlementRejected
+            | EventKind::CetConfirmed
             | EventKind::RefundConfirmed
             | EventKind::RevokeConfirmed => {
                 tracing::warn!(order_id = %self.id, peer_id=?self.counterparty_peer_id, message);
