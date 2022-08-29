@@ -621,6 +621,7 @@ mod api_tests {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+    use crate::payout_curve::ETHUSD_MULTIPLIER;
     use rust_decimal_macros::dec;
 
     // This happens to be the multiplier corresponding to the contract symbol ETHUSD, but it's
@@ -696,5 +697,31 @@ mod unit_tests {
 
         assert_eq!(long_liquidation_interval, 0..=0);
         assert_eq!(short_liquidation_interval, 12500..=1048575);
+    }
+
+    #[test]
+    fn test_bankruptcy_price_long() {
+        let contracts = 100;
+        let init_price = 1000;
+        let leverage = Leverage::new(3).unwrap();
+
+        let margin = calculate_initial_margin(init_price, contracts, leverage, ETHUSD_MULTIPLIER);
+        assert_eq!(margin, Amount::from_btc(0.03333333).unwrap());
+
+        let price_long = bankruptcy_price_long(margin, contracts, init_price, ETHUSD_MULTIPLIER);
+        assert_eq!(price_long, 667);
+    }
+
+    #[test]
+    fn test_bankruptcy_price_short() {
+        let contracts = 100;
+        let init_price = 1000;
+        let leverage = Leverage::new(3).unwrap();
+
+        let margin = calculate_initial_margin(init_price, contracts, leverage, ETHUSD_MULTIPLIER);
+        assert_eq!(margin, Amount::from_btc(0.03333333).unwrap());
+
+        let price_short = bankruptcy_price_short(margin, contracts, init_price, ETHUSD_MULTIPLIER);
+        assert_eq!(price_short, 1333);
     }
 }
