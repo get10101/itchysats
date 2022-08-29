@@ -61,7 +61,10 @@ export function MainPageLayout(
                                 textAlign="center"
                                 bg={useColorModeValue(BG_LIGHT, BG_DARK)}
                                 maxWidth={VIEWPORT_WIDTH_PX}
-                                marginTop={`${HEADER_HEIGHT}px`}
+                                marginTop={(HEADER_HEIGHT
+                                    + (outdatedWarningIsVisible || incompatibleWarningIsVisible
+                                        ? HEADER_HEIGHT
+                                        : 0)) + "px"}
                                 minHeight={`calc(100vh - ${FOOTER_HEIGHT}px - ${HEADER_HEIGHT}px)`}
                                 width={"100%"}
                             >
