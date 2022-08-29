@@ -46,6 +46,7 @@ import BitcoinAmount from "./BitcoinAmount";
 import ConfirmOrderModal from "./ConfirmOrderModal";
 import DollarAmount from "./DollarAmount";
 import { FundingRateTooltip } from "./FundingRateTooltip";
+import { liquidationPriceQuantoContracts } from "./LiquidationPrice";
 
 const MotionBox = motion<BoxProps>(Box);
 
@@ -112,6 +113,16 @@ export default function Trade({
         && quantityIsEvenlyDivisibleByIncrement;
 
     let alertBox;
+
+    let liquidationPrice = 0;
+    switch (contractSymbol) {
+        case "ETHUSD":
+            liquidationPrice = liquidationPriceQuantoContracts(leverage, quantity, priceAsNumber!, isLong);
+            break;
+        case "BTCUSD":
+        default:
+            liquidationPrice = currentLeverageDetails?.liquidation_price || 0;
+    }
 
     if (connectedToMaker.online) {
         if (balanceTooLow) {
@@ -293,7 +304,7 @@ export default function Trade({
                                 quantity={quantity}
                                 margin={margin}
                                 leverage={leverage}
-                                liquidationPriceAsNumber={currentLeverageDetails?.liquidation_price || 0}
+                                liquidationPriceAsNumber={liquidationPrice}
                                 feeForFirstSettlementInterval={feeForFirstSettlementInterval}
                                 fundingRateHourly={fundingRateHourly || 0}
                                 fundingRateAnnualized={fundingRateAnnualized || 0}
