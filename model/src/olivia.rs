@@ -1,4 +1,3 @@
-use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
@@ -12,6 +11,8 @@ use serde_with::SerializeDisplay;
 use std::fmt;
 use std::str;
 use std::str::FromStr;
+use strum_macros::Display;
+use strum_macros::EnumString;
 use time::ext::NumericalDuration;
 use time::format_description::FormatItem;
 use time::macros::format_description;
@@ -73,34 +74,12 @@ pub struct BitMexPriceEventId {
     index: IndexPrice,
 }
 
-#[derive(Derivative, Debug, Clone, Copy)]
+#[derive(Derivative, Debug, Clone, Copy, Display, EnumString)]
 #[derivative(PartialEq, Eq, Hash)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum IndexPrice {
     Bxbt,
     Beth,
-}
-
-impl fmt::Display for IndexPrice {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            IndexPrice::Bxbt => "BXBT",
-            IndexPrice::Beth => "BXBT", // TODO: Change back to "BETH" once Olivia supports it
-        };
-
-        s.fmt(f)
-    }
-}
-
-impl FromStr for IndexPrice {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "BXBT" => Self::Bxbt,
-            "BETH" => Self::Beth,
-            _ => bail!("Index price {s} not supported"),
-        })
-    }
 }
 
 impl From<ContractSymbol> for IndexPrice {
