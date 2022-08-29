@@ -1,6 +1,7 @@
 import { ExternalLinkIcon, InfoIcon } from "@chakra-ui/icons";
 import {
     Badge,
+    Center,
     GridItem,
     Heading,
     HStack,
@@ -138,7 +139,27 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                     <Thead>
                         <Tr>
                             <Th textAlign="center" colSpan={2}>
-                                <Heading size={"md"}>{symbol}</Heading>
+                                <Center>
+                                    <Heading size={"md"}>{symbol}</Heading>
+                                    {showExtraInfo
+                                        && (
+                                            <Popover>
+                                                <PopoverTrigger>
+                                                    <IconButton
+                                                        bg={"white"}
+                                                        rounded={100}
+                                                        size="xs"
+                                                        aria-label="Info"
+                                                        icon={<InfoIcon color={"black"} />}
+                                                    />
+                                                </PopoverTrigger>
+                                                <PopoverContent width={"inherit"}>
+                                                    <PopoverArrow />
+                                                    <PopoverBody>{cfd.order_id}</PopoverBody>
+                                                </PopoverContent>
+                                            </Popover>
+                                        )}
+                                </Center>
                             </Th>
                         </Tr>
                     </Thead>
@@ -314,25 +335,6 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                     )
                     : <></>}
             </VStack>
-
-            {showExtraInfo
-                && (
-                    <Popover>
-                        <PopoverTrigger>
-                            <IconButton
-                                bg={"white"}
-                                rounded={100}
-                                size="xs"
-                                aria-label="Info"
-                                icon={<InfoIcon color={"black"} />}
-                            />
-                        </PopoverTrigger>
-                        <PopoverContent width={"inherit"}>
-                            <PopoverArrow />
-                            <PopoverBody>{cfd.order_id}</PopoverBody>
-                        </PopoverContent>
-                    </Popover>
-                )}
         </HStack>
     );
 };
