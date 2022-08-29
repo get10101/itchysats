@@ -719,7 +719,8 @@ impl fmt::Display for BitMexPriceEventId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "/x/BitMEX/BXBT/{}.price?n={}",
+            "/x/BitMEX/{}/{}.price?n={}",
+            self.index,
             self.timestamp
                 .format(&EVENT_TIME_FORMAT)
                 .expect("should always format and we can't return an error here"),
