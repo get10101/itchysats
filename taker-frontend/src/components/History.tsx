@@ -18,6 +18,8 @@ import {
     Tbody,
     Td,
     Text,
+    Th,
+    Thead,
     Tooltip,
     Tr,
     useColorModeValue,
@@ -78,6 +80,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
     const liquidationPrice = cfd.liquidation_price;
     const closing_price = cfd.closing_price || 0;
     const contracts = `${cfd.quantity}`;
+    const symbol = cfd.contract_symbol.toUpperCase();
 
     const txLock = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Lock);
     const txCommit = cfd.details.tx_url_list.find((tx) => tx.label === TxLabel.Commit);
@@ -131,6 +134,13 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
         >
             <VStack>
                 <Table size="sm" variant={"unstyled"}>
+                    <Thead>
+                        <Tr>
+                            <Th textAlign="center" colSpan={2}>
+                                <Heading size={"md"}>{symbol}</Heading>
+                            </Th>
+                        </Tr>
+                    </Thead>
                     <Tbody>
                         <Tr>
                             <Td>
