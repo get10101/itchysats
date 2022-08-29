@@ -209,10 +209,6 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                     </Td>
                                 </Tr>
                             )}
-                    </Tbody>
-                </Table>
-                <Table size="sm" variant={"unstyled"}>
-                    <Tbody>
                         <Tr>
                             <Td>
                                 <Text as={"b"}>Estimated fees</Text>
