@@ -27,18 +27,16 @@ async fn taker_places_order_and_maker_rejects() {
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
-    let (_, received) = next_maker_offers(
-        maker.offers_feed(),
-        taker.offers_feed(),
-        &ContractSymbol::BtcUsd,
-    )
-    .await
-    .unwrap();
+    let symbol = ContractSymbol::BtcUsd;
+
+    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed(), &symbol)
+        .await
+        .unwrap();
 
     let offer_id = received.btcusd_short.unwrap().id;
 
-    taker.mocks.mock_oracle_announcement().await;
-    maker.mocks.mock_oracle_announcement().await;
+    taker.mocks.mock_oracle_announcement(symbol).await;
+    maker.mocks.mock_oracle_announcement(symbol).await;
     let order_id = taker
         .system
         .place_order(offer_id, Contracts::new(100), Leverage::TWO)
@@ -53,27 +51,40 @@ async fn taker_places_order_and_maker_rejects() {
 }
 
 #[otel_test]
-async fn taker_places_order_and_maker_accepts_and_contract_setup() {
+async fn taker_places_btc_usd_order_and_maker_accepts_and_contract_setup() {
+    taker_places_order_and_maker_accepts_and_contract_setup(ContractSymbol::BtcUsd).await;
+}
+
+#[otel_test]
+async fn taker_places_eth_usd_order_and_maker_accepts_and_contract_setup() {
+    taker_places_order_and_maker_accepts_and_contract_setup(ContractSymbol::EthUsd).await;
+}
+
+async fn taker_places_order_and_maker_accepts_and_contract_setup(contract_symbol: ContractSymbol) {
     let (mut maker, mut taker) = start_both().await;
 
     ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
     maker
-        .set_offer_params(OfferParamsBuilder::new().build())
+        .set_offer_params(
+            OfferParamsBuilder::new()
+                .contract_symbol(contract_symbol)
+                .build(),
+        )
         .await;
 
-    let (_, received) = next_maker_offers(
-        maker.offers_feed(),
-        taker.offers_feed(),
-        &ContractSymbol::BtcUsd,
-    )
-    .await
-    .unwrap();
+    let (_, received) =
+        next_maker_offers(maker.offers_feed(), taker.offers_feed(), &contract_symbol)
+            .await
+            .unwrap();
 
-    let offer_id = received.btcusd_short.unwrap().id;
+    let offer_id = match contract_symbol {
+        ContractSymbol::BtcUsd => received.btcusd_short.unwrap().id,
+        ContractSymbol::EthUsd => received.ethusd_short.unwrap().id,
+    };
 
-    taker.mocks.mock_oracle_announcement().await;
-    maker.mocks.mock_oracle_announcement().await;
+    taker.mocks.mock_oracle_announcement(contract_symbol).await;
+    maker.mocks.mock_oracle_announcement(contract_symbol).await;
 
     let order_id = taker
         .system
@@ -81,7 +92,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup() {
         .await
         .unwrap();
 
-    first_contract_setup(&mut maker, &mut taker, order_id).await;
+    contract_setup(&mut maker, &mut taker, order_id).await;
 }
 
 #[otel_test]
@@ -94,25 +105,23 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
         .set_offer_params(OfferParamsBuilder::new().build())
         .await;
 
-    let (_, received) = next_maker_offers(
-        maker.offers_feed(),
-        taker.offers_feed(),
-        &ContractSymbol::BtcUsd,
-    )
-    .await
-    .unwrap();
+    let symbol = ContractSymbol::BtcUsd;
+
+    let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed(), &symbol)
+        .await
+        .unwrap();
 
     let offer_id = received.btcusd_short.unwrap().id;
 
-    taker.mocks.mock_oracle_announcement().await;
-    maker.mocks.mock_oracle_announcement().await;
+    taker.mocks.mock_oracle_announcement(symbol).await;
+    maker.mocks.mock_oracle_announcement(symbol).await;
     let first_order_id = taker
         .system
         .place_order(offer_id, Contracts::new(10), Leverage::TWO)
         .await
         .unwrap();
 
-    first_contract_setup(&mut maker, &mut taker, first_order_id).await;
+    contract_setup(&mut maker, &mut taker, first_order_id).await;
 
     let second_order_id = taker
         .system
@@ -120,7 +129,7 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
         .await
         .unwrap();
 
-    additional_contract_setup(&mut maker, &mut taker, second_order_id).await;
+    contract_setup(&mut maker, &mut taker, second_order_id).await;
 
     let taker_cfds = taker.cfds();
     assert_eq!(
@@ -189,29 +198,10 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
     );
 }
 
-/// To be used for the first contract setup
-async fn first_contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: OrderId) {
-    wait_next_state!(order_id, maker, taker, CfdState::PendingSetup);
-
-    maker.mocks.mock_party_params().await;
-    taker.mocks.mock_party_params().await;
-
-    maker.mocks.mock_wallet_sign_and_broadcast().await;
-    taker.mocks.mock_wallet_sign_and_broadcast().await;
-
-    maker.system.accept_order(order_id).await.unwrap();
-    wait_next_state!(order_id, maker, taker, CfdState::ContractSetup);
-
-    wait_next_state!(order_id, maker, taker, CfdState::PendingOpen);
-
-    confirm!(lock transaction, order_id, maker, taker);
-    wait_next_state!(order_id, maker, taker, CfdState::Open);
-}
-
-/// To be used for any additional contract setup
+/// Perform and validate contract setup
 ///
 /// Note that we don't assert on the number of cfds, but just try to find the cfd with the given id.
-async fn additional_contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: OrderId) {
+async fn contract_setup(maker: &mut Maker, taker: &mut Taker, order_id: OrderId) {
     wait_next_state_multi_cfd!(order_id, maker, taker, CfdState::PendingSetup);
 
     maker.mocks.mock_party_params().await;

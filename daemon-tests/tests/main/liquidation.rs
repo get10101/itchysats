@@ -1,4 +1,5 @@
-use daemon_tests::maia::OliviaData;
+use daemon_tests::maia::olivia::btc_example_0;
+use daemon_tests::maia::olivia::btc_example_1;
 use daemon_tests::open_cfd;
 use daemon_tests::rollover::rollover;
 use daemon_tests::settle_non_collaboratively;
@@ -13,7 +14,7 @@ use rust_decimal::Decimal;
 async fn given_open_cfd_when_oracle_attests_long_liquidation_price_can_liquidate() {
     let (mut maker, mut taker) = start_both().await;
 
-    let oracle_data = OliviaData::example_0();
+    let oracle_data = btc_example_0();
 
     // We set the initial price to a value much higher than that of the price that the mock oracle
     // will attest to. This is so that the price attested to falls within the long liquidation
@@ -52,7 +53,7 @@ async fn given_open_cfd_when_oracle_attests_long_liquidation_price_can_liquidate
 async fn given_rollover_when_oracle_attests_long_liquidation_price_can_liquidate() {
     let (mut maker, mut taker) = start_both().await;
 
-    let oracle_data_contract_setup = OliviaData::example_0();
+    let oracle_data_contract_setup = btc_example_0();
 
     // We set the initial price to a value much higher than that of the price that the mock oracle
     // will attest to. This is so that the price attested to falls within the long liquidation
@@ -79,7 +80,7 @@ async fn given_rollover_when_oracle_attests_long_liquidation_price_can_liquidate
         )
     );
 
-    let oracle_data_rollover = OliviaData::example_1();
+    let oracle_data_rollover = btc_example_1();
     rollover(
         &mut maker,
         &mut taker,

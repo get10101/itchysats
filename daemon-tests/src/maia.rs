@@ -1,47 +1,60 @@
 use daemon::maia_core::secp256k1_zkp::SecretKey;
 use daemon::maia_core::secp256k1_zkp::XOnlyPublicKey;
 use daemon::oracle;
-use model::olivia;
+use model::olivia::Announcement;
 use model::olivia::BitMexPriceEventId;
 use std::str::FromStr;
 use time::ext::NumericalDuration;
+
+pub mod olivia {
+    use super::btc;
+    use super::eth;
+    use super::OliviaData;
+
+    pub fn btc_example_0() -> OliviaData {
+        OliviaData::example(
+            btc::EVENT_ID_0,
+            btc::PRICE_0,
+            &btc::NONCE_PKS_0,
+            &btc::ATTESTATIONS_0,
+        )
+    }
+
+    pub fn btc_example_1() -> OliviaData {
+        OliviaData::example(
+            btc::EVENT_ID_1,
+            btc::PRICE_1,
+            &btc::NONCE_PKS_1,
+            &btc::ATTESTATIONS_1,
+        )
+    }
+
+    // TODO: Use real-world ETH oracle data.
+    pub fn eth_example_0() -> OliviaData {
+        OliviaData::example(
+            eth::EVENT_ID_0,
+            btc::PRICE_0,
+            &btc::NONCE_PKS_0,
+            &btc::ATTESTATIONS_0,
+        )
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct OliviaData {
     ids: Vec<BitMexPriceEventId>,
-    pk: XOnlyPublicKey,
     nonce_pks: Vec<XOnlyPublicKey>,
     price: u64,
     attestations: Vec<SecretKey>,
 }
 
 impl OliviaData {
-    pub fn example_0() -> Self {
-        Self::example(
-            Self::EVENT_ID_0,
-            Self::PRICE_0,
-            &Self::NONCE_PKS_0,
-            &Self::ATTESTATIONS_0,
-        )
-    }
-
-    pub fn example_1() -> Self {
-        Self::example(
-            Self::EVENT_ID_1,
-            Self::PRICE_1,
-            &Self::NONCE_PKS_1,
-            &Self::ATTESTATIONS_1,
-        )
-    }
-
     /// Generate an example of all the data from `olivia` needed to test the
     /// CFD protocol end-to-end.
     fn example(id: &str, price: u64, nonce_pks: &[&str], attestations: &[&str]) -> Self {
-        let oracle_pk = XOnlyPublicKey::from_str(Self::OLIVIA_PK).unwrap();
-
         let id = id.parse::<BitMexPriceEventId>().unwrap();
-        let ids = olivia::hourly_events(
+        let ids = model::olivia::hourly_events(
             id.timestamp(),
             id.timestamp() + 24.hours(),
             id.index_price(),
@@ -60,18 +73,17 @@ impl OliviaData {
 
         Self {
             ids,
-            pk: oracle_pk,
             nonce_pks,
             attestations,
             price,
         }
     }
 
-    pub fn announcements(&self) -> Vec<olivia::Announcement> {
+    pub fn announcements(&self) -> Vec<Announcement> {
         self.ids
             .clone()
             .into_iter()
-            .map(|id| olivia::Announcement {
+            .map(|id| Announcement {
                 id,
                 expected_outcome_time: id.timestamp(),
                 nonce_pks: self.nonce_pks.clone(),
@@ -79,7 +91,7 @@ impl OliviaData {
             .collect()
     }
 
-    pub fn settlement_announcement(&self) -> olivia::Announcement {
+    pub fn settlement_announcement(&self) -> Announcement {
         self.announcements().last().unwrap().clone()
     }
 
@@ -88,7 +100,7 @@ impl OliviaData {
             .clone()
             .into_iter()
             .map(|id| {
-                oracle::Attestation::new(olivia::Attestation {
+                oracle::Attestation::new(model::olivia::Attestation {
                     id,
                     price: self.price,
                     scalars: self.attestations.clone(),
@@ -114,12 +126,11 @@ impl OliviaData {
             .find(|attestation| attestation.id() == event_id)
             .cloned()
     }
+}
 
-    const OLIVIA_PK: &'static str =
-        "ddd4636845a90185991826be5a494cde9f4a6947b1727217afedc6292fa4caf7";
-
-    const EVENT_ID_0: &'static str = "/x/BitMEX/BXBT/2021-10-05T02:00:00.price?n=20";
-    const NONCE_PKS_0: [&'static str; 20] = [
+mod btc {
+    pub const EVENT_ID_0: &str = "/x/BitMEX/BXBT/2021-10-05T02:00:00.price?n=20";
+    pub const NONCE_PKS_0: [&str; 20] = [
         "d02d163cf9623f567c4e3faf851a9266ac1ede13da4ca4141f3a7717fba9a739",
         "bc310f26aa5addbc382f653d8530aaead7c25e3546abc24639f490e36d4bdb88",
         "2661375f570dcc32300d442e85b6d72dfa3232dccda45e8fb4a2d1e758d1d374",
@@ -141,8 +152,8 @@ impl OliviaData {
         "3867af9048309a05004a164bdea09899f23ff1d83b6491b2b53a1b7b92e0eb2e",
         "688118e6b59e27944c277513db2711a520f4283c7c53a11f58d9f6a46d82c964",
     ];
-    const PRICE_0: u64 = 49262;
-    const ATTESTATIONS_0: [&'static str; 20] = [
+    pub const PRICE_0: u64 = 49262;
+    pub const ATTESTATIONS_0: [&str; 20] = [
         "5bc7663195971daaa1e3e6a81b4bca65882791644bc446fc060cbc118a3ace0f",
         "721d0cb56a0778a1ca7907f81a0787f34385b13f854c845c4c5539f7f6267958",
         "044aeef0d525c8ff48758c80939e95807bc640990cc03f53ab6fc0b262045221",
@@ -165,8 +176,8 @@ impl OliviaData {
         "90c4d8ec9f408ccb62a62daa993c20f2f86799e1fdea520c6d060418e55fd216",
     ];
 
-    const EVENT_ID_1: &'static str = "/x/BitMEX/BXBT/2021-10-05T08:00:00.price?n=20";
-    const NONCE_PKS_1: [&'static str; 20] = [
+    pub const EVENT_ID_1: &str = "/x/BitMEX/BXBT/2021-10-05T08:00:00.price?n=20";
+    pub const NONCE_PKS_1: [&str; 20] = [
         "150df2e64f39706e726eaa1fe081af3edf376d9644723e135a99328fd194caca",
         "b90629cedc7cb8430b4d15c84bbe1fe173e70e626d40c465e64de29d4879e20f",
         "ae14ffb8701d3e224b6632a1bb7b099c8aa90979c3fb788422daa08bca25fa68",
@@ -188,8 +199,8 @@ impl OliviaData {
         "5c4fb87b3812982759ed7264676e713e4e477a41759261515b04797db393ef62",
         "f3f6b9134c0fdd670767fbf478fd0dd3430f195ce9c21cabb84f3c1dd4848a11",
     ];
-    const PRICE_1: u64 = 49493;
-    const ATTESTATIONS_1: [&'static str; 20] = [
+    pub const PRICE_1: u64 = 49493;
+    pub const ATTESTATIONS_1: [&str; 20] = [
         "605f458e9a7bd216ff522e45f6cd14378c03ccfd4d35a69b9b6ce5c4ebfc89fa",
         "edc7215277d2c24a7a4659ff8831352db609fcc467fead5e27fdada172cdfd86",
         "1c2d76fcbe724b1fabd2622b991e90bbb2ea9244489de960747134c9fd695dcb",
@@ -211,4 +222,8 @@ impl OliviaData {
         "d65a4c71062fc0b0210bb3e239f60d826a37d28caadfc52edd7afde6e91ff818",
         "ea5dfd972784808a15543f850c7bc86bff2b51cff81ec68fc4c3977d5e7d38de",
     ];
+}
+
+mod eth {
+    pub const EVENT_ID_0: &str = "/x/BitMEX/BETH/2022-08-24T01:08:00.price?n=20";
 }

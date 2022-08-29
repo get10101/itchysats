@@ -26,6 +26,7 @@ use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::Environment;
 use daemon::N_PAYOUTS;
+use maia::olivia::btc_example_0;
 use maia::OliviaData;
 use maker::cfd::OfferParams;
 use model::libp2p::PeerId;
@@ -249,7 +250,10 @@ pub struct OpenCfdArgs {
 
 impl OpenCfdArgs {
     fn offer_params(&self) -> OfferParams {
-        OfferParamsBuilder::new().price(self.initial_price).build()
+        OfferParamsBuilder::new()
+            .contract_symbol(self.contract_symbol)
+            .price(self.initial_price)
+            .build()
     }
 
     pub fn fee_calculator(&self) -> FeeCalculator {
@@ -276,7 +280,7 @@ impl Default for OpenCfdArgs {
             initial_price: Price::new(dummy_price()).unwrap(),
             quantity: Contracts::new(100),
             taker_leverage: Leverage::TWO,
-            oracle_data: OliviaData::example_0(),
+            oracle_data: btc_example_0(),
         }
     }
 }
@@ -286,12 +290,12 @@ impl Default for OpenCfdArgs {
 /// This allows callers to use it as a starting point for their test.
 pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -> OrderId {
     let offer_params = args.offer_params();
-    let contract_symbol = offer_params.contract_symbol;
     let OpenCfdArgs {
         oracle_data,
         position_maker,
         quantity,
         taker_leverage,
+        contract_symbol,
         ..
     } = args;
 
@@ -300,16 +304,14 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
     tracing::debug!("Sending {offer_params:?}");
     maker.set_offer_params(offer_params).await;
 
-    let (_, received) = next_maker_offers(
-        maker.offers_feed(),
-        taker.offers_feed(),
-        &ContractSymbol::BtcUsd,
-    )
-    .await
-    .unwrap();
+    let (_, received) =
+        next_maker_offers(maker.offers_feed(), taker.offers_feed(), &contract_symbol)
+            .await
+            .unwrap();
 
     tracing::debug!("Received from maker {received:?}");
 
+    // FIXME: At some point we will need different announcement for different symbols
     mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
 
     let offer_to_take = match (contract_symbol, position_maker) {
@@ -512,6 +514,13 @@ impl FeeCalculator {
         );
 
         (maker_fee_account.balance(), taker_fee_account.balance())
+    }
+
+    pub fn complete_fee_for_expired_settlement_event(&self) -> (SignedAmount, SignedAmount) {
+        // The expected to be charged for 24h because we only charge one full term
+        // This is due to the rollover falling back to charging one full term if the event is
+        // already past expiry.
+        self.complete_fee_for_rollover_hours(24)
     }
 }
 
@@ -1053,6 +1062,12 @@ impl OfferParamsBuilder {
 
     pub fn leverage_choices(mut self, choices: Vec<Leverage>) -> Self {
         self.0.leverage_choices = choices;
+
+        self
+    }
+
+    pub fn contract_symbol(mut self, contract_symbol: ContractSymbol) -> Self {
+        self.0.contract_symbol = contract_symbol;
 
         self
     }
