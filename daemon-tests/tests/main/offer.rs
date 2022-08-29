@@ -33,8 +33,7 @@ async fn publish_offer(maker: &mut Maker, contract_symbol: ContractSymbol) {
     let leverage = Leverage::TWO;
     maker
         .set_offer_params(
-            OfferParamsBuilder::new()
-                .contract_symbol(contract_symbol)
+            OfferParamsBuilder::new(contract_symbol)
                 .leverage_choices(vec![leverage])
                 .build(),
         )

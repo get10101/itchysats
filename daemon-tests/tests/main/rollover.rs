@@ -343,7 +343,7 @@ async fn prepare_rollover(
 
     // Maker needs to have an active offer in order to accept rollover
     maker
-        .set_offer_params(OfferParamsBuilder::new().build())
+        .set_offer_params(OfferParamsBuilder::new(contract_symbol).build())
         .await;
 
     let maker_cfd = maker.first_cfd();
