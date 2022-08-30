@@ -101,6 +101,7 @@ async fn collaboratively_close_an_open_cfd(
             position_maker,
             contract_symbol,
             oracle_data,
+            initial_price: initial_price_for(contract_symbol),
             ..Default::default()
         },
     )
