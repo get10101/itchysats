@@ -2,6 +2,7 @@ use crate::command;
 use crate::oracle;
 use crate::oracle::NoAnnouncement;
 use crate::order::contract_setup;
+use crate::order::protocol;
 use crate::order::protocol::Decision;
 use crate::order::protocol::MakerMessage;
 use crate::order::protocol::SetupMsg;
@@ -140,7 +141,7 @@ impl Actor {
                 framed
                     .send(TakerMessage::PlaceOrder {
                         id: order_id,
-                        offer: Box::new(offer),
+                        offer: protocol::Offer { id: offer.id },
                         quantity,
                         leverage,
                     })

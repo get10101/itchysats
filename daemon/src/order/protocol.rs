@@ -11,7 +11,7 @@ use maia_core::PartyParams;
 use maia_core::PunishParams;
 use model::Contracts;
 use model::Leverage;
-use model::Offer;
+use model::OfferId;
 use model::OrderId;
 use serde::Deserialize;
 use serde::Serialize;
@@ -22,11 +22,20 @@ use std::ops::RangeInclusive;
 pub(crate) enum TakerMessage {
     PlaceOrder {
         id: OrderId,
-        offer: Box<Offer>,
+        offer: Offer,
         quantity: Contracts,
         leverage: Leverage,
     },
     ContractSetupMsg(Box<SetupMsg>),
+}
+
+/// Identifies the offer which the taker used as a source to place the order.
+///
+/// We keep this nested structure (as opposed to sending the `OrderId` directly) so that we remain
+/// compatible with old taker versions who send a full offer.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct Offer {
+    pub id: OfferId,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -134,13 +134,13 @@ impl Actor {
             }
         };
 
-        let (order_id, offer, quantity, leverage) = match order {
+        let (order_id, offer_id, quantity, leverage) = match order {
             TakerMessage::PlaceOrder {
                 id,
-                offer: offer_id,
+                offer,
                 quantity,
                 leverage,
-            } => (id, offer_id, quantity, leverage),
+            } => (id, offer.id, quantity, leverage),
             TakerMessage::ContractSetupMsg(_) => {
                 tracing::error!("Unexpected message");
                 return;
@@ -150,7 +150,7 @@ impl Actor {
         tracing::info!(%peer_id, %quantity, %order_id, "Taker wants to place an order");
 
         // Reject the order if the offer cannot be found in the latest offers
-        let offer = match self.pick_offer(offer.id).await {
+        let offer = match self.pick_offer(offer_id).await {
             Ok(offer) => offer,
             Err(e) => {
                 tracing::warn!("Rejecting taker order because unable to pick offer: {e:#}");
