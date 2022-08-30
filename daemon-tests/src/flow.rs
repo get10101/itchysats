@@ -27,7 +27,7 @@ pub async fn next_maker_offers(
             ..
         } if contract_symbol == &ContractSymbol::BtcUsd => Some(offers),
         MakerOffers {
-            btcusd_long: Some(_),
+            btcusd_short: Some(_),
             ..
         } if contract_symbol == &ContractSymbol::BtcUsd => Some(offers),
         MakerOffers {
@@ -35,7 +35,7 @@ pub async fn next_maker_offers(
             ..
         } if contract_symbol == &ContractSymbol::EthUsd => Some(offers),
         MakerOffers {
-            ethusd_long: Some(_),
+            ethusd_short: Some(_),
             ..
         } if contract_symbol == &ContractSymbol::EthUsd => Some(offers),
         _ => None,
