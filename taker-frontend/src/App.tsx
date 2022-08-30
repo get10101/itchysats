@@ -135,8 +135,8 @@ export const App = () => {
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
 
-    const longOffer = makerOfferToTakerOffer(makerLong);
-    const shortOffer = makerOfferToTakerOffer(makerShort);
+    const shortOffer = makerOfferToTakerOffer(makerLong);
+    const longOffer = makerOfferToTakerOffer(makerShort);
 
     function makerOfferToTakerOffer(offer: MakerOffer | null): Offer {
         if (offer) {
