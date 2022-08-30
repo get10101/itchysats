@@ -53,14 +53,12 @@ pub struct Attestation {
 }
 
 #[derive(Derivative, Debug, Clone, Copy, SerializeDisplay, DeserializeFromStr)]
-#[derivative(PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derivative(PartialEq, Eq, Hash)]
 pub struct BitMexPriceEventId {
     /// The timestamp this price event refers to.
     timestamp: OffsetDateTime,
-    #[derivative(PartialOrd = "ignore", Ord = "ignore")]
     digits: usize,
     /// The index this price event refers to.
-    #[derivative(PartialOrd = "ignore", Ord = "ignore")]
     index: IndexPrice,
 }
 
