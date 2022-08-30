@@ -1023,34 +1023,6 @@ impl Cfd {
         ))
     }
 
-    pub fn sign_collaborative_settlement_maker(
-        &self,
-        proposal: SettlementProposal,
-        sig_taker: Signature,
-    ) -> Result<CollaborativeSettlement> {
-        debug_assert_eq!(
-            self.role,
-            Role::Maker,
-            "Only the maker can complete collaborative settlement signing"
-        );
-
-        let dlc = self
-            .dlc
-            .as_ref()
-            .context("Collaborative close without DLC")?;
-
-        #[allow(deprecated)]
-        let (tx, sig_maker, lock_amount) = dlc.close_transaction(&proposal)?;
-
-        let spend_tx = dlc
-            .finalize_spend_transaction(tx, sig_maker, sig_taker, lock_amount)
-            .context("Failed to finalize collaborative settlement transaction")?;
-        let script_pk = dlc.script_pubkey_for(Role::Maker);
-
-        let settlement = CollaborativeSettlement::new(spend_tx, script_pk, proposal.price)?;
-        Ok(settlement)
-    }
-
     pub fn start_collab_settlement_taker(
         self,
         current_price: Price,
@@ -1145,45 +1117,6 @@ impl Cfd {
         };
 
         Ok((collab_settlement_tx, proposal))
-    }
-
-    pub fn receive_collaborative_settlement_proposal(
-        self,
-        proposal: SettlementProposal,
-        n_payouts: usize,
-    ) -> Result<CfdEvent> {
-        ensure!(!self.is_in_collaborative_settlement());
-        ensure!(self.role == Role::Maker);
-        ensure!(proposal.order_id == self.id);
-        self.can_settle_collaboratively()
-            .context("Cannot collaboratively settle")?;
-
-        // Validate that the amounts sent by the taker are sane according to the payout curve
-
-        let payouts = Payouts::new(
-            self.contract_symbol,
-            (self.position, self.role),
-            self.initial_price,
-            self.quantity,
-            (self.long_leverage, self.short_leverage),
-            n_payouts,
-            self.fee_account.settle(),
-        )?
-        .settlement();
-
-        let payout = payouts
-            .iter()
-            .find(|&x| x.digits().range().contains(&proposal.price.to_u64()))
-            .context("find current price on the payout curve")?;
-
-        if proposal.maker != *payout.maker_amount() || proposal.taker != *payout.taker_amount() {
-            bail!("The settlement amounts sent by the taker are not according to the agreed payout curve. Expected taker {} and maker {} but received taker {} and maker {}", payout.taker_amount(), payout.maker_amount(), proposal.taker, proposal.maker);
-        }
-
-        Ok(CfdEvent::new(
-            self.id,
-            EventKind::CollaborativeSettlementStarted { proposal },
-        ))
     }
 
     pub fn accept_collaborative_settlement_proposal(
