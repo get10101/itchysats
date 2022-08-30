@@ -23,11 +23,10 @@ async fn taker_places_order_and_maker_rejects() {
 
     ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
-    maker
-        .set_offer_params(OfferParamsBuilder::new().build())
-        .await;
-
     let symbol = ContractSymbol::BtcUsd;
+    maker
+        .set_offer_params(OfferParamsBuilder::new(symbol).build())
+        .await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed(), &symbol)
         .await
@@ -66,11 +65,7 @@ async fn taker_places_order_and_maker_accepts_and_contract_setup(contract_symbol
     ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
     maker
-        .set_offer_params(
-            OfferParamsBuilder::new()
-                .contract_symbol(contract_symbol)
-                .build(),
-        )
+        .set_offer_params(OfferParamsBuilder::new(contract_symbol).build())
         .await;
 
     let (_, received) =
@@ -101,11 +96,10 @@ async fn taker_places_order_for_same_offer_twice_results_in_two_cfds() {
 
     ensure_null_next_offers(taker.offers_feed()).await.unwrap();
 
-    maker
-        .set_offer_params(OfferParamsBuilder::new().build())
-        .await;
-
     let symbol = ContractSymbol::BtcUsd;
+    maker
+        .set_offer_params(OfferParamsBuilder::new(symbol).build())
+        .await;
 
     let (_, received) = next_maker_offers(maker.offers_feed(), taker.offers_feed(), &symbol)
         .await

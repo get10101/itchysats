@@ -248,10 +248,25 @@ pub struct OpenCfdArgs {
     pub oracle_data: OliviaData,
 }
 
+fn initial_price_for(symbol: ContractSymbol) -> Price {
+    Price::new(match symbol {
+        ContractSymbol::BtcUsd => dummy_btc_price(),
+        ContractSymbol::EthUsd => dummy_eth_price(),
+    })
+    .unwrap()
+}
+
+/// Different contract symbols can have different lot sizes
+fn lot_size_for(symbol: ContractSymbol) -> LotSize {
+    match symbol {
+        ContractSymbol::BtcUsd => LotSize::new(100),
+        ContractSymbol::EthUsd => LotSize::new(1),
+    }
+}
+
 impl OpenCfdArgs {
     fn offer_params(&self) -> OfferParams {
-        OfferParamsBuilder::new()
-            .contract_symbol(self.contract_symbol)
+        OfferParamsBuilder::new(self.contract_symbol)
             .price(self.initial_price)
             .build()
     }
@@ -274,10 +289,11 @@ impl OpenCfdArgs {
 
 impl Default for OpenCfdArgs {
     fn default() -> Self {
+        let contract_symbol = ContractSymbol::BtcUsd;
         Self {
-            contract_symbol: ContractSymbol::BtcUsd,
+            contract_symbol,
+            initial_price: initial_price_for(contract_symbol),
             position_maker: Position::Short,
-            initial_price: Price::new(dummy_price()).unwrap(),
             quantity: Contracts::new(100),
             taker_leverage: Leverage::TWO,
             oracle_data: btc_example_0(),
@@ -311,7 +327,6 @@ pub async fn open_cfd(taker: &mut Taker, maker: &mut Maker, args: OpenCfdArgs) -
 
     tracing::debug!("Received from maker {received:?}");
 
-    // FIXME: At some point we will need different announcement for different symbols
     mock_oracle_announcements(maker, taker, oracle_data.announcements()).await;
 
     let offer_to_take = match (contract_symbol, position_maker) {
@@ -1016,8 +1031,8 @@ pub fn dummy_latest_quotes() -> LatestQuotes {
 fn dummy_btc_quote() -> Quote {
     Quote {
         timestamp: OffsetDateTime::now_utc(),
-        bid: dummy_price(),
-        ask: dummy_price(),
+        bid: dummy_btc_price(),
+        ask: dummy_btc_price(),
         symbol: xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
     }
 }
@@ -1025,8 +1040,8 @@ fn dummy_btc_quote() -> Quote {
 fn dummy_eth_quote() -> Quote {
     Quote {
         timestamp: OffsetDateTime::now_utc(),
-        bid: dummy_price(),
-        ask: dummy_price(),
+        bid: dummy_eth_price(),
+        ask: dummy_eth_price(),
         symbol: xtra_bitmex_price_feed::ContractSymbol::EthUsd,
     }
 }
@@ -1034,8 +1049,8 @@ fn dummy_eth_quote() -> Quote {
 pub struct OfferParamsBuilder(OfferParams);
 
 impl OfferParamsBuilder {
-    pub fn new() -> OfferParamsBuilder {
-        let dummy_price = Price::new(dummy_price()).unwrap();
+    pub fn new(symbol: ContractSymbol) -> OfferParamsBuilder {
+        let dummy_price = initial_price_for(symbol);
 
         OfferParamsBuilder(OfferParams {
             price_long: Some(dummy_price),
@@ -1048,8 +1063,8 @@ impl OfferParamsBuilder {
             funding_rate_short: FundingRate::new(dec!(0.00024)).unwrap(),
             opening_fee: OpeningFee::new(Amount::from_sat(2)),
             leverage_choices: vec![Leverage::TWO],
-            contract_symbol: ContractSymbol::BtcUsd,
-            lot_size: LotSize::new(100),
+            contract_symbol: symbol,
+            lot_size: lot_size_for(symbol),
         })
     }
 
@@ -1066,20 +1081,8 @@ impl OfferParamsBuilder {
         self
     }
 
-    pub fn contract_symbol(mut self, contract_symbol: ContractSymbol) -> Self {
-        self.0.contract_symbol = contract_symbol;
-
-        self
-    }
-
     pub fn build(self) -> OfferParams {
         self.0
-    }
-}
-
-impl Default for OfferParamsBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1096,8 +1099,12 @@ fn dummy_funding_fee() -> FundingFee {
     .unwrap()
 }
 
-fn dummy_price() -> Decimal {
+fn dummy_btc_price() -> Decimal {
     dec!(50_000)
+}
+
+fn dummy_eth_price() -> Decimal {
+    dec!(1_500)
 }
 
 pub async fn mock_oracle_announcements(

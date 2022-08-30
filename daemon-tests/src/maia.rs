@@ -29,13 +29,12 @@ pub mod olivia {
         )
     }
 
-    // TODO: Use real-world ETH oracle data.
     pub fn eth_example_0() -> OliviaData {
         OliviaData::example(
             eth::EVENT_ID_0,
-            btc::PRICE_0,
-            &btc::NONCE_PKS_0,
-            &btc::ATTESTATIONS_0,
+            eth::PRICE_0,
+            &eth::NONCE_PKS_0,
+            &eth::ATTESTATIONS_0,
         )
     }
 }
@@ -225,5 +224,50 @@ mod btc {
 }
 
 mod eth {
-    pub const EVENT_ID_0: &str = "/x/BitMEX/BETH/2022-08-24T01:08:00.price?n=20";
+    pub const EVENT_ID_0: &str = "/x/BitMEX/BETH/2022-08-28T05:00:00.price?n=20";
+    pub const NONCE_PKS_0: [&str; 20] = [
+        "10a37e1e71be8bd0fb97e37a6dc453d95c2fc072c8a7af1bbad75a0e7b2ded58",
+        "1011413038b2915bd9be8a4a650e8a4a9c0c3e4d44ce3ea68126e6edd032df22",
+        "bfa3420cc3e76264fbc20db6f14792f78b18facd3d2ad2cd596b9b4ff9a183e3",
+        "5e1fcd22497ef8e136bb449ad91e5ec55755b33010aad681e88ec82021d9d712",
+        "9dc52c5c3a450c949e52ce69602b53ef189443ddb89c7cdb825a1735b3c6d870",
+        "f672aabb7bd68ed0cfee15253970cd40cb159a7aa9ffba91d32d0f4a77441632",
+        "ebe737f7918035ea9396710cca4ac8d8cfe412381f140745fcf4d0577281049b",
+        "d5b9b98c219f09801d371dc0ef297012943a3698dd2d7d757789be82e6ff4fe6",
+        "6b8f9fbac029defad6a622d697d015d83210347727be26110a7caaca613c6f24",
+        "8f1830d497d6caa82576c80c74347874b79dcc7d97277fd29723c771972c138c",
+        "d6715781bb527a8bb27d4ac6650dfc5875e0fa21c9f3e0c9912bd8adee8ee802",
+        "bf46334c5f402021ef9364eb9dd45c0ca50d9e377a86f4c1f3c6bc0e66d5c05c",
+        "b5a4e4a0977d71a51cd85b0ec4cc1193a1f2baef19f440823c4e37bd729c8440",
+        "d5ebca99481211e1e5f7c0eb0a3cb3cbf066c700100229c33b03f1a1b1709f24",
+        "dca062bbed391d02463aa5975f850120cb92155d6c75c72c74c9cec1830ee7fa",
+        "b48a9b335b1af163d73a03965b75ee48e36ecc179468b493b497930f65774b4a",
+        "a6fbbc5120724133e82664be76582288d18ebc51ddeeb5882844774df6035dcd",
+        "1ff7a2fa171573dfe7305c1615295ef1b8193cd4f4148a35fb99bd3a36f343dc",
+        "34cc58dae2ac7fd1b388600126dde8556c88b67cbdd47d8341037a070fc20bd0",
+        "ccdc031831666e878de41c80691cdecba4ddc7600a6180819e1f54f26b414c96",
+    ];
+    pub const PRICE_0: u64 = 1487;
+    pub const ATTESTATIONS_0: [&str; 20] = [
+        "10a37e1e71be8bd0fb97e37a6dc453d95c2fc072c8a7af1bbad75a0e7b2ded58",
+        "1011413038b2915bd9be8a4a650e8a4a9c0c3e4d44ce3ea68126e6edd032df22",
+        "bfa3420cc3e76264fbc20db6f14792f78b18facd3d2ad2cd596b9b4ff9a183e3",
+        "5e1fcd22497ef8e136bb449ad91e5ec55755b33010aad681e88ec82021d9d712",
+        "9dc52c5c3a450c949e52ce69602b53ef189443ddb89c7cdb825a1735b3c6d870",
+        "f672aabb7bd68ed0cfee15253970cd40cb159a7aa9ffba91d32d0f4a77441632",
+        "ebe737f7918035ea9396710cca4ac8d8cfe412381f140745fcf4d0577281049b",
+        "d5b9b98c219f09801d371dc0ef297012943a3698dd2d7d757789be82e6ff4fe6",
+        "6b8f9fbac029defad6a622d697d015d83210347727be26110a7caaca613c6f24",
+        "8f1830d497d6caa82576c80c74347874b79dcc7d97277fd29723c771972c138c",
+        "d6715781bb527a8bb27d4ac6650dfc5875e0fa21c9f3e0c9912bd8adee8ee802",
+        "bf46334c5f402021ef9364eb9dd45c0ca50d9e377a86f4c1f3c6bc0e66d5c05c",
+        "b5a4e4a0977d71a51cd85b0ec4cc1193a1f2baef19f440823c4e37bd729c8440",
+        "d5ebca99481211e1e5f7c0eb0a3cb3cbf066c700100229c33b03f1a1b1709f24",
+        "dca062bbed391d02463aa5975f850120cb92155d6c75c72c74c9cec1830ee7fa",
+        "b48a9b335b1af163d73a03965b75ee48e36ecc179468b493b497930f65774b4a",
+        "a6fbbc5120724133e82664be76582288d18ebc51ddeeb5882844774df6035dcd",
+        "1ff7a2fa171573dfe7305c1615295ef1b8193cd4f4148a35fb99bd3a36f343dc",
+        "34cc58dae2ac7fd1b388600126dde8556c88b67cbdd47d8341037a070fc20bd0",
+        "ccdc031831666e878de41c80691cdecba4ddc7600a6180819e1f54f26b414c96",
+    ];
 }
