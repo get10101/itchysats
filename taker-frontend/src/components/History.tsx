@@ -359,7 +359,7 @@ const TxIcon = ({ tx }: TxIconProps) => {
 function timeConverter(timestamp: number) {
     const a = new Date(timestamp * 1000);
     const year = a.getFullYear();
-    const month = a.getMonth();
+    const month = a.getMonth() + 1;
     const date = a.getDate();
     const hour = a.getHours();
     const min = a.getMinutes() === 0 ? "00" : a.getMinutes();
