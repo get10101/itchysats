@@ -75,9 +75,11 @@ impl Actor {
         let quiet = quiet_spans::sometimes_quiet_children();
         for peer_id in self.connected_peers.iter().copied() {
             self.send_offers(peer_id, msg.0.clone(), ctx)
-                .instrument(quiet.in_scope(|| {
-                    tracing::debug_span!("Broadcast offers to taker (libp2p)").or_current()
-                }))
+                .instrument(
+                    quiet.in_scope(|| {
+                        tracing::debug_span!("Broadcast offers to taker").or_current()
+                    }),
+                )
                 .await
         }
     }
