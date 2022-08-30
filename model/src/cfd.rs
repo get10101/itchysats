@@ -1927,7 +1927,13 @@ pub fn calculate_long_liquidation_price(
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
 
-            let liquidation_price = quanto::bankruptcy_price_long(initial_price, leverage);
+            // TODO: this liquidation price is potentially not in-line with the _actual_
+            // liquidation price as computed in the payout curve. The problem is we do not have the
+            // fee account available at this place and always compute the liquidation
+            // price based on the initial margin.
+            // Same for short liquidation price a few lines below.
+            let liquidation_price =
+                quanto::bankruptcy_price_long(initial_price, leverage.as_decimal());
 
             // The `model::Price` type does not allow non-positive values, but the quanto long
             // liquidation price can easily be 0. We avoid this problem by defaulting to 1
@@ -1954,7 +1960,8 @@ pub fn calculate_short_liquidation_price(
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
 
-            let liquidation_price = quanto::bankruptcy_price_short(initial_price, leverage);
+            let liquidation_price =
+                quanto::bankruptcy_price_short(initial_price, leverage.as_decimal());
 
             Price::new(Decimal::from(liquidation_price))
                 .expect("liquidation price to fit into Price")

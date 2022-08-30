@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7b2651f29a7e2f77887524696f1b78cbdbb249dcce50714493f542eb6d4346e5 # shrinks to initial_price = 385, n_contracts = 183, leverage_long = Leverage(1), leverage_short = Leverage(1), n_payouts = 88, fee_offset = ShortPaysLong(Amount(0.00054901 BTC))

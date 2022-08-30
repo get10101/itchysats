@@ -145,6 +145,10 @@ impl Leverage {
         self.0
     }
 
+    pub fn as_decimal(&self) -> Decimal {
+        Decimal::from(self.0)
+    }
+
     pub const ONE: Self = Self(1);
 
     pub const TWO: Self = Self(2);
