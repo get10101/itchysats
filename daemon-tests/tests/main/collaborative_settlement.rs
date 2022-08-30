@@ -105,7 +105,7 @@ async fn collaboratively_close_an_open_cfd(
         },
     )
     .await;
-    mock_quotes(&mut maker, &mut taker).await;
+    mock_quotes(&mut maker, &mut taker, contract_symbol).await;
 
     taker.system.propose_settlement(order_id).await.unwrap();
 
