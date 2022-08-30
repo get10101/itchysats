@@ -2,6 +2,8 @@ use daemon::projection::CfdState;
 use daemon_tests::confirm;
 use daemon_tests::dummy_btc_price;
 use daemon_tests::dummy_eth_price;
+use daemon_tests::expected_maker_liquidation_price;
+use daemon_tests::expected_taker_liquidation_price;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::initial_price_for;
@@ -16,7 +18,6 @@ use daemon_tests::OpenCfdArgs;
 use daemon_tests::Taker;
 use model::ContractSymbol;
 use model::Position;
-use model::Price;
 use otel_tests::otel_test;
 use rust_decimal_macros::dec;
 
@@ -155,17 +156,9 @@ fn assert_maker_liquidation_price(maker: &mut Maker) {
 
     let maker_position = maker.first_cfd().position;
     let symbol = maker.first_cfd().contract_symbol;
-    let expected_liquidation_price = match (symbol, maker_position) {
-        // inverse payout curve
-        (ContractSymbol::BtcUsd, Position::Long) => dec!(25_000),
-        (ContractSymbol::BtcUsd, Position::Short) => dec!(21_000_000), // INFINITE
-        // quanto linear payout curve
-        (ContractSymbol::EthUsd, Position::Long) => dec!(1),
-        (ContractSymbol::EthUsd, Position::Short) => dec!(3_000),
-    };
     assert_eq!(
         maker.first_cfd().liquidation_price,
-        Price::new(expected_liquidation_price).unwrap()
+        expected_maker_liquidation_price(symbol, maker_position)
     );
 }
 
@@ -175,16 +168,8 @@ fn assert_taker_liquidation_price(taker: &mut Taker) {
 
     let taker_position = taker.first_cfd().position;
     let symbol = taker.first_cfd().contract_symbol;
-    let expected_liquidation_price = match (symbol, taker_position) {
-        // inverse payout curve
-        (ContractSymbol::BtcUsd, Position::Long) => dec!(33333.333333333333333333333333),
-        (ContractSymbol::BtcUsd, Position::Short) => dec!(100_000),
-        // quanto linear payout curve
-        (ContractSymbol::EthUsd, Position::Long) => dec!(750),
-        (ContractSymbol::EthUsd, Position::Short) => dec!(2_250),
-    };
     assert_eq!(
         taker.first_cfd().liquidation_price,
-        Price::new(expected_liquidation_price).unwrap()
+        expected_taker_liquidation_price(symbol, taker_position)
     );
 }
