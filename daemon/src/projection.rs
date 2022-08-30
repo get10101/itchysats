@@ -1099,22 +1099,22 @@ impl State {
                     contract_symbol: ContractSymbol::BtcUsd,
                     position_maker: Position::Long,
                     ..
-                } => self.offers.btcusd_long = Some(new_offer),
+                } => self.offers.btcusd_short = Some(new_offer),
                 CfdOffer {
                     contract_symbol: ContractSymbol::BtcUsd,
                     position_maker: Position::Short,
                     ..
-                } => self.offers.btcusd_short = Some(new_offer),
+                } => self.offers.btcusd_long = Some(new_offer),
                 CfdOffer {
                     contract_symbol: ContractSymbol::EthUsd,
                     position_maker: Position::Long,
                     ..
-                } => self.offers.ethusd_long = Some(new_offer),
+                } => self.offers.ethusd_short = Some(new_offer),
                 CfdOffer {
                     contract_symbol: ContractSymbol::EthUsd,
                     position_maker: Position::Short,
                     ..
-                } => self.offers.ethusd_short = Some(new_offer),
+                } => self.offers.ethusd_long = Some(new_offer),
             }
         }
     }
