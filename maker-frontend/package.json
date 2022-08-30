@@ -50,7 +50,7 @@
     "react-sse-hooks": "^1.0.5",
     "react-table": "7.7.0",
     "typescript": "^4.5.4",
-    "vite": "^2.7.12",
+    "vite": "^2.9.13",
     "vite-jest": "^0.0.4",
     "web-vitals": "^2.1.2"
   },
