@@ -221,7 +221,7 @@ impl Announcements {
     fn new(announcements: Vec<olivia::Announcement>) -> Result<Self> {
         let announcements = announcements
             .into_iter()
-            .sorted_by(|a, b| a.id.cmp(&b.id))
+            .sorted_by(|a, b| a.id.timestamp().cmp(&b.id.timestamp()))
             .map(|announcement| Announcement {
                 id: announcement.id.to_string(),
                 nonce_pks: announcement.nonce_pks,
