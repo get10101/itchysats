@@ -2479,8 +2479,6 @@ pub struct CollaborativeSettlement {
 
 impl CollaborativeSettlement {
     pub fn new(tx: Transaction, own_script_pubkey: Script, price: Price) -> Result<Self> {
-        // Falls back to Amount::ZERO in case we don't find an output that matches out script pubkey
-        // The assumption is, that this can happen for cases where we were liquidated
         let payout = match tx
             .output
             .iter()
@@ -2489,10 +2487,9 @@ impl CollaborativeSettlement {
         {
             Some(payout) => payout,
             None => {
-                tracing::error!(
-                    "Collaborative settlement with a zero amount, this should really not happen!"
+                anyhow::bail!(
+                    "Collaborative settlement with a zero amount - no output matching our script pubkey"
                 );
-                Amount::ZERO
             }
         };
 
