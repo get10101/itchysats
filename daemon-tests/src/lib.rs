@@ -248,7 +248,7 @@ pub struct OpenCfdArgs {
     pub oracle_data: OliviaData,
 }
 
-fn initial_price_for(symbol: ContractSymbol) -> Price {
+pub fn initial_price_for(symbol: ContractSymbol) -> Price {
     Price::new(match symbol {
         ContractSymbol::BtcUsd => dummy_btc_price(),
         ContractSymbol::EthUsd => dummy_eth_price(),
@@ -1099,11 +1099,11 @@ fn dummy_funding_fee() -> FundingFee {
     .unwrap()
 }
 
-fn dummy_btc_price() -> Decimal {
+pub fn dummy_btc_price() -> Decimal {
     dec!(50_000)
 }
 
-fn dummy_eth_price() -> Decimal {
+pub fn dummy_eth_price() -> Decimal {
     dec!(1_500)
 }
 
@@ -1122,13 +1122,12 @@ pub async fn mock_oracle_announcements(
         .await;
 }
 
-pub async fn mock_quotes(maker: &mut Maker, taker: &mut Taker) {
+pub async fn mock_quotes(maker: &mut Maker, taker: &mut Taker, contract_symbol: ContractSymbol) {
     taker.mocks.mock_latest_quotes().await;
     maker.mocks.mock_latest_quotes().await;
     let mut quote_receiver = taker.quote_feed().clone();
 
-    let non_empty_quote =
-        |quotes: projection::LatestQuotes| quotes.get(&ContractSymbol::BtcUsd).copied();
+    let non_empty_quote = |quotes: projection::LatestQuotes| quotes.get(&contract_symbol).copied();
 
     next_with(&mut quote_receiver, non_empty_quote)
         .await

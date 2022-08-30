@@ -94,7 +94,7 @@ impl str::FromStr for Contracts {
 pub struct Price(Decimal);
 
 impl Price {
-    const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
+    pub const INFINITE: Price = Price(rust_decimal_macros::dec!(21_000_000));
 
     pub fn new(value: Decimal) -> Result<Self> {
         ensure!(value > Decimal::ZERO, "Non-positive price not supported");
