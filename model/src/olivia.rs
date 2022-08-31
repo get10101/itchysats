@@ -32,7 +32,7 @@ pub static PUBLIC_KEY: Lazy<XOnlyPublicKey> = Lazy::new(|| {
         .expect("static key to be valid")
 });
 
-#[derive(Debug, Clone, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Announcement {
     /// Identifier for an oracle event.
@@ -44,7 +44,7 @@ pub struct Announcement {
     pub nonce_pks: Vec<XOnlyPublicKey>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "olivia_api::Response")]
 pub struct Attestation {
     pub id: BitMexPriceEventId,

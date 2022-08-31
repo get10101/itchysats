@@ -8,7 +8,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::GetConnectionStats;
 use xtra_productivity::xtra_productivity;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnectionStatus {
     Online,
     Offline,

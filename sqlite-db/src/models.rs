@@ -76,7 +76,7 @@ impl From<OrderId> for model::OrderId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretKey(secp256k1_zkp::SecretKey);
 
 impl fmt::Display for SecretKey {
@@ -109,7 +109,7 @@ impl From<secp256k1_zkp::SecretKey> for SecretKey {
 impl_sqlx_type_display_from_str!(SecretKey);
 
 /// Role in the Cfd
-#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, sqlx::Type)]
 pub enum Role {
     Maker,
     Taker,
@@ -133,7 +133,7 @@ impl From<Role> for model::Role {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicKey(bitcoin::util::key::PublicKey);
 
 impl fmt::Display for PublicKey {
@@ -165,7 +165,7 @@ impl From<bitcoin::util::key::PublicKey> for PublicKey {
 
 impl_sqlx_type_display_from_str!(PublicKey);
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AdaptorSignature(secp256k1_zkp::EcdsaAdaptorSignature);
 
 impl fmt::Display for AdaptorSignature {
@@ -196,7 +196,7 @@ impl From<secp256k1_zkp::EcdsaAdaptorSignature> for AdaptorSignature {
 
 impl_sqlx_type_display_from_str!(AdaptorSignature);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Transaction(bitcoin::Transaction);
 
 impl fmt::Display for Transaction {
@@ -231,7 +231,7 @@ impl From<bitcoin::Transaction> for Transaction {
 impl_sqlx_type_display_from_str!(Transaction);
 
 /// Represents "quantity" or "contract size" in Cfd terms
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd)]
 pub struct Contracts(Decimal);
 
 impl Contracts {
@@ -272,7 +272,7 @@ impl TryFrom<Contracts> for model::Contracts {
 
 impl_sqlx_type_display_from_str!(Contracts);
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
 
 impl From<model::Price> for Price {
@@ -311,7 +311,7 @@ impl FromStr for Price {
 
 impl_sqlx_type_display_from_str!(Price);
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct Leverage(u8);
 
@@ -336,7 +336,7 @@ impl From<Leverage> for model::Leverage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
 pub enum Position {
     Long,
     Short,
@@ -412,7 +412,7 @@ impl From<model::Timestamp> for Timestamp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FundingRate(Decimal);
 
 impl fmt::Display for FundingRate {
@@ -445,7 +445,7 @@ impl From<model::FundingRate> for FundingRate {
 
 impl_sqlx_type_display_from_str!(FundingRate);
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct OpeningFee(Amount);
 
 impl fmt::Display for OpeningFee {
@@ -477,7 +477,7 @@ impl From<model::OpeningFee> for OpeningFee {
 
 impl_sqlx_type_display_from_str!(OpeningFee);
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TxFeeRate(NonZeroU32);
 
 impl TxFeeRate {
@@ -515,7 +515,7 @@ impl From<model::TxFeeRate> for TxFeeRate {
 
 impl_sqlx_type_display_from_str!(TxFeeRate);
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Txid(bitcoin::Txid);
 
 impl Txid {
@@ -553,7 +553,7 @@ impl From<bitcoin::Txid> for Txid {
 
 impl_sqlx_type_display_from_str!(Txid);
 
-#[derive(Debug, Clone, Copy, sqlx::Type, PartialEq)]
+#[derive(Debug, Clone, Copy, sqlx::Type, PartialEq, Eq)]
 #[sqlx(transparent)]
 pub struct Vout(u32);
 
@@ -624,7 +624,7 @@ impl From<Fees> for model::Fees {
 
 impl_sqlx_type_integer!(Fees);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Payout(Amount);
 
 impl Payout {
@@ -868,7 +868,7 @@ impl From<FailedKind> for model::FailedKind {
 
 impl_sqlx_type_display_from_str!(FailedKind);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Settlement {
     Collaborative {
         txid: Txid,
@@ -933,7 +933,7 @@ impl From<Settlement> for model::Settlement {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, sqlx::Type)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, sqlx::Type)]
 pub enum FeeFlow {
     LongPaysShort,
     ShortPaysLong,
@@ -984,7 +984,7 @@ pub fn into_complete_fee_and_flow(
 }
 
 /// Trading pair of the Cfd
-#[derive(Debug, Copy, Clone, PartialEq, sqlx::Type)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, sqlx::Type)]
 pub enum ContractSymbol {
     BtcUsd,
     EthUsd,

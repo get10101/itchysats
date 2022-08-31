@@ -315,7 +315,7 @@ impl Curve {
     ) -> Result<ArrayD<f64>, Error> {
         let from_right = from_right.unwrap_or(true);
 
-        if !self.spline.rational || d < 2 || d > 3 {
+        if !self.spline.rational || !(2..=3).contains(&d) {
             let mut tx = &vec![t.clone().to_owned()][..];
             let res = self.spline.derivative(&mut tx, &[d], &[from_right], true)?;
             return Ok(res);

@@ -121,14 +121,14 @@ impl From<OrderId> for Uuid {
 }
 
 /// Origin of the order
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Origin {
     Ours,
     Theirs,
 }
 
 /// Role in the Cfd
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
     Maker,
     Taker,
@@ -144,7 +144,7 @@ impl From<Origin> for Role {
 }
 
 /// A concrete order created by a maker for a taker
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Offer {
     pub id: OfferId,
 
@@ -253,7 +253,7 @@ impl Offer {
 }
 
 /// Proposed collaborative settlement
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SettlementProposal {
     pub order_id: OrderId,
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_btc")]
@@ -264,7 +264,7 @@ pub struct SettlementProposal {
 }
 
 /// Reasons why we cannot rollover a CFD.
-#[derive(thiserror::Error, Debug, PartialEq, Clone, Copy)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum CannotRollover {
     #[error("Is too recent to auto-rollover")]
     TooRecent,
@@ -281,7 +281,7 @@ pub enum CannotRollover {
 }
 
 /// Reasons why we cannot collab close a CFD
-#[derive(thiserror::Error, Debug, PartialEq, Clone, Copy)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum CannotSettleCollaboratively {
     #[error("The CFD was already force closed")]
     OngoingForceClose,
@@ -293,7 +293,7 @@ pub enum CannotSettleCollaboratively {
     Closed,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdEvent {
     pub timestamp: Timestamp,
     pub id: OrderId,
@@ -315,7 +315,7 @@ impl CfdEvent {
 ///
 /// Unfortunately, despite being a shared type some of the variants
 /// are only relevant for specific roles.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(tag = "name", content = "data")]
 pub enum EventKind {
     ContractSetupStarted,
@@ -489,7 +489,7 @@ impl EventKind {
 /// we apply the event to the aggregate producing a new aggregate (representing the latest state
 /// `version`). To bring a cfd into a certain state version we load all events from the
 /// database and apply them in order (order by version).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cfd {
     version: u32,
 
@@ -1897,7 +1897,7 @@ pub fn calculate_short_liquidation_price(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Cet {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     pub maker_amount: Amount,
@@ -1965,7 +1965,7 @@ impl Cet {
 ///
 /// All contained signatures are the signatures of THE OTHER PARTY.
 /// To use any of these transactions, we need to re-sign them with the correct secret key.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Dlc {
     pub identity: SecretKey,
     pub identity_counterparty: PublicKey,
@@ -2359,7 +2359,7 @@ pub enum SignCetError {
 ///
 /// It also includes the information needed to monitor for the
 /// publication of the revoked commit transaction.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RevokedCommit {
     // To build punish transaction
     pub encsig_ours: EcdsaAdaptorSignature,
@@ -2395,7 +2395,7 @@ pub struct RevokedCommit {
 /// CfdState in the cases when we can't solely rely on state transition
 /// timestamp as it could have occurred for different reasons (like a new
 /// attestation in Open state)
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CollaborativeSettlement {
     pub tx: Transaction,
     pub script_pubkey: Script,

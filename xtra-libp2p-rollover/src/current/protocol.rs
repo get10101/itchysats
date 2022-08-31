@@ -211,7 +211,7 @@ impl From<CfdTransactions> for RolloverMsg1 {
 /// Fee to be paid for the rollover.
 ///
 /// The maker comes up with this amount so that both parties are on the same page
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CompleteFee {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     LongPaysShort(Amount),

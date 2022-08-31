@@ -33,7 +33,7 @@ pub enum Error {
     TooManyAuthHeaders,
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Username(pub &'static str);
 
 impl fmt::Display for Username {
@@ -48,7 +48,7 @@ impl PartialEq<String> for Username {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Password(String);
 
 impl From<[u8; 32]> for Password {

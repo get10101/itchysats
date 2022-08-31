@@ -1263,7 +1263,7 @@ fn into_projection_quotes(latest_quotes: xtra_bitmex_price_feed::LatestQuotes) -
         .collect()
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct MakerOffers {
     pub btcusd_long: Option<CfdOffer>,
     pub btcusd_short: Option<CfdOffer>,
@@ -1271,7 +1271,7 @@ pub struct MakerOffers {
     pub ethusd_short: Option<CfdOffer>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CfdOffer {
     pub id: OfferId,
 
@@ -1319,7 +1319,7 @@ pub struct CfdOffer {
     pub settlement_time_interval_in_secs: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct LeverageDetails {
     pub leverage: Leverage,
     /// Own liquidation price according to position and leverage
@@ -1425,7 +1425,7 @@ impl CfdOffer {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum CfdState {
     PendingSetup,
     ContractSetup,
@@ -1445,7 +1445,7 @@ pub enum CfdState {
     SetupFailed,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct CfdDetails {
     tx_url_list: HashSet<TxUrl>,
 }

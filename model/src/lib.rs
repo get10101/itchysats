@@ -55,7 +55,7 @@ pub use transaction_ext::TransactionExt;
 pub const SETTLEMENT_INTERVAL: time::Duration = time::Duration::hours(24);
 
 /// Represents "quantity" or "contract size" in Cfd terms
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Serialize, Deserialize)]
 pub struct Contracts(Decimal);
 
 impl Contracts {
@@ -90,7 +90,7 @@ impl str::FromStr for Contracts {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Serialize, Deserialize)]
 pub struct Price(Decimal);
 
 impl Price {
@@ -132,7 +132,7 @@ impl str::FromStr for Price {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Leverage(u8);
 
 impl Leverage {
@@ -349,7 +349,7 @@ impl PartialOrd<u8> for Leverage {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Percent(Decimal);
 
 impl Percent {
@@ -487,7 +487,7 @@ impl Timestamp {
 }
 
 /// Funding rate per SETTLEMENT_INTERVAL
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FundingRate(Decimal);
 
 impl FundingRate {
@@ -536,7 +536,7 @@ pub enum ConversionError {
 /// Fee paid for the right to open a CFD.
 ///
 /// This fee is paid by the taker to the maker.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct OpeningFee {
     #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
@@ -582,7 +582,7 @@ impl Default for OpeningFee {
 /// The reason for the existence of this fee is so that the party that
 /// is betting against the market trend is passively rewarded for
 /// keeping the CFD open.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FundingFee {
     #[serde(with = "bdk::bitcoin::util::amount::serde::as_sat")]
     pub fee: Amount,
@@ -667,7 +667,7 @@ impl FundingFee {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CompleteFee {
     #[serde(with = "::bdk::bitcoin::util::amount::serde::as_sat")]
     LongPaysShort(Amount),
@@ -700,7 +700,7 @@ impl CompleteFee {
 /// The balance being positive means we owe this amount to the other party.
 /// The balance being negative means that the other party owes this amount to us.
 /// The counterparty fee-account balance is always the inverse of the balance.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct FeeAccount {
     balance: SignedAmount,
     position: Position,
@@ -823,7 +823,7 @@ impl FeeAccount {
 }
 
 /// Transaction fee in satoshis per vbyte
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TxFeeRate(NonZeroU32);
 
 impl TxFeeRate {
@@ -867,7 +867,7 @@ impl str::FromStr for TxFeeRate {
     }
 }
 /// Contract lot size
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LotSize(u8);
 
 impl LotSize {
@@ -882,7 +882,7 @@ impl From<LotSize> for Contracts {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Vout(u32);
 
 impl Vout {
@@ -933,7 +933,7 @@ impl From<&Fees> for i64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Payout(Amount);
 
 impl Payout {
@@ -991,7 +991,7 @@ pub enum FailedKind {
 /// It is represented using an `enum` rather than a series of optional
 /// fields so that only sane combinations of transactions can be
 /// loaded from the database.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Settlement {
     Collaborative {
         txid: Txid,

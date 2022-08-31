@@ -341,11 +341,7 @@ mod tests {
         db.move_to_failed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
-        let load_from_events = {
-            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
-
-            res
-        };
+        let load_from_events = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
         let load_from_failed = db.load_failed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_err());
@@ -369,11 +365,7 @@ mod tests {
         db.move_to_failed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
-        let load_from_events = {
-            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
-
-            res
-        };
+        let load_from_events = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
         let load_from_failed = db.load_failed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_err());
@@ -398,11 +390,7 @@ mod tests {
         db.move_to_failed_cfds().await.unwrap();
 
         let load_from_open = db.load_open_cfd::<DummyAggregate>(order_id, ()).await;
-        let load_from_events = {
-            let res = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
-
-            res
-        };
+        let load_from_events = load_cfd_events(&mut *conn, order_id, 0).await.unwrap();
         let load_from_failed = db.load_failed_cfd::<DummyAggregate>(order_id, ()).await;
 
         assert!(load_from_open.is_ok());
