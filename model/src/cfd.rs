@@ -2319,6 +2319,41 @@ impl Dlc {
             .collect()
     }
 
+    pub fn liquidation_price(&self, role: Role, position: Position) -> u64 {
+        use Position::*;
+        use Role::*;
+
+        // We use the settlement event because all CFDs are guaranteed to have a settlement event,
+        // whereas they might not have any liquidation events
+        let (_, settlement_cets) = self
+            .cets
+            .iter()
+            .find(|(id, _)| id == &&self.settlement_event_id)
+            .expect("to have settlement CETs");
+
+        // We search for the settlement CET that gives us the least. That one must be the one that
+        // liquidates us, giving us the liquidation interval
+        let liquidation_cet = match role {
+            Maker => settlement_cets
+                .iter()
+                .min_by(|x, y| x.maker_amount.cmp(&y.maker_amount)),
+            Taker => settlement_cets
+                .iter()
+                .min_by(|x, y| x.taker_amount.cmp(&y.taker_amount)),
+        }
+        .expect("to have cets");
+        let liquidation_interval = &liquidation_cet.range;
+
+        match position {
+            // Long liquidation intervals are of the form `(0..=end)`, meaning the long liquidation
+            // price corresponds to the end of the range
+            Long => *liquidation_interval.end(),
+            // Short liquidation intervals are of the form `(start..=max)`, meaning the short
+            // liquidation price corresponds to the start of the range
+            Short => *liquidation_interval.start(),
+        }
+    }
+
     pub fn identity_pk(&self) -> PublicKey {
         PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
             SECP256K1,

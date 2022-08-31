@@ -181,10 +181,10 @@ fn assert_taker_liquidation_price(taker: &mut Taker) {
 fn expected_taker_liquidation_price(symbol: ContractSymbol, taker_position: Position) -> Decimal {
     match (symbol, taker_position) {
         // inverse payout curve
-        (ContractSymbol::BtcUsd, Position::Long) => dec!(33_333.333333333333333333333333),
-        (ContractSymbol::BtcUsd, Position::Short) => dec!(100_000),
+        (ContractSymbol::BtcUsd, Position::Long) => dec!(32_767),
+        (ContractSymbol::BtcUsd, Position::Short) => dec!(99_620),
         // quanto linear payout curve
-        (ContractSymbol::EthUsd, Position::Long) => dec!(750),
+        (ContractSymbol::EthUsd, Position::Long) => dec!(511),
         (ContractSymbol::EthUsd, Position::Short) => dec!(2_250),
     }
 }
@@ -194,8 +194,8 @@ fn expected_taker_liquidation_price(symbol: ContractSymbol, taker_position: Posi
 fn expected_maker_liquidation_price(symbol: ContractSymbol, maker_position: Position) -> Decimal {
     match (symbol, maker_position) {
         // inverse payout curve
-        (ContractSymbol::BtcUsd, Position::Long) => dec!(25_000),
-        (ContractSymbol::BtcUsd, Position::Short) => dec!(21_000_000), // INFINITE
+        (ContractSymbol::BtcUsd, Position::Long) => dec!(16_383),
+        (ContractSymbol::BtcUsd, Position::Short) => dec!(99_751),
         // quanto linear payout curve
         (ContractSymbol::EthUsd, Position::Long) => dec!(1),
         (ContractSymbol::EthUsd, Position::Short) => dec!(3_000),
