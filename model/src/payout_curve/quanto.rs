@@ -409,10 +409,11 @@ pub fn bankruptcy_price_short(initial_price: u64, leverage: Decimal) -> u64 {
 /// depend on the party's position.
 /// Note: the resulting bankruptcy price is rounded to 0 decimal points.
 fn bankruptcy_price_shift(initial_price: u64, leverage: Decimal) -> u64 {
-    (Decimal::from(initial_price) / leverage)
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .expect("Bankruptcy price to fit into u64")
+    let initial_price = Decimal::from(initial_price);
+
+    let shift = initial_price / leverage;
+    let shift = shift.round_dp_with_strategy(0, RoundingStrategy::ToZero);
+    shift.to_u64().expect("Bankruptcy price to fit into u64")
 }
 
 #[cfg(test)]
