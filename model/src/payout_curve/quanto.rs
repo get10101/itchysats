@@ -403,11 +403,10 @@ pub fn bankruptcy_price_short(initial_price: u64, leverage: Decimal) -> u64 {
 }
 
 /// By how much the price of the asset needs to shift from the initial price in order to reach the
-/// bankruptcy price of the party that put up `initial_margin`.
+/// bankruptcy price of the party with the given `leverage`.
 ///
 /// This is an absolute value. How to apply it in order to calculate the bankruptcy price will
 /// depend on the party's position.
-/// Note: the resulting bankruptcy price is rounded to 0 decimal points.
 fn bankruptcy_price_shift(initial_price: u64, leverage: Decimal) -> u64 {
     let initial_price = Decimal::from(initial_price);
 
