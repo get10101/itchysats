@@ -15,6 +15,7 @@ use model::Position;
 use model::Price;
 use model::Timestamp;
 use model::TxFeeRate;
+use nonempty::NonEmpty;
 use serde::Deserialize;
 use serde::Serialize;
 use time::Duration;
@@ -85,10 +86,10 @@ impl From<model::Offer> for Offer {
 }
 
 impl MakerOffers {
-    pub(crate) fn new(offers: Vec<model::Offer>) -> Option<Self> {
+    pub(crate) fn new(offers: NonEmpty<model::Offer>) -> Option<Self> {
         // We can safely assume that the new offers all have the same `tx_fee_rate`, because this
         // field is redundant across offers
-        let tx_fee_rate = offers.first()?.tx_fee_rate;
+        let tx_fee_rate = offers.first().tx_fee_rate;
 
         // This version of the protocol caters to takers that only support BTCUSD CFDs
         let mut offers = offers

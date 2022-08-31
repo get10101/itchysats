@@ -18,6 +18,7 @@ libp2p-tcp = { version = "0.33", default-features = false, features = ["tokio"] 
 maia = "0.2.0"
 maia-core = "0.1.1"
 model = { path = "../model" }
+nonempty = { version = "0.8.0", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
