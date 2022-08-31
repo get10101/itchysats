@@ -11,6 +11,7 @@ asynchronous-codec = { version = "0.6.0", features = ["json"] }
 conquer-once = "0.3.2"
 futures = { version = "0.3", default-features = false }
 model = { path = "../model" }
+nonempty = { version = "0.8.0", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 quiet-spans = { path = "../quiet-spans" }
 serde = { version = "1", features = ["derive"] }

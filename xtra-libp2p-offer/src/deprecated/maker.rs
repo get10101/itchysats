@@ -2,6 +2,7 @@ use crate::deprecated;
 use crate::deprecated::protocol;
 use crate::deprecated::protocol::MakerOffers;
 use async_trait::async_trait;
+use nonempty::NonEmpty;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::spawn_fallible;
@@ -102,10 +103,10 @@ impl Actor {
 
 /// Instruct the `offer::maker::Actor` to broadcast to all
 /// connected peers an update to the current offers.
-pub struct NewOffers(Vec<model::Offer>);
+pub struct NewOffers(NonEmpty<model::Offer>);
 
 impl NewOffers {
-    pub fn new(offers: Vec<model::Offer>) -> Self {
+    pub fn new(offers: NonEmpty<model::Offer>) -> Self {
         Self(offers)
     }
 }

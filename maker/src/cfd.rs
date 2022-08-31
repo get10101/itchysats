@@ -16,6 +16,7 @@ use model::Position;
 use model::Price;
 use model::Timestamp;
 use model::TxFeeRate;
+use nonempty::NonEmpty;
 use std::collections::HashMap;
 use time::Duration;
 use xtra::prelude::MessageChannel;
@@ -264,7 +265,7 @@ impl Actor {
             .send(projection::Update(offers.clone()))
             .await?;
 
-        // 3. Broadcast to all peers via offer actors
+        // 3. Broadcast to all peers via offer actor
         if let Err(e) = self
             .libp2p_offer
             .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(offers.clone()))
@@ -273,21 +274,25 @@ impl Actor {
             tracing::warn!("{e:#}");
         }
 
+        // 4. Broadcast to all peers via deprecated offer actor
         {
+            // Takers on the deprecated version only care (and know how to handle) BTCUSD offers
             let btcusd_offers = offers
                 .into_iter()
                 .filter(|offer| offer.contract_symbol == ContractSymbol::BtcUsd)
-                .collect();
+                .collect::<Vec<_>>();
 
-            if let Err(e) = self
-                .libp2p_offer_deprecated
-                .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(
-                    btcusd_offers,
-                ))
-                .await
-            {
-                tracing::warn!("{e:#}");
-            }
+            if let Some(btcusd_offers) = NonEmpty::from_vec(btcusd_offers) {
+                if let Err(e) = self
+                    .libp2p_offer_deprecated
+                    .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(
+                        btcusd_offers,
+                    ))
+                    .await
+                {
+                    tracing::warn!("{e:#}");
+                }
+            };
         }
 
         Ok(())
