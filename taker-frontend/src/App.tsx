@@ -135,10 +135,10 @@ export const App = () => {
 
     const identityOrUndefined = useLatestEvent<IdentityInfo>(source, "identity");
 
-    const shortOffer = makerOfferToTakerOffer(makerLong);
-    const longOffer = makerOfferToTakerOffer(makerShort);
+    const shortOffer = makerOfferToTakerOffer(makerLong, makerShort?.leverage_details);
+    const longOffer = makerOfferToTakerOffer(makerShort, makerLong?.leverage_details);
 
-    function makerOfferToTakerOffer(offer: MakerOffer | null): Offer {
+    function makerOfferToTakerOffer(offer: MakerOffer | null, leverageDetails: LeverageDetails[] | undefined): Offer {
         if (offer) {
             return {
                 id: offer.id,
@@ -148,7 +148,7 @@ export const App = () => {
                 minQuantity: offer.min_quantity,
                 maxQuantity: offer.max_quantity,
                 lotSize: offer.lot_size,
-                leverageDetails: offer.leverage_details,
+                leverageDetails: leverageDetails || [],
                 contractSymbol: offer.contract_symbol.toUpperCase(),
             };
         }
