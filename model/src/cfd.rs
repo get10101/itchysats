@@ -278,6 +278,8 @@ pub enum CannotRollover {
     InCollaborativeSettlement,
     #[error("Cannot roll over when CFD is already closed")]
     Closed,
+    #[error("Cannot rollover CFD without events")]
+    NoEvents,
 }
 
 /// Reasons why we cannot collab close a CFD
@@ -730,6 +732,10 @@ impl Cfd {
 
         if self.is_in_force_close() {
             return Err(CannotRollover::Committed);
+        }
+
+        if self.version == 0 {
+            return Err(CannotRollover::NoEvents);
         }
 
         // Rollover and collaborative settlement are mutually exclusive, if we are currently
