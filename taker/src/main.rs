@@ -342,7 +342,7 @@ async fn main() -> Result<()> {
                 db.clone(),
                 bitcoin_network,
                 price_feed.clone().into(),
-                Role::Maker,
+                Role::Taker,
                 feed_senders.clone(),
             )
         }
