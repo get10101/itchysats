@@ -151,7 +151,7 @@ pub struct Cfd {
     pub contract_symbol: ContractSymbol,
     pub position: Position,
     #[serde(with = "round_to_two_dp")]
-    pub liquidation_price: Price,
+    pub liquidation_price: Decimal,
 
     #[serde(with = "round_to_two_dp")]
     pub quantity: Contracts,
@@ -1324,7 +1324,7 @@ pub struct LeverageDetails {
     pub leverage: Leverage,
     /// Own liquidation price according to position and leverage
     #[serde(with = "round_to_two_dp")]
-    pub liquidation_price: Price,
+    pub liquidation_price: Decimal,
     /// Margin per lot from the perspective of the role
     ///
     /// Since this is a calculated value that we need in the UI this value is based on the

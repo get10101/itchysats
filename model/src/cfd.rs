@@ -1858,10 +1858,10 @@ pub fn calculate_long_liquidation_price(
     initial_price: Price,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
-) -> Price {
+) -> Decimal {
     match contract_symbol {
         ContractSymbol::BtcUsd => {
-            inverse::calculate_long_liquidation_price(leverage, initial_price)
+            inverse::calculate_long_liquidation_price(leverage, initial_price).into_decimal()
         }
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
@@ -1869,14 +1869,7 @@ pub fn calculate_long_liquidation_price(
             let liquidation_price =
                 quanto::bankruptcy_price_long(initial_price, leverage.as_decimal());
 
-            // The `model::Price` type does not allow non-positive values, but the quanto long
-            // liquidation price can easily be 0. We avoid this problem by defaulting to 1
-            if liquidation_price == 0 {
-                Price::new(Decimal::ONE).expect("one to be valid price")
-            } else {
-                Price::new(Decimal::from(liquidation_price))
-                    .expect("liquidation price to fit into Price")
-            }
+            Decimal::from(liquidation_price)
         }
     }
 }
@@ -1886,10 +1879,10 @@ pub fn calculate_short_liquidation_price(
     initial_price: Price,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
-) -> Price {
+) -> Decimal {
     match contract_symbol {
         ContractSymbol::BtcUsd => {
-            inverse::calculate_short_liquidation_price(leverage, initial_price)
+            inverse::calculate_short_liquidation_price(leverage, initial_price).into_decimal()
         }
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
@@ -1897,8 +1890,7 @@ pub fn calculate_short_liquidation_price(
             let liquidation_price =
                 quanto::bankruptcy_price_short(initial_price, leverage.as_decimal());
 
-            Price::new(Decimal::from(liquidation_price))
-                .expect("liquidation price to fit into Price")
+            Decimal::from(liquidation_price)
         }
     }
 }
