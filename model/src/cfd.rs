@@ -1860,11 +1860,6 @@ pub fn calculate_long_liquidation_price(
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
 
-            // TODO: this liquidation price is potentially not in-line with the _actual_
-            // liquidation price as computed in the payout curve. The problem is we do not have the
-            // fee account available at this place and always compute the liquidation
-            // price based on the initial margin.
-            // Same for short liquidation price a few lines below.
             let liquidation_price =
                 quanto::bankruptcy_price_long(initial_price, leverage.as_decimal());
 

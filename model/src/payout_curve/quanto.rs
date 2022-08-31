@@ -127,12 +127,8 @@ impl Curve {
             _ => {}
         }
 
-        let long_liquidation_interval = self
-            .long_liquidation_interval()
-            .context("Could not calculate long liquidation interval")?;
-        let mut short_liquidation_interval = self
-            .short_liquidation_interval()
-            .context("Could not calculate short liquidation interval")?;
+        let long_liquidation_interval = self.long_liquidation_interval();
+        let mut short_liquidation_interval = self.short_liquidation_interval();
 
         // Under very specific conditions the liquidation intervals can overlap. To avoid this
         // situation we shift the short liquidation interval by 1
@@ -230,55 +226,52 @@ impl Curve {
 
     /// Price interval at which the party going long gets liquidated i.e. their payout amount equals
     /// zero.
-    fn long_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
+    fn long_liquidation_interval(&self) -> RangeInclusive<u64> {
         let initial_margin = self
             .initial_margin_long()
             .to_signed()
-            .context("Could not convert long's initial margin to bitcoin::SignedAmount")?;
-        let effective_initial_margin =
-            initial_margin + self.fee_offset.as_signed_amount(Position::Long);
-        let effective_initial_margin = effective_initial_margin
-            .to_unsigned()
-            .context("Could not convert long's effective initial margin to bitcoin::Amount")?;
+            .expect("long initial margin to fit into bitcoin::SignedAmount");
+        let fee_offset = self.fee_offset.as_signed_amount(Position::Long);
 
-        let effective_leverage = self.effective_leverage(effective_initial_margin)?;
+        let effective_margin = initial_margin + fee_offset;
+        let effective_margin = effective_margin.to_unsigned().unwrap_or_default();
+
+        let effective_leverage = leverage(
+            self.initial_price,
+            self.n_contracts,
+            effective_margin,
+            self.multiplier,
+        )
+        .expect("effective margin to fit into Decimal");
+
         let bankruptcy_price = bankruptcy_price_long(self.initial_price, effective_leverage);
 
-        Ok(0..=bankruptcy_price)
+        0..=bankruptcy_price
     }
 
     /// Price interval at which the party going short gets liquidated i.e. their payout amount
     /// equals zero.
-    fn short_liquidation_interval(&self) -> Result<RangeInclusive<u64>> {
+    fn short_liquidation_interval(&self) -> RangeInclusive<u64> {
         let initial_margin = self
             .initial_margin_short()
             .to_signed()
-            .context("Could not convert short's initial margin to bitcoin::SignedAmount")?;
-        let effective_initial_margin =
-            initial_margin + self.fee_offset.as_signed_amount(Position::Short);
-        let effective_initial_margin = effective_initial_margin
-            .to_unsigned()
-            .context("Could not convert short's effective initial margin to bitcoin::Amount")?;
+            .expect("short initial margin to fit into bitcoin::SignedAmount");
+        let fee_offset = self.fee_offset.as_signed_amount(Position::Short);
 
-        let effective_leverage = self.effective_leverage(effective_initial_margin)?;
+        let effective_margin = initial_margin + fee_offset;
+        let effective_margin = effective_margin.to_unsigned().unwrap_or_default();
+
+        let effective_leverage = leverage(
+            self.initial_price,
+            self.n_contracts,
+            effective_margin,
+            self.multiplier,
+        )
+        .expect("effective margin to fit into Decimal");
+
         let bankruptcy_price = bankruptcy_price_short(self.initial_price, effective_leverage);
 
-        Ok(bankruptcy_price..=maia_core::interval::MAX_PRICE_DEC)
-    }
-
-    /// Computes effective leverage based on updated margin
-    ///
-    /// For calculating the liquidation price we need to take into account the potentially updated
-    /// margin (reduced or increased due to fee account). The formula below was derived from the
-    /// formula to compute the initial margin in the first place: `margin=(n_contracts *
-    /// initial_price * multiplier) / leverage` --> `effective_leverage=(n_contracts *
-    /// initial_price * multiplier) / margin`
-    fn effective_leverage(&self, margin: Amount) -> Result<Decimal> {
-        let effective_leverage =
-            (Decimal::from(self.n_contracts) * Decimal::from(self.initial_price) * self.multiplier)
-                / Decimal::from_f64(margin.as_btc())
-                    .context("Could not convert initial margin to decimal")?;
-        Ok(effective_leverage)
+        bankruptcy_price..=maia_core::interval::MAX_PRICE_DEC
     }
 
     /// Compute the initial BTC margin that the party going long has to put up.
@@ -341,7 +334,7 @@ pub fn calculate_payout(
         .context("Could not convert initial margin to bitcoin::SignedAmount")?;
 
     let payout = initial_margin + fee_offset + pnl;
-    let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
+    let payout = payout.to_unsigned().unwrap_or_default();
 
     Ok(payout)
 }
@@ -403,16 +396,30 @@ pub fn bankruptcy_price_short(initial_price: u64, leverage: Decimal) -> u64 {
 }
 
 /// By how much the price of the asset needs to shift from the initial price in order to reach the
-/// bankruptcy price of the party that put up `initial_margin`.
+/// bankruptcy price of the party with the given `leverage`.
 ///
 /// This is an absolute value. How to apply it in order to calculate the bankruptcy price will
 /// depend on the party's position.
-/// Note: the resulting bankruptcy price is rounded to 0 decimal points.
 fn bankruptcy_price_shift(initial_price: u64, leverage: Decimal) -> u64 {
-    (Decimal::from(initial_price) / leverage)
-        .round_dp_with_strategy(0, RoundingStrategy::ToZero)
-        .to_u64()
-        .expect("Bankruptcy price to fit into u64")
+    let initial_price = Decimal::from(initial_price);
+
+    let shift = initial_price / leverage;
+    let shift = shift.round_dp_with_strategy(0, RoundingStrategy::ToZero);
+    shift.to_u64().expect("Bankruptcy price to fit into u64")
+}
+
+fn leverage(
+    initial_price: u64,
+    n_contracts: u64,
+    margin: Amount,
+    multiplier: Decimal,
+) -> Result<Decimal> {
+    let initial_price = Decimal::from(initial_price);
+    let n_contracts = Decimal::from(n_contracts);
+    let margin =
+        Decimal::from_f64(margin.as_btc()).context("Could not convert margin to Decimal")?;
+
+    Ok((n_contracts * initial_price * multiplier) / margin)
 }
 
 #[cfg(test)]
@@ -686,8 +693,8 @@ mod unit_tests {
             CompleteFee::None,
         );
 
-        let long_liquidation_interval = curve.long_liquidation_interval().unwrap();
-        let short_liquidation_interval = curve.short_liquidation_interval().unwrap();
+        let long_liquidation_interval = curve.long_liquidation_interval();
+        let short_liquidation_interval = curve.short_liquidation_interval();
 
         assert_eq!(long_liquidation_interval, 0..=0);
         assert_eq!(short_liquidation_interval, 12500..=1048575);
