@@ -321,7 +321,7 @@ function Quantity({ min, max, onChange, quantity, lotSize, isLong }: QuantityPro
     return (
         <FormControl id="quantity">
             <Center>
-                <FormLabel>BTC/USD Contracts</FormLabel>
+                <FormLabel>Contracts</FormLabel>
             </Center>
             <InputGroup id={isLong ? "longQuantityInput" : "shortQuantityInput"}>
                 <NumberInput
