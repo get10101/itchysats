@@ -334,7 +334,7 @@ pub fn calculate_payout(
         .context("Could not convert initial margin to bitcoin::SignedAmount")?;
 
     let payout = initial_margin + fee_offset + pnl;
-    let payout = payout.to_unsigned().unwrap_or(Amount::ZERO);
+    let payout = payout.to_unsigned().unwrap_or_default();
 
     Ok(payout)
 }
