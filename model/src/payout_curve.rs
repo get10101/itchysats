@@ -109,7 +109,7 @@ impl Payouts {
         n_payouts: usize,
         fee: CompleteFee,
     ) -> Result<Self> {
-        let mut payouts = payout_curve::inverse::calculate(
+        let payouts = payout_curve::inverse::calculate(
             price,
             quantity,
             leverage_long,
@@ -117,15 +117,6 @@ impl Payouts {
             n_payouts,
             fee,
         )?;
-
-        // Overwrite the short liquidation upper bound with the maximum price that Olivia can attest
-        // to
-        {
-            let n_payouts = payouts.len() - 1;
-            let short_liquidation = payouts.get_mut(n_payouts).expect("several payouts");
-            short_liquidation.range =
-                *short_liquidation.range.start()..=maia_core::interval::MAX_PRICE_DEC;
-        }
 
         let settlement: Vec<_> = match (position, role) {
             (Position::Long, Role::Taker) | (Position::Short, Role::Maker) => payouts
