@@ -99,7 +99,7 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - name: Compile tests before running
-        run: cargo test --workspace --no-run
+        run: cargo test --release --workspace --no-run
       - name: Test execution
         run: cargo nextest run --profile ci
 
