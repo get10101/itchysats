@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2022-08-31
+
 ### Added
 
 - New `/itchysats/offer/2.0.0` protocol, which supports any contract symbol.
@@ -311,7 +313,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.5.5...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/itchysats/itchysats/compare/0.5.5...0.6.0
 [0.5.5]: https://github.com/itchysats/itchysats/compare/0.5.4...0.5.5
 [0.5.4]: https://github.com/itchysats/itchysats/compare/0.5.3...0.5.4
 [0.5.3]: https://github.com/itchysats/itchysats/compare/0.5.2...0.5.3
