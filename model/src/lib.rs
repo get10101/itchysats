@@ -492,11 +492,6 @@ pub struct FundingRate(Decimal);
 
 impl FundingRate {
     pub fn new(rate: Decimal) -> Result<Self> {
-        ensure!(
-            rate.abs() <= Decimal::ONE,
-            "Funding rate can't be higher than 100%"
-        );
-
         Ok(Self(rate))
     }
 
