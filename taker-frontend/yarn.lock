@@ -3405,10 +3405,10 @@ caniuse-lite@^1.0.30001332:
   resolved "https://registry.yarnpkg.com/caniuse-lite/-/caniuse-lite-1.0.30001335.tgz#899254a0b70579e5a957c32dced79f0727c61f2a"
   integrity sha512-ddP1Tgm7z2iIxu6QTtbZUv6HJxSaV/PZeSrWFZtbY4JZ69tOeNhBCl3HyRQgeNZKE5AOn1kpV7fhljigy0Ty3w==
 
-chakra-react-select@^4.1.4:
-  version "4.1.4"
-  resolved "https://registry.yarnpkg.com/chakra-react-select/-/chakra-react-select-4.1.4.tgz#27ad5cd2953dd93a7fb594454e73bd386304ebb3"
-  integrity sha512-zhLIGWxVZWYZv/EOxzrnVfIT+JmNdBgFEbRYR2H7I7ViLcR434KRV5Wz9zZByUmhVxID34WMOInDZYeLXAMkNg==
+chakra-react-select@^4.1.5:
+  version "4.1.5"
+  resolved "https://registry.yarnpkg.com/chakra-react-select/-/chakra-react-select-4.1.5.tgz#ef99c9ddb9b2dbf65383e11fc88d03be4472b19a"
+  integrity sha512-a1HarCQ7aNpJ0T/AFIvvnlXA5iWGLYfeXE07QSga11YGfzbA49Jyx7OQwnhQKthT/jIgmhhbez0gsCrvlgM7Gw==
   dependencies:
     react-select "^5.4.0"
 
