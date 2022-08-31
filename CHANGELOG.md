@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Active support for the `ETHUSD` trading pair allowing users to open positions for both `BTCUSD` and `ETHUSD`
 - New `/itchysats/offer/2.0.0` protocol, which supports any contract symbol.
 - New dynamic route for maker `PUT /<contract_symbol>/offer/`.
   This allows the creation of offers with `<contract_symbol>`.
