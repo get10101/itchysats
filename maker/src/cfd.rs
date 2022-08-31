@@ -273,12 +273,21 @@ impl Actor {
             tracing::warn!("{e:#}");
         }
 
-        if let Err(e) = self
-            .libp2p_offer_deprecated
-            .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(offers))
-            .await
         {
-            tracing::warn!("{e:#}");
+            let btcusd_offers = offers
+                .into_iter()
+                .filter(|offer| offer.contract_symbol == ContractSymbol::BtcUsd)
+                .collect();
+
+            if let Err(e) = self
+                .libp2p_offer_deprecated
+                .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(
+                    btcusd_offers,
+                ))
+                .await
+            {
+                tracing::warn!("{e:#}");
+            }
         }
 
         Ok(())
