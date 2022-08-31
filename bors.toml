@@ -27,7 +27,6 @@ status = [
   "frontend (maker)",
   "frontend (taker)",
   "test (ubuntu-latest)",
-  "test (macos-12)",
   "smoke_test (ubuntu-latest)",
   "smoke_test (macos-12)",
   "daemons_arm_build",
