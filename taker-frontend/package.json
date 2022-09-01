@@ -13,7 +13,7 @@
     "@chakra-ui/icons": "^2.0.9",
     "@chakra-ui/react": "^2.2.9",
     "@emotion/react": "^11.10.4",
-    "@emotion/styled": "^11",
+    "@emotion/styled": "^11.10.4",
     "@feedback-fish/react": "^1.2.1",
     "@react-hookz/web": "^15.0.1",
     "@testing-library/jest-dom": "^5.16.5",
