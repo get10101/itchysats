@@ -76,16 +76,18 @@ impl Actor {
         let daemon_version = peer_info.daemon_version.clone();
         let environment = peer_info.environment;
 
-        NUM_LIBP2P_CONNECTIONS_GAUGE
-            .with(&HashMap::from([
-                (WIRE_VERSION_LABEL, wire_version.as_str()),
-                (DAEMON_VERSION_LABEL, daemon_version.as_str()),
-                (ENVIRONMENT_LABEL, environment.to_string().as_str()),
-            ]))
-            .inc();
-
         tracing::info!(%peer_id, %daemon_version, %environment, %wire_version, "New identify message received");
-        self.peer_infos.insert(peer_id, peer_info.clone());
+        if self.peer_infos.insert(peer_id, peer_info.clone()).is_none() {
+            // Only increment if we don't know the peer info already because sometimes we are not
+            // notified about ConnectionDropped
+            NUM_LIBP2P_CONNECTIONS_GAUGE
+                .with(&HashMap::from([
+                    (WIRE_VERSION_LABEL, wire_version.as_str()),
+                    (DAEMON_VERSION_LABEL, daemon_version.as_str()),
+                    (ENVIRONMENT_LABEL, environment.to_string().as_str()),
+                ]))
+                .inc();
+        }
 
         if let Some(peer_info_channel) = &self.peer_info_channel {
             if let Err(e) = peer_info_channel.send(Some(peer_info)) {
