@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.1] - 2022-09-01
 
+### Fixed
+
+- An issue in the taker UI where tooltips where not properly displayed.
+- An issue where the taker logs were spammed with unnecessary error message on auto-rollover.
+- An issue where metrics on connected peers where not reported correctly.
+
 ## [0.6.0] - 2022-08-31
 
 ### Added
