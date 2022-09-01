@@ -7,20 +7,20 @@
     "serve": "vite preview",
     "eslint": "eslint src/**/*.{ts,tsx}",
     "tsc": "tsc",
-    "test": "vite-jest"
+    "test": "jest"
   },
   "dependencies": {
     "@chakra-ui/icons": "^2.0.9",
-    "@chakra-ui/react": "^2.3.1",
+    "@chakra-ui/react": "^2.2.9",
     "@emotion/react": "^11.10.4",
-    "@emotion/styled": "^11",
+    "@emotion/styled": "^11.10.4",
     "@feedback-fish/react": "^1.2.1",
     "@react-hookz/web": "^15.0.1",
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.3.0",
     "@testing-library/user-event": "^14.4.3",
     "@types/eslint": "^8.4.6",
-    "@types/jest": "^27.5.0",
+    "@types/jest": "^29.0.0",
     "@types/node": "^18.7.14",
     "@types/react": "^18.0.18",
     "@types/react-dom": "^18.0.6",
@@ -32,8 +32,8 @@
     "dayjs": "^1.11.4",
     "eslint": "^8.23.0",
     "eslint-config-react-app": "^7.0.1",
-    "framer-motion": "^7",
-    "jest": "^27.5.1",
+    "framer-motion": "^7.2.1",
+    "jest": "^29.0.1",
     "npm-package-json-lint": "^6.3.0",
     "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
@@ -43,9 +43,10 @@
     "react-use-websocket": "^4.2.0",
     "semver": "^7.3.7",
     "typescript": "^4.8.2",
-    "vite": "^2.9.14",
-    "vite-jest": "^0.1.4",
-    "web-vitals": "^3.0.0"
+    "vite": "^3.0.9",
+    "web-vitals": "^3.0.0",
+    "jest-environment-jsdom": "^29.0.1",
+    "ts-jest": "^28.0.8"
   },
   "dependenciesComments": {
     "about": "https://stackoverflow.com/a/45815391/2489334"
