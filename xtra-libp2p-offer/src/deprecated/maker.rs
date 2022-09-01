@@ -29,6 +29,7 @@ impl Actor {
         }
     }
 
+    #[tracing::instrument(name = "Broadcast offers to taker", skip(self, ctx))]
     async fn send_offers(&self, peer_id: PeerId, ctx: &mut xtra::Context<Self>) {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
@@ -73,11 +74,7 @@ impl Actor {
         let quiet = quiet_spans::sometimes_quiet_children();
         for peer_id in self.connected_peers.iter().copied() {
             self.send_offers(peer_id, ctx)
-                .instrument(
-                    quiet.in_scope(|| {
-                        tracing::debug_span!("Broadcast offers to taker").or_current()
-                    }),
-                )
+                .instrument(quiet.clone())
                 .await
         }
     }
