@@ -259,38 +259,49 @@ where
         let (identify_dialer_supervisor, identify_dialer_actor) =
             Supervisor::new(move || identify::dialer::Actor::new(endpoint_addr.clone()));
 
-        let endpoint = Endpoint::new(
-            Box::new(TokioTcpConfig::new),
-            identity.libp2p,
-            ENDPOINT_CONNECTION_TIMEOUT,
-            MAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
-                pong_address.clone(),
-                identify_listener_actor,
-                order,
-                rollover_addr.clone(),
-                rollover_deprecated_addr.clone(),
-                libp2p_collab_settlement_addr,
-            ),
-            endpoint::Subscribers::new(
-                vec![
-                    ping_address.clone().into(),
-                    maker_offer_address.clone().into(),
-                    maker_offer_address_deprecated.clone().into(),
-                    identify_dialer_actor.clone().into(),
-                ],
-                vec![
-                    ping_address.into(),
-                    maker_offer_address.into(),
-                    maker_offer_address_deprecated.into(),
-                    identify_dialer_actor.into(),
-                ],
-                vec![],
-                vec![listener_actor.into()],
-            ),
+        let endpoint_supervisor = Supervisor::new_with_context(
+            {
+                let key_pair = identity.libp2p;
+                let rollover_addr = rollover_addr.clone();
+                let rollover_deprecated_addr = rollover_deprecated_addr.clone();
+                let pong_address = pong_address.clone();
+
+                move || {
+                    Endpoint::new(
+                        Box::new(TokioTcpConfig::new),
+                        key_pair.clone(),
+                        ENDPOINT_CONNECTION_TIMEOUT,
+                        MAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
+                            pong_address.clone(),
+                            identify_listener_actor.clone(),
+                            order.clone(),
+                            rollover_addr.clone(),
+                            rollover_deprecated_addr.clone(),
+                            libp2p_collab_settlement_addr.clone(),
+                        ),
+                        endpoint::Subscribers::new(
+                            vec![
+                                ping_address.clone().into(),
+                                maker_offer_address.clone().into(),
+                                maker_offer_address_deprecated.clone().into(),
+                                identify_dialer_actor.clone().into(),
+                            ],
+                            vec![
+                                ping_address.clone().into(),
+                                maker_offer_address.clone().into(),
+                                maker_offer_address_deprecated.clone().into(),
+                                identify_dialer_actor.clone().into(),
+                            ],
+                            vec![],
+                            vec![listener_actor.clone().into()],
+                        ),
+                    )
+                }
+            },
+            endpoint_context,
         );
 
-        tasks.add(endpoint_context.run(endpoint));
-
+        tasks.add(endpoint_supervisor.run_log_summary());
         tasks.add(listener_supervisor.run_log_summary());
         tasks.add(ping_supervisor.run_log_summary());
         tasks.add(identify_listener_supervisor.run_log_summary());
