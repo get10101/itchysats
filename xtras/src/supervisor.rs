@@ -101,6 +101,27 @@ where
 
         (supervisor, address)
     }
+
+    /// Construct a new supervisor for an [`xtra::Actor`] with an [`xtra::Actor::Stop`] value of
+    /// `()`.
+    ///
+    /// The actor's [`xtra::Context`] is passed in as an argument. This is so that the actor's
+    /// [`xtra::Address`] can be known before the [`Supervisor`] is constructed.
+    ///
+    /// The actor will always be restarted if it stops. If you don't want this behaviour, don't use
+    /// a supervisor. If you want more fine-granular control in which circumstances the actor
+    /// should be restarted, set [`xtra::Actor::Stop`] to a more descriptive value and use
+    /// [`with_policy`](#method.with_policy).
+    pub fn new_with_context(ctor: impl (Fn() -> T) + Send + 'static, context: Context<T>) -> Self {
+        let supervisor = Self {
+            context,
+            ctor: Box::new(ctor),
+            restart_policy: always_restart(),
+            metrics: Metrics::default(),
+        };
+
+        supervisor
+    }
 }
 
 impl<T, R, S> Supervisor<T, R>
@@ -128,6 +149,27 @@ where
         };
 
         (supervisor, address)
+    }
+
+    /// Construct a new supervisor.
+    ///
+    /// The actor's [`xtra::Context`] is passed in as an argument. This is so that the actor's
+    /// [`xtra::Address`] can be known before the [`Supervisor`] is constructed.
+    ///
+    /// The supervisor needs to know two things:
+    /// 1. How to construct an instance of the actor.
+    /// 2. When to construct an instance of the actor.
+    pub fn with_policy_and_context(
+        ctor: impl (Fn() -> T) + Send + 'static,
+        restart_policy: AsyncClosure<R>,
+        context: Context<T>,
+    ) -> Self {
+        Self {
+            context,
+            ctor: Box::new(ctor),
+            restart_policy,
+            metrics: Metrics::default(),
+        }
     }
 
     pub async fn run_log_summary(self) {
