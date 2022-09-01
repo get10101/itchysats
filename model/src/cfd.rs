@@ -652,12 +652,6 @@ impl Cfd {
         )
     }
 
-    fn expiry_timestamp(&self) -> Option<OffsetDateTime> {
-        self.dlc
-            .as_ref()
-            .map(|dlc| dlc.settlement_event_id.timestamp())
-    }
-
     fn margin(&self) -> Amount {
         match self.position {
             Position::Long => calculate_margin(
@@ -704,15 +698,15 @@ impl Cfd {
         &self,
         now: OffsetDateTime,
     ) -> Result<(Txid, BitMexPriceEventId), CannotRollover> {
-        let expiry_timestamp = self.expiry_timestamp().ok_or(CannotRollover::NoDlc)?;
+        self.can_rollover()?;
+
+        let dlc = self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?;
+
+        let expiry_timestamp = dlc.settlement_event_id.timestamp();
         let time_until_expiry = expiry_timestamp - now;
         if time_until_expiry > SETTLEMENT_INTERVAL - Duration::HOUR {
             return Err(CannotRollover::TooRecent);
         }
-
-        self.can_rollover()?;
-
-        let dlc = self.dlc.as_ref().ok_or(CannotRollover::NoDlc)?;
 
         Ok((dlc.commit.0.txid(), dlc.settlement_event_id))
     }
