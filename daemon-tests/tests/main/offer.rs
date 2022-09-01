@@ -1,5 +1,6 @@
 use daemon::projection::CfdOffer;
 use daemon::projection::MakerOffers;
+use daemon_tests::expected_taker_liquidation_price;
 use daemon_tests::flow::ensure_null_next_offers;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::start_both;
@@ -8,6 +9,7 @@ use daemon_tests::OfferParamsBuilder;
 use daemon_tests::Taker;
 use model::ContractSymbol;
 use model::Leverage;
+use model::Position;
 use otel_tests::otel_test;
 
 #[otel_test]
@@ -48,7 +50,35 @@ async fn test_offer(maker: &mut Maker, taker: &mut Taker, symbol: ContractSymbol
         next_maker_offers(maker.offers_feed(), taker.offers_feed(), &symbol)
             .await
             .unwrap();
-    assert_eq_offers(published, received);
+    assert_eq_offers(published.clone(), received);
+    verify_offer_values(published, symbol);
+}
+
+/// Sanity-check values published on the feed
+fn verify_offer_values(offers: MakerOffers, symbol: ContractSymbol) {
+    let long_offer = match symbol {
+        ContractSymbol::BtcUsd => offers.btcusd_long.unwrap(),
+        ContractSymbol::EthUsd => offers.ethusd_long.unwrap(),
+    };
+    assert_eq!(long_offer.position_maker, Position::Long);
+    let leverage_details = long_offer.leverage_details.first().unwrap();
+    assert_eq!(leverage_details.leverage, Leverage::TWO);
+    assert_eq!(
+        leverage_details.liquidation_price,
+        expected_taker_liquidation_price(symbol, long_offer.position_maker)
+    );
+
+    let short_offer = match symbol {
+        ContractSymbol::BtcUsd => offers.btcusd_short.unwrap(),
+        ContractSymbol::EthUsd => offers.ethusd_short.unwrap(),
+    };
+    assert_eq!(short_offer.position_maker, Position::Short);
+    let leverage_details = short_offer.leverage_details.first().unwrap();
+    assert_eq!(leverage_details.leverage, Leverage::TWO);
+    assert_eq!(
+        leverage_details.liquidation_price,
+        expected_taker_liquidation_price(symbol, short_offer.position_maker)
+    );
 }
 
 async fn taker_receives_offer_from_maker_on_publication(contract_symbol: ContractSymbol) {
