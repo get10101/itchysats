@@ -6,6 +6,11 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 
+#[derive(serde::Deserialize)]
+struct Config {
+    directives: Vec<String>,
+}
+
 #[doc(hidden)]
 pub mod __reexport {
     pub use futures;
@@ -59,20 +64,25 @@ pub fn init_tracing(module: &'static str) {
             None
         };
 
-        let filter = EnvFilter::from_default_env()
+        let global_directive = LevelFilter::WARN.into();
+        let contents = std::fs::read_to_string("otel-tests.toml").unwrap_or_else(|_| {
+            panic!(
+                "File 'otel-tests.json' should be located in: {:?}",
+                std::env::current_dir().unwrap()
+            )
+        });
+        let config: Config =
+            toml::from_str(&contents).expect("to be able to parse Config file from toml");
+
+        let mut filter = EnvFilter::from_default_env()
             // apply warning level globally
-            .add_directive(LevelFilter::WARN.into())
+            .add_directive(global_directive)
             // log traces from test itself
-            .add_directive(format!("{module}=debug").parse().unwrap())
-            .add_directive("wire=trace".parse().unwrap())
-            .add_directive("taker=debug".parse().unwrap())
-            .add_directive("maker=debug".parse().unwrap())
-            .add_directive("daemon=debug".parse().unwrap())
-            .add_directive("model=info".parse().unwrap())
-            .add_directive("xtra_libp2p=debug".parse().unwrap())
-            .add_directive("xtra_libp2p_offer=debug".parse().unwrap())
-            .add_directive("xtra_libp2p_ping=debug".parse().unwrap())
-            .add_directive("rocket=warn".parse().unwrap());
+            .add_directive(format!("{module}=debug").parse().unwrap());
+
+        for directive in config.directives.iter() {
+            filter = filter.add_directive(directive.parse().unwrap());
+        }
 
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_test_writer()
