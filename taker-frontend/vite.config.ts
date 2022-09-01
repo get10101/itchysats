@@ -16,6 +16,7 @@ export default defineConfig({
         outDir: `dist/taker`,
     },
     server: {
+        port: 3000,
         proxy: {
             "/api": "http://localhost:8000",
             "/alive": "http://localhost:8000",

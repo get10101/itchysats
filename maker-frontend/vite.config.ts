@@ -16,6 +16,7 @@ export default defineConfig({
         outDir: `dist/maker`,
     },
     server: {
+        port: 3001,
         proxy: {
             "/api": `http://localhost:8001`,
             "/alive": `http://localhost:8001`,
