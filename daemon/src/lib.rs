@@ -296,34 +296,45 @@ where
             Supervisor::new(move || ping::Actor::new(endpoint_addr.clone(), PING_INTERVAL));
         tasks.add(supervisor.run_log_summary());
 
-        let endpoint = Endpoint::new(
-            Box::new(TokioTcpConfig::new),
-            identity.libp2p,
-            ENDPOINT_CONNECTION_TIMEOUT,
-            TAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
-                pong_address.clone(),
-                identify_listener_actor,
-                libp2p_offer_addr,
-            ),
-            endpoint::Subscribers::new(
-                vec![
-                    online_status_actor.clone().into(),
-                    ping_actor.clone().into(),
-                    identify_dialer_actor.clone().into(),
-                ],
-                vec![
-                    dialer_actor.into(),
-                    ping_actor.into(),
-                    online_status_actor.clone().into(),
-                    identify_dialer_actor.clone().into(),
-                ],
-                vec![],
-                vec![],
-            ),
+        let endpoint_supervisor = Supervisor::new_with_context(
+            {
+                let key_pair = identity.libp2p;
+                let pong_address = pong_address.clone();
+                let online_status_actor = online_status_actor.clone();
+                let identify_dialer_actor = identify_dialer_actor.clone();
+
+                move || {
+                    Endpoint::new(
+                        Box::new(TokioTcpConfig::new),
+                        key_pair.clone(),
+                        ENDPOINT_CONNECTION_TIMEOUT,
+                        TAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
+                            pong_address.clone(),
+                            identify_listener_actor.clone(),
+                            libp2p_offer_addr.clone(),
+                        ),
+                        endpoint::Subscribers::new(
+                            vec![
+                                online_status_actor.clone().into(),
+                                ping_actor.clone().into(),
+                                identify_dialer_actor.clone().into(),
+                            ],
+                            vec![
+                                dialer_actor.clone().into(),
+                                ping_actor.clone().into(),
+                                online_status_actor.clone().into(),
+                                identify_dialer_actor.clone().into(),
+                            ],
+                            vec![],
+                            vec![],
+                        ),
+                    )
+                }
+            },
+            endpoint_context,
         );
 
-        tasks.add(endpoint_context.run(endpoint));
-
+        tasks.add(endpoint_supervisor.run_log_summary());
         tasks.add(dialer_supervisor.run_log_summary());
         tasks.add(offers_supervisor.run_log_summary());
         tasks.add(identify_listener_supervisor.run_log_summary());
