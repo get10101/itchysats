@@ -94,12 +94,7 @@ mod tests {
             id.clone(),
             Duration::from_secs(10),
             [(PROTOCOL, pong_address.into())],
-            Subscribers::new(
-                vec![ping_address.clone().into()],
-                vec![ping_address.clone().into()],
-                vec![],
-                vec![],
-            ),
+            Subscribers::new(vec![ping_address.clone().into()], vec![], vec![], vec![]),
         );
 
         #[allow(clippy::disallowed_methods)]

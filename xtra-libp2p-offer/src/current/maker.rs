@@ -14,6 +14,7 @@ use xtra_libp2p::Endpoint;
 use xtra_libp2p::GetConnectionStats;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncNext;
 
 pub struct Actor {
     endpoint: xtra::Address<Endpoint>,
@@ -50,20 +51,34 @@ impl Actor {
             anyhow::Ok(())
         };
 
-        let err_handler = move |e: anyhow::Error| async move {
-            if let Some(xtra_libp2p::Error::NegotiationFailed(
-                xtra_libp2p::NegotiationError::Failed,
-            )) = e.downcast_ref::<xtra_libp2p::Error>()
-            {
-                // It's normal to disagree on the protocols now that we broadcast on both versions
-                // to _all_ our peers
-            } else {
-                tracing::warn!(%peer_id, "Failed to send offers: {e:#}")
+        let this = ctx.address().expect("self to be alive");
+        let err_handler = {
+            let this = this.clone();
+            move |e: anyhow::Error| async move {
+                match e.downcast_ref::<xtra_libp2p::Error>() {
+                    Some(xtra_libp2p::Error::NegotiationFailed(
+                        xtra_libp2p::NegotiationError::Failed,
+                    )) => {
+                        // It's normal to disagree on the protocols now that we broadcast on both
+                        // versions to _all_ our peers
+                    }
+                    Some(xtra_libp2p::Error::NoConnection(peer_id)) => {
+                        this.send_async_next(NoConnection(*peer_id)).await;
+                    }
+                    _ => {
+                        tracing::warn!(%peer_id, "Failed to send offers: {e:#}")
+                    }
+                }
             }
         };
 
-        let this = ctx.address().expect("self to be alive");
         spawn_fallible(&this, task.instrument(span), err_handler);
+    }
+
+    fn remove_peer(&mut self, peer_id: PeerId) {
+        if self.connected_peers.remove(&peer_id) {
+            tracing::trace!(%peer_id, "Removed dropped connection");
+        }
     }
 }
 
@@ -102,9 +117,8 @@ impl Actor {
             .await;
     }
 
-    async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
-        tracing::trace!("Remove dropped connection: {:?}", msg.peer_id);
-        self.connected_peers.remove(&msg.peer_id);
+    async fn handle_no_connection(&mut self, msg: NoConnection) {
+        self.remove_peer(msg.0);
     }
 }
 
@@ -163,3 +177,5 @@ impl xtra::Actor for Actor {
 
     async fn stopped(self) -> Self::Stop {}
 }
+
+struct NoConnection(PeerId);

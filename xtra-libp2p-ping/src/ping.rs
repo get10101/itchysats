@@ -51,6 +51,12 @@ impl Actor {
             latencies: HashMap::default(),
         }
     }
+
+    fn remove_peer(&mut self, peer_id: PeerId) {
+        if self.connected_peers.remove(&peer_id) {
+            tracing::trace!(%peer_id, "Removed dropped connection");
+        }
+    }
 }
 
 #[async_trait]
@@ -127,8 +133,16 @@ impl Actor {
                 }
             };
 
-            let err_handler = move |e| async move {
-                tracing::warn!(%peer_id, "Outbound ping protocol failed: {e:#}")
+            let err_handler = {
+                let this = this.clone();
+                move |e: anyhow::Error| async move {
+                    match e.downcast_ref::<xtra_libp2p::Error>() {
+                        Some(xtra_libp2p::Error::NoConnection(peer_id)) => {
+                            this.send_async_next(NoConnection(*peer_id)).await;
+                        }
+                        _ => tracing::warn!(%peer_id, "Outbound ping protocol failed: {e:#}"),
+                    }
+                }
             };
 
             spawn_fallible(
@@ -168,11 +182,12 @@ impl Actor {
         self.connected_peers.insert(msg.peer_id);
     }
 
-    async fn handle_connection_dropped(&mut self, msg: endpoint::ConnectionDropped) {
-        tracing::trace!("Remove dropped connection from ping: {:?}", msg.peer_id);
-        self.connected_peers.remove(&msg.peer_id);
+    async fn handle_no_connection(&mut self, msg: NoConnection) {
+        self.remove_peer(msg.0);
     }
 }
+
+struct NoConnection(PeerId);
 
 /// A histogram tracking the latency to all our connected peers.
 ///

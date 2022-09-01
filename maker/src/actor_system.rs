@@ -286,12 +286,7 @@ where
                                 maker_offer_address_deprecated.clone().into(),
                                 identify_dialer_actor.clone().into(),
                             ],
-                            vec![
-                                ping_address.clone().into(),
-                                maker_offer_address.clone().into(),
-                                maker_offer_address_deprecated.clone().into(),
-                                identify_dialer_actor.clone().into(),
-                            ],
+                            vec![identify_dialer_actor.clone().into()],
                             vec![],
                             vec![listener_actor.clone().into()],
                         ),

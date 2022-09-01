@@ -164,7 +164,7 @@ mod tests {
             [],
             Subscribers::new(
                 vec![offer_maker_addr.clone().into()],
-                vec![offer_maker_addr.clone().into()],
+                vec![],
                 vec![],
                 vec![],
             ),

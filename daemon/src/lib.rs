@@ -321,7 +321,6 @@ where
                             ],
                             vec![
                                 dialer_actor.clone().into(),
-                                ping_actor.clone().into(),
                                 online_status_actor.clone().into(),
                                 identify_dialer_actor.clone().into(),
                             ],
