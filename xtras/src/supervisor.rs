@@ -18,6 +18,7 @@ pub struct Supervisor<T, R> {
     ctor: Box<dyn Fn() -> T + Send + 'static>,
     restart_policy: AsyncClosure<R>,
     metrics: Metrics,
+    _actor: Address<T>, // kept around to ensure that the supervised actor stays alive
 }
 
 type AsyncClosure<R> = Box<
@@ -96,6 +97,7 @@ where
             ctor: Box::new(ctor),
             restart_policy: always_restart(),
             metrics: Metrics::default(),
+            _actor: address.clone(),
         };
 
         (supervisor, address)
@@ -124,6 +126,7 @@ where
             ctor: Box::new(ctor),
             restart_policy,
             metrics: Metrics::default(),
+            _actor: address.clone(),
         };
 
         (supervisor, address)
