@@ -36,7 +36,7 @@ import {
 import { motion } from "framer-motion";
 import * as React from "react";
 import { useEffect, useState } from "react";
-import { FaWallet } from "react-icons/all";
+import { FaWallet } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { Offer } from "../App";
 import { CfdOrderRequestPayload, ConnectionStatus } from "../types";

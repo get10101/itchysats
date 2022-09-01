@@ -1,4 +1,5 @@
+/** @type {import('ts-jest/dist/types').InitialOptionsTsJest} */
 module.exports = {
-    preset: "vite-jest",
-    testEnvironment: "jest-environment-jsdom",
+    preset: "ts-jest",
+    testEnvironment: "jsdom",
 };
