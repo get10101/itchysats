@@ -82,12 +82,13 @@ impl<T> Supervisor<T, UnitReason>
 where
     T: xtra::Actor<Stop = ()>,
 {
-    /// Construct a new supervisor for an [`Actor`] with an [`xtra::Actor::Stop`] value of `()`.
+    /// Construct a new supervisor for an [`xtra::Actor`] with an [`xtra::Actor::Stop`] value of
+    /// `()`.
     ///
     /// The actor will always be restarted if it stops. If you don't want this behaviour, don't use
     /// a supervisor. If you want more fine-granular control in which circumstances the actor
     /// should be restarted, set [`xtra::Actor::Stop`] to a more descriptive value and use
-    /// [`Actor::with_policy`].
+    /// [`with_policy`](#method.with_policy).
     pub fn new(ctor: impl (Fn() -> T) + Send + 'static) -> (Self, Address<T>) {
         let (address, context) = Context::new(None);
 
