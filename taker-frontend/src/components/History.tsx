@@ -185,9 +185,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                     <Text as={"b"}>Payout</Text>
                                 </Td>
                                 <Td textAlign="right">
-                                    <Skeleton isLoaded={cfd.payout != null}>
-                                        <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
-                                    </Skeleton>
+                                    <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
                                 </Td>
                             </Tr>
                             <Tr>
