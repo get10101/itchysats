@@ -204,6 +204,8 @@ macro_rules! wait_next_state {
         );
         assert_eq!(taker_cfd.order_id, $id, "unexpected order id in the taker");
         assert_eq!(maker_cfd.order_id, $id, "unexpected order id in the maker");
+        tracing::info!(?maker_cfd.state, "Current maker CFD state");
+        tracing::info!(?taker_cfd.state, "Current taker CFD state");
     };
     ($id:expr, $maker:expr, $taker:expr, $state:expr) => {
         wait_next_state!($id, $maker, $taker, $state, $state)
