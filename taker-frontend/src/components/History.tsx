@@ -170,12 +170,14 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                     <Text as={"b"}>{profitLabel}</Text>
                                 </Td>
                                 <Td textAlign="right">
-                                    <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
-                                        <Skeleton isLoaded={cfd.profit_btc != null}>
-                                            {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
-                                            {cfd.profit_percent}%
-                                        </Skeleton>
-                                    </Tooltip>
+                                    <Skeleton isLoaded={cfd.profit_btc != null}>
+                                        <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
+                                            <Text>
+                                                {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
+                                                {cfd.profit_percent} %
+                                            </Text>
+                                        </Tooltip>
+                                    </Skeleton>
                                 </Td>
                             </Tr>
                             <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
