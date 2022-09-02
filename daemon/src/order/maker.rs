@@ -101,7 +101,7 @@ impl Actor {
         Ok(order)
     }
 
-    #[instrument(skip(self), err)]
+    #[instrument(skip(self))]
     async fn pick_offer(&self, offer_id: OfferId) -> Result<model::Offer> {
         let latest_offers = self
             .latest_offers
