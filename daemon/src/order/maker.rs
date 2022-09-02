@@ -153,7 +153,10 @@ impl Actor {
         let offer = match self.pick_offer(offer_id).await {
             Ok(offer) => offer,
             Err(e) => {
-                tracing::warn!("Rejecting taker order because unable to pick offer: {e:#}");
+                tracing::warn!(
+                    %peer_id,
+                    "Rejecting taker order because unable to pick offer: {e:#}"
+                );
 
                 let future = async move {
                     framed
