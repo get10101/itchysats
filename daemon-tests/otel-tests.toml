@@ -1,0 +1,11 @@
+directives = [
+  "wire=trace",
+  "taker=debug",
+  "maker=debug",
+  "daemon=debug",
+  "model=info",
+  "xtra_libp2p=debug",
+  "xtra_libp2p_offer=debug",
+  "xtra_libp2p_ping=debug",
+  "rocket=warn",
+]
