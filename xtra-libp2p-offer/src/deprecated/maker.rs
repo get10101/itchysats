@@ -34,7 +34,6 @@ impl Actor {
         let endpoint = self.endpoint.clone();
         let offers = self.latest_offers.clone();
 
-        let span = tracing::debug_span!("Send offers", %peer_id).or_current();
         let task = async move {
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(
@@ -62,7 +61,11 @@ impl Actor {
         };
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible(&this, task.instrument(span), err_handler);
+        spawn_fallible(
+            &this,
+            task.instrument(tracing::Span::current()),
+            err_handler,
+        );
     }
 }
 
