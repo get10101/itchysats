@@ -127,8 +127,13 @@ struct Offers(HashMap<(ContractSymbol, Position), model::Offer>);
 impl Offers {
     fn update(&mut self, offers: Vec<model::Offer>) {
         for offer in offers.into_iter() {
-            self.0
-                .insert((offer.contract_symbol, offer.position_maker), offer);
+            let key = (offer.contract_symbol, offer.position_maker);
+
+            if let Some(offer) = self.0.remove(&key) {
+                tracing::debug!(offer_id = %offer.id, "Replaced offer");
+            };
+
+            self.0.insert(key, offer);
         }
     }
 
