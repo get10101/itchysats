@@ -20,6 +20,7 @@ use maia_core::CfdTransactions;
 use maia_core::PartyParams;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
+use model::payout_curve::ETHUSD_MULTIPLIER;
 use model::shared_protocol::verify_adaptor_signature;
 use model::shared_protocol::verify_cets;
 use model::shared_protocol::verify_signature;
@@ -329,18 +330,32 @@ pub(crate) async fn build_own_cfd_transactions(
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
 
-    let payouts = Payouts::new(
-        contract_symbol,
-        (our_position, role),
-        rollover_params.price,
-        rollover_params.quantity,
-        (
-            rollover_params.long_leverage,
-            rollover_params.short_leverage,
-        ),
-        n_payouts,
-        complete_fee,
-    )?;
+    let payouts = match contract_symbol {
+        ContractSymbol::BtcUsd => Payouts::new_inverse(
+            (our_position, role),
+            rollover_params.price,
+            rollover_params.quantity,
+            (
+                rollover_params.long_leverage,
+                rollover_params.short_leverage,
+            ),
+            n_payouts,
+            complete_fee,
+        )?,
+        ContractSymbol::EthUsd => Payouts::new_quanto(
+            (our_position, role),
+            rollover_params.price.to_u64(),
+            rollover_params.quantity.to_u64(),
+            (
+                rollover_params.long_leverage,
+                rollover_params.short_leverage,
+            ),
+            n_payouts,
+            ETHUSD_MULTIPLIER,
+            complete_fee,
+        )?,
+    };
+
     let payouts_per_event = OraclePayouts::new(payouts, announcements)?;
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx

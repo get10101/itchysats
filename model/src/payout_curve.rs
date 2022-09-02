@@ -1,7 +1,6 @@
 use crate::olivia;
 use crate::payout_curve;
 use crate::CompleteFee;
-use crate::ContractSymbol;
 use crate::Contracts;
 use crate::Leverage;
 use crate::Position;
@@ -70,38 +69,7 @@ pub struct Payouts {
 
 impl Payouts {
     #[tracing::instrument(err)]
-    pub fn new(
-        contract_symbol: ContractSymbol,
-        (position, role): (Position, Role),
-        price: Price,
-        quantity: Contracts,
-        (leverage_long, leverage_short): (Leverage, Leverage),
-        n_payouts: usize,
-        fee: CompleteFee,
-    ) -> Result<Self> {
-        match contract_symbol {
-            ContractSymbol::BtcUsd => Self::new_inverse(
-                (position, role),
-                price,
-                quantity,
-                (leverage_long, leverage_short),
-                n_payouts,
-                fee,
-            ),
-            ContractSymbol::EthUsd => Self::new_quanto(
-                (position, role),
-                price.to_u64(),
-                quantity.to_u64(),
-                (leverage_long, leverage_short),
-                n_payouts,
-                ETHUSD_MULTIPLIER,
-                fee,
-            ),
-        }
-    }
-
-    #[tracing::instrument(err)]
-    fn new_inverse(
+    pub fn new_inverse(
         (position, role): (Position, Role),
         price: Price,
         quantity: Contracts,
@@ -142,7 +110,7 @@ impl Payouts {
     }
 
     #[tracing::instrument(err)]
-    fn new_quanto(
+    pub fn new_quanto(
         (position, role): (Position, Role),
         initial_price: u64,
         n_contracts: u64,

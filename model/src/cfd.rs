@@ -1081,15 +1081,25 @@ impl Cfd {
         current_price: Price,
         n_payouts: usize,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
-        let payouts = Payouts::new(
-            self.contract_symbol,
-            (self.position, self.role),
-            self.initial_price,
-            self.quantity,
-            (self.long_leverage, self.short_leverage),
-            n_payouts,
-            self.fee_account.settle(),
-        )?
+        let payouts = match self.contract_symbol {
+            ContractSymbol::BtcUsd => Payouts::new_inverse(
+                (self.position, self.role),
+                self.initial_price,
+                self.quantity,
+                (self.long_leverage, self.short_leverage),
+                n_payouts,
+                self.fee_account.settle(),
+            )?,
+            ContractSymbol::EthUsd => Payouts::new_quanto(
+                (self.position, self.role),
+                self.initial_price.to_u64(),
+                self.quantity.to_u64(),
+                (self.long_leverage, self.short_leverage),
+                n_payouts,
+                ETHUSD_MULTIPLIER,
+                self.fee_account.settle(),
+            )?,
+        }
         .settlement();
 
         let payout = payouts

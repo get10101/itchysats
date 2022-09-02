@@ -28,10 +28,12 @@ use maia_core::PartyParams;
 use maia_core::PunishParams;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
+use model::payout_curve::ETHUSD_MULTIPLIER;
 use model::shared_protocol::verify_adaptor_signature;
 use model::shared_protocol::verify_cets;
 use model::shared_protocol::verify_signature;
 use model::Cet;
+use model::ContractSymbol;
 use model::Dlc;
 use model::OraclePayouts;
 use model::Payouts;
@@ -309,15 +311,25 @@ async fn create_cfd_transactions(
 
     let settlement_event_id = announcements.last().context("Empty announcements")?.id;
 
-    let payouts = Payouts::new(
-        setup_params.contract_symbol,
-        (position, role),
-        setup_params.price,
-        setup_params.quantity,
-        (setup_params.long_leverage, setup_params.short_leverage),
-        n_payouts,
-        setup_params.fee_account.settle(),
-    )?;
+    let payouts = match setup_params.contract_symbol {
+        ContractSymbol::BtcUsd => Payouts::new_inverse(
+            (position, role),
+            setup_params.price,
+            setup_params.quantity,
+            (setup_params.long_leverage, setup_params.short_leverage),
+            n_payouts,
+            setup_params.fee_account.settle(),
+        )?,
+        ContractSymbol::EthUsd => Payouts::new_quanto(
+            (position, role),
+            setup_params.price.to_u64(),
+            setup_params.quantity.to_u64(),
+            (setup_params.long_leverage, setup_params.short_leverage),
+            n_payouts,
+            ETHUSD_MULTIPLIER,
+            setup_params.fee_account.settle(),
+        )?,
+    };
     let payouts_per_event = OraclePayouts::new(payouts, announcements)?;
 
     let own_cfd_txs = tokio::task::spawn_blocking({
