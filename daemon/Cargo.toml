@@ -26,7 +26,7 @@ maia = "0.2.0"
 maia-core = "0.1.1"
 maia-deprecated = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia" } # includes subtract-fee bug, needed for protocols over legacy networking
 model = { path = "../model" }
-parse-display = "0.5.5"
+parse-display = "0.6.0"
 prometheus = { version = "0.13", default-features = false }
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
