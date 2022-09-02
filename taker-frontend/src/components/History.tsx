@@ -171,11 +171,18 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                 </Td>
                                 <Td textAlign="right">
                                     <Skeleton isLoaded={cfd.profit_btc != null}>
-                                        <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
-                                            <Text>
-                                                {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
-                                                {cfd.profit_percent} %
-                                            </Text>
+                                        <Tooltip
+                                            label={
+                                                <Text>
+                                                    {(cfd.profit_percent && cfd.profit_percent > 0)
+                                                        ? "+"
+                                                        : ""}
+                                                    {cfd.profit_percent} %
+                                                </Text>
+                                            }
+                                            placement={"right"}
+                                        >
+                                            <BitcoinAmount btc={cfd.profit_btc ? cfd.profit_btc : 0} />
                                         </Tooltip>
                                     </Skeleton>
                                 </Td>
