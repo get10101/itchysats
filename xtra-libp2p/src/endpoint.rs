@@ -161,8 +161,6 @@ pub enum Error {
     NegotiationTimeoutReached,
     #[error("Failed to negotiate protocol")]
     NegotiationFailed(#[from] NegotiationError), // TODO(public-api): Consider breaking this up.
-    #[error("Bad connection")]
-    BadConnection(#[from] yamux::ConnectionError), // TODO(public-api): Consider removing this.
     #[error("Address {0} does not end with a peer ID")]
     NoPeerIdInAddress(Multiaddr),
     #[error("Already trying to connect to peer {0}")]
@@ -273,7 +271,7 @@ impl Endpoint {
         peer_id: PeerId,
         protocols: Vec<&'static str>,
         connection_timeout: Duration,
-    ) -> Result<(&'static str, Substream), Error> {
+    ) -> Result<(&'static str, Substream), OpenSubstreamError> {
         let stream = control
             .open_stream()
             .instrument(tracing::debug_span!("open yamux stream"))
@@ -285,14 +283,23 @@ impl Endpoint {
             || tracing::debug_span!("dialer_select_proto", version = ?Version::V1),
         )
         .await
-        .map_err(|_timeout| Error::NegotiationTimeoutReached)?
-        .map_err(Error::NegotiationFailed)?;
+        .map_err(|_timeout| OpenSubstreamError::NegotiationTimeout)??;
 
         Ok((
             protocol,
             Substream::new(stream, protocol, libp2p_core::Endpoint::Dialer),
         ))
     }
+}
+
+#[derive(Debug, Error)]
+enum OpenSubstreamError {
+    #[error("Bad connection")]
+    BadConnection(#[from] yamux::ConnectionError),
+    #[error("Timeout in protocol negotiation")]
+    NegotiationTimeout,
+    #[error("Failed to negotiate protocol")]
+    NeogotiationFailed(#[from] NegotiationError),
 }
 
 #[xtra_productivity]
@@ -558,15 +565,19 @@ impl Endpoint {
                     Self::open_substream(control, peer_id, protocols.clone(), connection_timeout)
                         .await;
 
-                if let Err(Error::BadConnection(e)) = &res {
+                if let Err(OpenSubstreamError::BadConnection(e)) = &res {
                     tracing::debug!(
                         %peer_id,
                         "Disconnecting peer due to yamux connection error when opening substream: {e}"
                     );
                     let _ = this.send_async_next(Disconnect(peer_id)).await;
-                }
+                };
 
-                let (protocol, stream) = res?;
+                let (protocol, stream) = res.map_err(|e| match e {
+                    OpenSubstreamError::BadConnection(_) => Error::NoConnection(peer_id),
+                    OpenSubstreamError::NegotiationTimeout => Error::NegotiationTimeoutReached,
+                    OpenSubstreamError::NeogotiationFailed(e) => Error::NegotiationFailed(e),
+                })?;
 
                 debug_assert!(
                     protocol == protocols[0],
@@ -588,17 +599,30 @@ impl Endpoint {
         Pin<Box<dyn futures::Future<Output = Result<(&'static str, Substream), Error>> + Send>>,
         Error,
     > {
-        let peer = msg.peer_id;
+        let peer_id = msg.peer_id;
         let protocols = msg.protocols;
 
-        let (control, _) = self.controls.get(&peer).ok_or(Error::NoConnection(peer))?;
+        let (control, _) = self
+            .controls
+            .get(&peer_id)
+            .ok_or(Error::NoConnection(peer_id))?;
 
         let fut = {
             let connection_timeout = self.connection_timeout;
             let control = control.clone();
             async move {
                 let (protocol, stream) =
-                    Self::open_substream(control, peer, protocols, connection_timeout).await?;
+                    Self::open_substream(control, peer_id, protocols, connection_timeout)
+                        .await
+                        .map_err(|e| match e {
+                            OpenSubstreamError::BadConnection(_) => Error::NoConnection(peer_id),
+                            OpenSubstreamError::NegotiationTimeout => {
+                                Error::NegotiationTimeoutReached
+                            }
+                            OpenSubstreamError::NeogotiationFailed(e) => {
+                                Error::NegotiationFailed(e)
+                            }
+                        })?;
 
                 Ok((protocol, stream))
             }
