@@ -39,7 +39,6 @@ pub mod olivia {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct OliviaData {
     ids: Vec<BitMexPriceEventId>,
