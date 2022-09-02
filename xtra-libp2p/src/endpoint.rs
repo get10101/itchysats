@@ -62,6 +62,7 @@ pub struct Endpoint {
     inflight_connections: HashSet<PeerId>,
     connection_timeout: Duration,
     subscribers: Subscribers,
+    peer_listen_protocols: HashMap<PeerId, HashSet<String>>,
 }
 
 /// Open a substream to the provided peer.
@@ -153,6 +154,12 @@ pub struct NewInboundSubstream {
     pub stream: Substream,
 }
 
+/// Message used to tell the [`Endpoint`] about the listen protocols that a peer supports.
+pub struct RegisterListenProtocols {
+    pub peer_id: PeerId,
+    pub listen_protocols: HashSet<String>,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("No connection to {0}")]
@@ -167,6 +174,8 @@ pub enum Error {
     NoPeerIdInAddress(Multiaddr),
     #[error("Already trying to connect to peer {0}")]
     AlreadyTryingToConnected(PeerId),
+    #[error("Peer does not listen for given protocol(s)")]
+    ProtocolNotSupportedByPeer,
 }
 
 /// Subscribers that get notified on connection changes
@@ -250,10 +259,36 @@ impl Endpoint {
             inflight_connections: HashSet::default(),
             connection_timeout,
             subscribers,
+            peer_listen_protocols: HashMap::default(),
         }
     }
 
+    fn does_peer_listen_for(&self, peer_id: PeerId, protocols: &[&str]) -> Result<(), Error> {
+        let listen_protocols = match self.peer_listen_protocols.get(&peer_id) {
+            Some(listen_protocols) => listen_protocols,
+            None => {
+                // Without the information about the peer we cannot decide either way. We default to
+                // answering yes to our caller, just in case
+                return Ok(());
+            }
+        };
+        let listen_protocols = listen_protocols
+            .iter()
+            .map(|p| p.as_ref())
+            .collect::<Vec<_>>();
+
+        protocols
+            .iter()
+            .any(|protocol| listen_protocols.contains(protocol))
+            .then(|| ())
+            .ok_or(Error::ProtocolNotSupportedByPeer)?;
+
+        Ok(())
+    }
+
     async fn drop_connection(&mut self, this: &Address<Self>, peer_id: &PeerId) {
+        self.peer_listen_protocols.remove(peer_id);
+
         let (mut control, tasks) = match self.controls.remove(peer_id) {
             None => return,
             Some(control) => control,
@@ -549,6 +584,8 @@ impl Endpoint {
             .get(&peer_id)
             .ok_or(Error::NoConnection(peer_id))?;
 
+        self.does_peer_listen_for(peer_id, &protocols)?;
+
         let this = ctx.address().expect("self to be alive");
         let fut = {
             let connection_timeout = self.connection_timeout;
@@ -612,6 +649,11 @@ impl Endpoint {
         // listening on multiple interfaces.
         self.listen_addresses.insert(msg.listen_address.clone());
         self.notify_listen_address_added(msg.listen_address).await;
+    }
+
+    async fn handle(&mut self, msg: RegisterListenProtocols) {
+        self.peer_listen_protocols
+            .insert(msg.peer_id, msg.listen_protocols);
     }
 }
 
