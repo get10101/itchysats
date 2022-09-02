@@ -147,7 +147,7 @@ impl Actor {
             }
         };
 
-        tracing::info!(%peer_id, %quantity, %order_id, "Taker wants to place an order");
+        tracing::info!(%peer_id, %quantity, %order_id, %offer_id, "Taker wants to place an order");
 
         // Reject the order if the offer cannot be found in the latest offers
         let offer = match self.pick_offer(offer_id).await {
