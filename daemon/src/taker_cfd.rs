@@ -48,7 +48,6 @@ pub struct Actor {
 }
 
 impl Actor {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: sqlite_db::Connection,
         projection_actor: xtra::Address<projection::Actor>,
