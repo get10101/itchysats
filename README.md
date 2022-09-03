@@ -19,7 +19,9 @@ Please note that trade execution is already fully peer to peer, but there is cur
 We are working on adding support for maker discovery and trading with multiple makers for a more competitive market.
 
 ItchySats is available in the [Umbrel](getumbrel.com/) appstore.
-We recommend using ItchySats on Umbrel for the time being.
+ItchySats is available as bonus features on [RaspiBlitz](https://github.com/rootzoll/raspiblitz#feature-overview).
+
+We recommend using ItchySats on Umbrel or RaspiBlitz for the time being.
 
 If you want to try ItchySats without Umbrel you can use the [latest binary](github.com/itchysats/itchysats/releases/latest) or [latest docker container](https://github.com/itchysats/itchysats/pkgs/container/itchysats%2Ftaker) but that might not be as straightforward.
 
