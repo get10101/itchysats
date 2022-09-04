@@ -101,7 +101,7 @@ impl Actor {
         Ok(order)
     }
 
-    #[instrument(skip(self), err)]
+    #[instrument(skip(self))]
     async fn pick_offer(&self, offer_id: OfferId) -> Result<model::Offer> {
         let latest_offers = self
             .latest_offers
@@ -147,13 +147,16 @@ impl Actor {
             }
         };
 
-        tracing::info!(%peer_id, %quantity, %order_id, "Taker wants to place an order");
+        tracing::info!(%peer_id, %quantity, %order_id, %offer_id, "Taker wants to place an order");
 
         // Reject the order if the offer cannot be found in the latest offers
         let offer = match self.pick_offer(offer_id).await {
             Ok(offer) => offer,
             Err(e) => {
-                tracing::warn!("Rejecting taker order because unable to pick offer: {e:#}");
+                tracing::warn!(
+                    %peer_id,
+                    "Rejecting taker order because unable to pick offer: {e:#}"
+                );
 
                 let future = async move {
                     framed

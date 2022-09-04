@@ -170,12 +170,21 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                     <Text as={"b"}>{profitLabel}</Text>
                                 </Td>
                                 <Td textAlign="right">
-                                    <Tooltip label={`${cfd.profit_btc}`} placement={"right"}>
-                                        <Skeleton isLoaded={cfd.profit_btc != null}>
-                                            {(cfd.profit_percent && cfd.profit_percent > 0) ? "+" : ""}
-                                            {cfd.profit_percent}%
-                                        </Skeleton>
-                                    </Tooltip>
+                                    <Skeleton isLoaded={cfd.profit_btc != null}>
+                                        <Tooltip
+                                            label={
+                                                <Text>
+                                                    {(cfd.profit_percent && cfd.profit_percent > 0)
+                                                        ? "+"
+                                                        : ""}
+                                                    {cfd.profit_percent} %
+                                                </Text>
+                                            }
+                                            placement={"right"}
+                                        >
+                                            <BitcoinAmount btc={cfd.profit_btc ? cfd.profit_btc : 0} />
+                                        </Tooltip>
+                                    </Skeleton>
                                 </Td>
                             </Tr>
                             <Tr textColor={useColorModeValue(profitColors.light, profitColors.dark)}>
@@ -183,9 +192,7 @@ const CfdDetails = ({ cfd, connectedToMaker, displayCloseButton, showExtraInfo }
                                     <Text as={"b"}>Payout</Text>
                                 </Td>
                                 <Td textAlign="right">
-                                    <Skeleton isLoaded={cfd.payout != null}>
-                                        <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
-                                    </Skeleton>
+                                    <BitcoinAmount btc={cfd.payout ? cfd.payout : 0} />
                                 </Td>
                             </Tr>
                             <Tr>

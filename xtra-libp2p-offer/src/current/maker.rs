@@ -39,7 +39,6 @@ impl Actor {
     ) {
         let endpoint = self.endpoint.clone();
 
-        let span = tracing::debug_span!("Send offers", %peer_id).or_current();
         let task = async move {
             let stream = endpoint
                 .send(OpenSubstream::single_protocol(peer_id, PROTOCOL))
@@ -64,7 +63,11 @@ impl Actor {
         };
 
         let this = ctx.address().expect("self to be alive");
-        spawn_fallible(&this, task.instrument(span), err_handler);
+        spawn_fallible(
+            &this,
+            task.instrument(tracing::Span::current()),
+            err_handler,
+        );
     }
 }
 
@@ -124,8 +127,13 @@ struct Offers(HashMap<(ContractSymbol, Position), model::Offer>);
 impl Offers {
     fn update(&mut self, offers: Vec<model::Offer>) {
         for offer in offers.into_iter() {
-            self.0
-                .insert((offer.contract_symbol, offer.position_maker), offer);
+            let key = (offer.contract_symbol, offer.position_maker);
+
+            if let Some(offer) = self.0.remove(&key) {
+                tracing::debug!(offer_id = %offer.id, "Replaced offer");
+            };
+
+            self.0.insert(key, offer);
         }
     }
 
