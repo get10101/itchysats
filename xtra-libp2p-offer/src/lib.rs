@@ -23,6 +23,7 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::time::Duration;
     use time::macros::datetime;
+    use tracing_subscriber::util::SubscriberInitExt;
     use xtra::spawn::TokioGlobalSpawnExt;
     use xtra::Actor as _;
     use xtra::Address;
@@ -40,10 +41,10 @@ mod tests {
 
     #[tokio::test]
     async fn given_new_offers_then_received_offers_match_originals() {
-        tracing_subscriber::fmt()
+        let _g = tracing_subscriber::fmt()
             .with_env_filter("xtra_libp2p_offer=trace")
             .with_test_writer()
-            .init();
+            .set_default();
 
         let (maker_peer_id, maker_offer_addr, maker_endpoint_addr) =
             create_endpoint_with_offer_maker();
@@ -95,10 +96,10 @@ mod tests {
 
     #[tokio::test]
     async fn given_taker_connects_then_taker_receives_all_current_offers() {
-        tracing_subscriber::fmt()
+        let _g = tracing_subscriber::fmt()
             .with_env_filter("xtra_libp2p_offer=trace")
             .with_test_writer()
-            .init();
+            .set_default();
 
         let (maker_peer_id, maker_offer_addr, maker_endpoint_addr) =
             create_endpoint_with_offer_maker();

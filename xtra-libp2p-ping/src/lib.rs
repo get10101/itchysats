@@ -13,6 +13,7 @@ mod tests {
     use futures::Future;
     use futures::FutureExt;
     use std::time::Duration;
+    use tracing_subscriber::util::SubscriberInitExt;
     use xtra::spawn::TokioGlobalSpawnExt;
     use xtra::Actor as _;
     use xtra::Address;
@@ -29,10 +30,10 @@ mod tests {
 
     #[tokio::test]
     async fn latency_to_peer_is_recorded() {
-        tracing_subscriber::fmt()
+        let _g = tracing_subscriber::fmt()
             .with_env_filter("xtra_libp2p_ping=trace")
             .with_test_writer()
-            .init();
+            .set_default();
 
         let (alice_peer_id, alice_ping_actor, alice_endpoint) = create_endpoint_with_ping();
         let (bob_peer_id, bob_ping_actor, bob_endpoint) = create_endpoint_with_ping();
