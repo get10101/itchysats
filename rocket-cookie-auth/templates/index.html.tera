@@ -1,0 +1,22 @@
+{% extends "base" %}
+{% block body %}
+{% if user %}
+Hello there User: {{ user.id }}.
+
+{% endif %}
+{% if not user %}
+Hello Satoshi. Please log in!
+
+<div style="width:30%;" class="container-fluid">
+    <form action="/login" method="post">
+        <div class="mb-3 row">
+            <div class="col-sm-10">
+                <input type="password" class="form-control" name="password" required>
+            </div>
+        </div>
+        <button class="btn btn-primary" type="submit">Log in</button>
+    </form>
+</div>
+
+{% endif %}
+{% endblock body %}
