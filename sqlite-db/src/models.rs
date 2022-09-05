@@ -1008,6 +1008,13 @@ impl From<ContractSymbol> for model::ContractSymbol {
     }
 }
 
+#[derive(Debug)]
+pub struct User {
+    pub id: u32,
+    pub password: String,
+    pub first_login: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

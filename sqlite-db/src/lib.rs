@@ -45,6 +45,7 @@ mod impls;
 mod models;
 mod rollover;
 pub mod time_to_first_position;
+pub mod user;
 
 #[derive(Clone)]
 pub struct Connection {
