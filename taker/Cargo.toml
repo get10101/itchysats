@@ -9,7 +9,7 @@ anyhow = "1"
 clap = { version = "3", features = ["derive"] }
 daemon = { path = "../daemon" }
 hex = "0.4"
-http-api-problem = { version = "0.54.0", features = ["rocket"] }
+http-api-problem = { version = "0.55.0", features = ["rocket"] }
 itertools = "0.10"
 libp2p-core = { version = "0.33", default-features = false }
 model = { path = "../model" }
