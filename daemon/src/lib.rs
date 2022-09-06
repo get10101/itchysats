@@ -27,6 +27,8 @@ use model::Price;
 use model::Role;
 use online_status::ConnectionStatus;
 use parse_display::Display;
+use ping_pong::ping;
+use ping_pong::pong;
 use seed::Identities;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -40,8 +42,6 @@ use xtra_libp2p::dialer;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
-use xtra_libp2p_ping::ping;
-use xtra_libp2p_ping::pong;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
 

@@ -26,6 +26,7 @@ maia = "0.2.0"
 maia-core = "0.1.1"
 model = { path = "../model" }
 parse-display = "0.6.0"
+ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
 prometheus = { version = "0.13", default-features = false }
 rand = "0.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
@@ -54,7 +55,6 @@ xtra = { version = "0.6", features = ["instrumentation", "sink"] }
 xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
 xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
-xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
 xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 xtras = { path = "../xtras" }
 

@@ -35,6 +35,8 @@ use model::OrderId;
 use model::Price;
 use model::Role;
 use model::TxFeeRate;
+use ping_pong::ping;
+use ping_pong::pong;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::Tasks;
@@ -46,8 +48,6 @@ use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
-use xtra_libp2p_ping::ping;
-use xtra_libp2p_ping::pong;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
 

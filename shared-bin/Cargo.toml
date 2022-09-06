@@ -5,8 +5,6 @@ edition = "2021"
 publish = false
 description = "Code that is shared between the daemons but application specific and thus does not go into the `daemon` library."
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1"
 atty = "0.2"
@@ -18,6 +16,7 @@ http-api-problem = { version = "0.55.0", features = ["rocket"] }
 model = { path = "../model" }
 opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.10.0" }
+ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
@@ -27,5 +26,4 @@ tracing-opentelemetry = "0.17.4"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 webbrowser = "0.8.0"
 xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
-xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
 xtras = { path = "../xtras" }

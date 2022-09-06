@@ -3,14 +3,14 @@ use crate::command;
 use crate::identify;
 use crate::oracle;
 use crate::order;
+use ping_pong::pong;
 use std::collections::HashSet;
 use xtra::message_channel::MessageChannel;
 use xtra::Address;
 use xtra_libp2p::NewInboundSubstream;
-use xtra_libp2p_ping::pong;
 
 pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::new(
-    xtra_libp2p_ping::PROTOCOL,
+    ping_pong::PROTOCOL,
     identify::PROTOCOL,
     order::PROTOCOL,
     rollover::PROTOCOL,
@@ -19,14 +19,14 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
 );
 
 pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols = TakerListenProtocols::new(
-    xtra_libp2p_ping::PROTOCOL,
+    ping_pong::PROTOCOL,
     identify::PROTOCOL,
     xtra_libp2p_offer::PROTOCOL,
 );
 
 pub const REQUIRED_MAKER_LISTEN_PROTOCOLS: RequiredMakerListenProtocols =
     RequiredMakerListenProtocols::new(
-        xtra_libp2p_ping::PROTOCOL,
+        ping_pong::PROTOCOL,
         identify::PROTOCOL,
         order::PROTOCOL,
         rollover::PROTOCOL,
@@ -278,7 +278,7 @@ mod tests {
     fn given_maker_maker_does_not_support_required_protocol_then_error_with_protocol_diff() {
         let mut maker_protocols_as_hashset: HashSet<String> = MAKER_LISTEN_PROTOCOLS.into();
         // remove the ping protocol, we assume that it always is in there
-        maker_protocols_as_hashset.remove(xtra_libp2p_ping::PROTOCOL);
+        maker_protocols_as_hashset.remove(ping_pong::PROTOCOL);
 
         let err = does_maker_satisfy_taker_needs(
             &maker_protocols_as_hashset,
@@ -286,7 +286,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(err, HashSet::from([xtra_libp2p_ping::PROTOCOL.to_string()]))
+        assert_eq!(err, HashSet::from([ping_pong::PROTOCOL.to_string()]))
     }
 
     #[test]
