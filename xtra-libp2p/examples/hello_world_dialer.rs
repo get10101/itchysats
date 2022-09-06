@@ -8,6 +8,8 @@ use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_core::PeerId;
 use libp2p_tcp::TokioTcpConfig;
+use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use xtra::prelude::*;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -41,6 +43,7 @@ async fn main() -> Result<()> {
         Duration::from_secs(20),
         [],
         Subscribers::default(),
+        Arc::new(HashSet::default()),
     )
     .create(None)
     .spawn_global();

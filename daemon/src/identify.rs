@@ -44,6 +44,7 @@ mod tests {
     use crate::Environment;
     use libp2p_core::PublicKey;
     use std::collections::HashSet;
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::watch;
     use xtra::spawn::TokioGlobalSpawnExt;
@@ -151,6 +152,7 @@ mod tests {
                 vec![],
                 vec![],
             ),
+            Arc::new(HashSet::default()),
         );
 
         #[allow(clippy::disallowed_methods)]

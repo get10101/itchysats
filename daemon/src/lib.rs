@@ -31,6 +31,7 @@ use ping_pong::ping;
 use ping_pong::pong;
 use seed::Identities;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use time::ext::NumericalDuration;
 use tokio::sync::watch;
@@ -318,6 +319,7 @@ where
                 vec![],
                 vec![],
             ),
+            Arc::new(HashSet::default()), // Taker does not block peers
         );
 
         tasks.add(endpoint_context.run(endpoint));

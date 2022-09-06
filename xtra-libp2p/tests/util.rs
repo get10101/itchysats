@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use libp2p_core::Multiaddr;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use xtra::message_channel::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
@@ -44,6 +45,7 @@ pub fn make_node<const N: usize>(
             vec![subscriber_stats.clone().into()],
             vec![subscriber_stats.clone().into()],
         ),
+        Arc::new(HashSet::default()),
     )
     .create(None)
     .spawn_global();

@@ -53,6 +53,7 @@ use model::TxFeeRate;
 use model::SETTLEMENT_INTERVAL;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -557,12 +558,13 @@ pub async fn start_both() -> (Maker, Taker) {
     (maker, taker)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct MakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
     n_payouts: usize,
     libp2p_port: u16,
+    blocked_peers: HashSet<xtra_libp2p::libp2p::PeerId>,
 }
 
 impl Default for MakerConfig {
@@ -572,6 +574,7 @@ impl Default for MakerConfig {
             seed: RandomSeed::default(),
             n_payouts: N_PAYOUTS,
             libp2p_port: portpicker::pick_unused_port().expect("to be able to find a free port"),
+            blocked_peers: HashSet::new(),
         }
     }
 }
@@ -705,6 +708,7 @@ impl Maker {
             projection_actor,
             identities.clone(),
             endpoint_listen.clone(),
+            config.blocked_peers.clone(), // TODO(restioson): test
         )
         .unwrap();
 

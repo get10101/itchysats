@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for `/itchysats/rollover/3.0.0`. This fixes a bug where inverse payout curves where capped at double the value of the initial price.
 - Support for `/itchysats/collab-settlement/2.0.0`. This fixes a bug where inverse payout curves where capped at double the value of the initial price.
 - Support for `/itchysats/order/2.0.0`. This fixes a bug where inverse payout curves where capped at double the value of the initial price.
+- Configurable peer id block list. Peer IDs can be added to `blocked_peers.toml`, stored in the data directory. The
+  format is expected to be a simple TOML array of peer ID strings.
 
 ### Changed
 
