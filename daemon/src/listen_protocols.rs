@@ -16,6 +16,7 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
     rollover::PROTOCOL,
     rollover::deprecated::PROTOCOL,
     collab_settlement::PROTOCOL,
+    collab_settlement::deprecated::PROTOCOL,
 );
 
 pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols =
@@ -58,10 +59,18 @@ pub struct MakerListenProtocols {
     rollover: &'static str,
     rollover_deprecated: &'static str,
     collaborative_settlement: &'static str,
+    collaborative_settlement_deprecated: &'static str,
 }
 
+type RolloverAddress<R> =
+    Address<rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>>;
+
+type RolloverDeprecatedAddress<RD> = Address<
+    rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
+>;
+
 impl MakerListenProtocols {
-    pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 6;
+    pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 7;
 
     pub const fn new(
         ping: &'static str,
@@ -70,6 +79,7 @@ impl MakerListenProtocols {
         rollover: &'static str,
         rollover_deprecated: &'static str,
         collaborative_settlement: &'static str,
+        collaborative_settlement_deprecated: &'static str,
     ) -> Self {
         Self {
             ping,
@@ -78,6 +88,7 @@ impl MakerListenProtocols {
             rollover,
             rollover_deprecated,
             collaborative_settlement,
+            collaborative_settlement_deprecated,
         }
     }
 
@@ -90,13 +101,14 @@ impl MakerListenProtocols {
         ping_handler: Address<pong::Actor>,
         identify_handler: Address<identify::listener::Actor>,
         order_handler: Address<order::maker::Actor>,
-        rollover_handler: Address<
-            rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>,
-        >,
-        rollover_deprecated_handler: Address<
-            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
-        >,
-        collaborative_settlement_handler: Address<collab_settlement::maker::Actor>,
+        (rollover_handler, rollover_deprecated_handler): (
+            RolloverAddress<R>,
+            RolloverDeprecatedAddress<RD>,
+        ),
+        (collaborative_settlement_handler, collaborative_settlement_deprecated_handler): (
+            Address<collab_settlement::maker::Actor>,
+            Address<collab_settlement::deprecated::maker::Actor>,
+        ),
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     where
         R: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
@@ -110,6 +122,7 @@ impl MakerListenProtocols {
             rollover,
             rollover_deprecated,
             collaborative_settlement,
+            collaborative_settlement_deprecated,
         } = self;
 
         [
@@ -121,6 +134,10 @@ impl MakerListenProtocols {
             (
                 collaborative_settlement,
                 collaborative_settlement_handler.into(),
+            ),
+            (
+                collaborative_settlement_deprecated,
+                collaborative_settlement_deprecated_handler.into(),
             ),
         ]
     }
@@ -136,6 +153,7 @@ impl From<MakerListenProtocols> for HashSet<String> {
             rollover,
             rollover_deprecated,
             collaborative_settlement,
+            collaborative_settlement_deprecated,
         } = maker;
 
         HashSet::from([
@@ -145,6 +163,7 @@ impl From<MakerListenProtocols> for HashSet<String> {
             rollover.to_string(),
             rollover_deprecated.to_string(),
             collaborative_settlement.to_string(),
+            collaborative_settlement_deprecated.to_string(),
         ])
     }
 }

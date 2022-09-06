@@ -180,11 +180,23 @@ where
         });
         tasks.add(collab_settlement_supervisor.run_log_summary());
 
+        let (collab_settlement_deprecated_supervisor, collab_settlement_deprecated_addr) =
+            Supervisor::new({
+                let executor = executor.clone();
+                move || {
+                    collab_settlement::deprecated::maker::Actor::new(executor.clone(), n_payouts)
+                }
+            });
+        tasks.add(collab_settlement_deprecated_supervisor.run_log_summary());
+
         let cfd_actor_addr = cfd::Actor::new(
             settlement_interval,
             projection_actor,
             time_to_first_position_addr,
-            collab_settlement_addr.clone(),
+            (
+                collab_settlement_addr.clone(),
+                collab_settlement_deprecated_addr.clone(),
+            ),
             (
                 maker_offer_address.clone(),
                 maker_offer_address_deprecated.clone(),
@@ -267,9 +279,8 @@ where
                 pong_address.clone(),
                 identify_listener_actor,
                 order,
-                rollover_addr.clone(),
-                rollover_deprecated_addr.clone(),
-                collab_settlement_addr,
+                (rollover_addr.clone(), rollover_deprecated_addr.clone()),
+                (collab_settlement_addr, collab_settlement_deprecated_addr),
             ),
             endpoint::Subscribers::new(
                 vec![

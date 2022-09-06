@@ -163,6 +163,8 @@ pub struct Actor {
     rollover_params: RolloverParams,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+    collab_settlement_deprecated:
+        xtra::Address<daemon::collab_settlement::deprecated::maker::Actor>,
     offer: xtra::Address<offer::maker::Actor>,
     offer_deprecated: xtra::Address<offer::deprecated::maker::Actor>,
     order: xtra::Address<order::maker::Actor>,
@@ -173,7 +175,10 @@ impl Actor {
         settlement_interval: Duration,
         projection: xtra::Address<projection::Actor>,
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
-        collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+        (collab_settlement, collab_settlement_deprecated): (
+            xtra::Address<daemon::collab_settlement::maker::Actor>,
+            xtra::Address<daemon::collab_settlement::deprecated::maker::Actor>,
+        ),
         (offer, offer_deprecated): (
             xtra::Address<offer::maker::Actor>,
             xtra::Address<offer::deprecated::maker::Actor>,
@@ -186,6 +191,7 @@ impl Actor {
             rollover_params: RolloverParams::default(),
             time_to_first_position,
             collab_settlement,
+            collab_settlement_deprecated,
             offer,
             offer_deprecated,
             order,
@@ -247,9 +253,27 @@ impl Actor {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        self.collab_settlement
+        let res = self
+            .collab_settlement
             .send(daemon::collab_settlement::maker::Accept { order_id })
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated collaborative settlement protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .collab_settlement_deprecated
+                .send(daemon::collab_settlement::deprecated::maker::Accept { order_id })
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to accept collaborative settlement.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -257,9 +281,27 @@ impl Actor {
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        self.collab_settlement
+        let res = self
+            .collab_settlement
             .send(daemon::collab_settlement::maker::Reject { order_id })
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated collaborative settlement protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .collab_settlement_deprecated
+                .send(daemon::collab_settlement::deprecated::maker::Reject { order_id })
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to reject collaborative settlement.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }

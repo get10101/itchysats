@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support for `/itchysats/rollover/3.0.0`. This fixes a bug where inverse payout curves where capped at double the value of the initial price.
+- Support for `/itchysats/collab-settlement/2.0.0`.
 
 ### Changed
 
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Breaking change: Rename `--umbrel-seed` to `--app-seed`. Integration with Umbrel and other environments might be affected. This is unlikely to affect regular users, as this parameter is not used outside such environments.
 - Drop support for `/itchysats/rollover/1.0.0`.
 - Deprecate `/itchysats/rollover/2.0.0`.
+- Deprecate `/itchysats/collab-settlement/1.0.0`.
 
 ### Added
 
