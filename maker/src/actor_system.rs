@@ -66,7 +66,7 @@ pub struct ActorSystem<O: 'static, W: 'static> {
         rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, cfd::RatesChannel>,
     >,
     pub rollover_actor_deprecated: Address<
-        rollover::deprecated::maker::Actor<
+        rollover::current::maker::Actor<
             command::Executor,
             oracle::AnnouncementsChannel,
             cfd::RatesChannel,
@@ -199,7 +199,7 @@ where
             let oracle_addr = oracle_addr.clone();
             let cfd_actor_addr = cfd_actor_addr.clone();
             move || {
-                rollover::deprecated::maker::Actor::new(
+                rollover::current::maker::Actor::new(
                     executor.clone(),
                     oracle_pk,
                     oracle::AnnouncementsChannel::new(oracle_addr.clone().into()),
@@ -417,7 +417,7 @@ where
 
     pub async fn update_rollover_configuration(&self, is_accepting_rollovers: bool) -> Result<()> {
         self.rollover_actor_deprecated
-            .send(rollover::deprecated::maker::UpdateConfiguration::new(
+            .send(rollover::current::maker::UpdateConfiguration::new(
                 is_accepting_rollovers,
             ))
             .await?;

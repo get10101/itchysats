@@ -14,7 +14,7 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
     identify::PROTOCOL,
     order::PROTOCOL,
     rollover::PROTOCOL,
-    rollover::deprecated::PROTOCOL,
+    rollover::current::PROTOCOL,
     collab_settlement::PROTOCOL,
 );
 
@@ -97,13 +97,13 @@ impl MakerListenProtocols {
             rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>,
         >,
         rollover_deprecated_handler: Address<
-            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
+            rollover::current::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
         >,
         collaborative_settlement_handler: Address<collab_settlement::maker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     where
         R: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
-        RD: rollover::deprecated::protocol::GetRates + Send + Sync + Clone + 'static,
+        RD: rollover::current::protocol::GetRates + Send + Sync + Clone + 'static,
     {
         // We deconstruct to ensure that all protocols are being used
         let MakerListenProtocols {

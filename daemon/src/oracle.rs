@@ -436,7 +436,7 @@ impl AnnouncementsChannel {
 }
 
 #[async_trait]
-impl rollover::deprecated::protocol::GetAnnouncements for AnnouncementsChannel {
+impl rollover::current::protocol::GetAnnouncements for AnnouncementsChannel {
     async fn get_announcements(
         &self,
         events: Vec<BitMexPriceEventId>,
