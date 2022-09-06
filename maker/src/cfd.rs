@@ -1,4 +1,5 @@
 use crate::metrics::time_to_first_position;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -19,9 +20,12 @@ use model::TxFeeRate;
 use nonempty::NonEmpty;
 use std::collections::HashMap;
 use time::Duration;
+use time::OffsetDateTime;
 use xtra::prelude::MessageChannel;
 use xtra_productivity::xtra_productivity;
 use xtras::SendAsyncSafe;
+
+const ROLLOVER_PARAMS_TTL: Duration = Duration::minutes(5);
 
 #[derive(Clone)]
 pub struct NewOffers {
@@ -59,7 +63,7 @@ pub struct TakerDisconnected {
 }
 
 #[derive(Clone, Copy)]
-pub struct GetRolloverParams;
+pub struct GetRolloverParams(ContractSymbol);
 
 #[derive(Clone, Debug)]
 pub struct OfferParams {
@@ -142,9 +146,15 @@ struct RolloverProposal {
 }
 
 #[derive(Default, Clone)]
-pub struct RolloverParams {
-    funding_rates: HashMap<(ContractSymbol, Position), FundingRate>,
+struct RolloverParams {
+    funding_rates: HashMap<ContractSymbol, (FundingRates, OffsetDateTime)>,
     tx_fee_rate: TxFeeRate,
+}
+
+#[derive(Clone, Copy)]
+pub struct FundingRates {
+    long: FundingRate,
+    short: FundingRate,
 }
 
 pub struct Actor {
@@ -180,6 +190,22 @@ impl Actor {
             libp2p_offer_deprecated,
             order,
         }
+    }
+
+    fn udpate_rollover_params(
+        &mut self,
+        contract_symbol: ContractSymbol,
+        long: FundingRate,
+        short: FundingRate,
+        tx_fee_rate: TxFeeRate,
+    ) {
+        let funding_rates = FundingRates { long, short };
+        let expiry = OffsetDateTime::now_utc() + ROLLOVER_PARAMS_TTL;
+
+        self.rollover_params
+            .funding_rates
+            .insert(contract_symbol, (funding_rates, expiry));
+        self.rollover_params.tx_fee_rate = tx_fee_rate;
     }
 }
 
@@ -238,8 +264,23 @@ impl Actor {
         Ok(())
     }
 
-    async fn handle(&mut self, _: GetRolloverParams) -> RolloverParams {
-        self.rollover_params.clone()
+    async fn handle(
+        &mut self,
+        GetRolloverParams(contract_symbol): GetRolloverParams,
+    ) -> Result<(FundingRates, TxFeeRate)> {
+        let (funding_rates, expiry) = *self
+            .rollover_params
+            .funding_rates
+            .get(&contract_symbol)
+            .with_context(|| format!("Missing {contract_symbol} funding rates"))?;
+
+        if expiry < OffsetDateTime::now_utc() {
+            bail!("Outdated funding rates");
+        }
+
+        let tx_fee_rate = self.rollover_params.tx_fee_rate;
+
+        Ok((funding_rates, tx_fee_rate))
     }
 }
 
@@ -247,16 +288,12 @@ impl Actor {
 impl Actor {
     async fn handle_offer_params(&mut self, offer_params: OfferParams) -> Result<()> {
         // 1. Update internal state for rollovers
-        self.rollover_params.funding_rates.insert(
-            (offer_params.contract_symbol, Position::Long),
+        self.udpate_rollover_params(
+            offer_params.contract_symbol,
             offer_params.funding_rate_long,
-        );
-        self.rollover_params.funding_rates.insert(
-            (offer_params.contract_symbol, Position::Short),
             offer_params.funding_rate_short,
+            offer_params.tx_fee_rate,
         );
-
-        self.rollover_params.tx_fee_rate = offer_params.tx_fee_rate;
 
         let offers = offer_params.into_offers(self.settlement_interval);
 
@@ -309,10 +346,12 @@ impl Actor {
 
 /// Source of offer rates used for rolling over CFDs.
 #[derive(Clone)]
-pub struct RatesChannel(MessageChannel<GetRolloverParams, RolloverParams>);
+pub struct RatesChannel(MessageChannel<GetRolloverParams, Result<(FundingRates, TxFeeRate)>>);
 
 impl RatesChannel {
-    pub fn new(channel: MessageChannel<GetRolloverParams, RolloverParams>) -> Self {
+    pub fn new(
+        channel: MessageChannel<GetRolloverParams, Result<(FundingRates, TxFeeRate)>>,
+    ) -> Self {
         Self(channel)
     }
 }
@@ -320,26 +359,15 @@ impl RatesChannel {
 #[async_trait]
 impl rollover::deprecated::protocol::GetRates for RatesChannel {
     async fn get_rates(&self) -> Result<rollover::deprecated::protocol::Rates> {
-        let RolloverParams {
-            funding_rates,
-            tx_fee_rate,
-        } = self
+        let (FundingRates { long, short }, tx_fee_rate) = self
             .0
-            .send(GetRolloverParams)
+            .send(GetRolloverParams(ContractSymbol::BtcUsd))
             .await
-            .context("CFD actor disconnected")?;
-
-        let funding_rate_long = *funding_rates
-            .get(&(ContractSymbol::BtcUsd, Position::Long))
-            .context("Missing BTCUSD long funding rate")?;
-
-        let funding_rate_short = *funding_rates
-            .get(&(ContractSymbol::BtcUsd, Position::Short))
-            .context("Missing BTCUSD short funding rate")?;
+            .context("CFD actor disconnected")??;
 
         Ok(rollover::deprecated::protocol::Rates::new(
-            funding_rate_long,
-            funding_rate_short,
+            long,
+            short,
             tx_fee_rate,
         ))
     }
@@ -351,28 +379,13 @@ impl rollover::protocol::GetRates for RatesChannel {
         &self,
         contract_symbol: ContractSymbol,
     ) -> Result<rollover::protocol::Rates> {
-        let RolloverParams {
-            funding_rates,
-            tx_fee_rate,
-        } = self
+        let (FundingRates { long, short }, tx_fee_rate) = self
             .0
-            .send(GetRolloverParams)
+            .send(GetRolloverParams(contract_symbol))
             .await
-            .context("CFD actor disconnected")?;
+            .context("CFD actor disconnected")??;
 
-        let funding_rate_long = *funding_rates
-            .get(&(contract_symbol, Position::Long))
-            .with_context(|| format!("Missing {contract_symbol} long funding rate"))?;
-
-        let funding_rate_short = *funding_rates
-            .get(&(contract_symbol, Position::Short))
-            .with_context(|| format!("Missing {contract_symbol} short funding rate"))?;
-
-        Ok(rollover::protocol::Rates::new(
-            funding_rate_long,
-            funding_rate_short,
-            tx_fee_rate,
-        ))
+        Ok(rollover::protocol::Rates::new(long, short, tx_fee_rate))
     }
 }
 
