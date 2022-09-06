@@ -12,7 +12,6 @@ use model::Dlc;
 use model::ExecuteOnCfd;
 use model::Position;
 use model::Role;
-use model::RolloverVersion;
 use tokio_extras::FutureExt;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
@@ -196,7 +195,7 @@ where
                             Position::Short => funding_rate_short,
                         };
 
-                        let (event, params, dlc, position, oracle_event_id) = cfd
+                        let (event, params, dlc, position, oracle_event_ids) = cfd
                             .accept_rollover_proposal(
                                 tx_fee_rate,
                                 funding_rate,
@@ -204,10 +203,9 @@ where
                                     base_dlc_params.settlement_event_id(),
                                     base_dlc_params.complete_fee(),
                                 )),
-                                RolloverVersion::V3,
                             )?;
 
-                        Ok((event, params, dlc, position, oracle_event_id, funding_rate))
+                        Ok((event, params, dlc, position, oracle_event_ids, funding_rate))
                     })
                     .await?;
 

@@ -12,7 +12,6 @@ use model::Dlc;
 use model::ExecuteOnCfd;
 use model::Position;
 use model::Role;
-use model::RolloverVersion;
 use tokio_extras::FutureExt;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
@@ -204,7 +203,6 @@ where
                                     base_dlc_params.settlement_event_id(),
                                     base_dlc_params.complete_fee(),
                                 )),
-                                RolloverVersion::V3,
                             )?;
 
                         Ok((event, params, dlc, position, oracle_event_ids, funding_rate))
