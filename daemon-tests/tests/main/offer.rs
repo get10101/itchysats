@@ -1,6 +1,5 @@
 use daemon::projection::CfdOffer;
 use daemon::projection::MakerOffers;
-use daemon_tests::expected_taker_liquidation_price;
 use daemon_tests::flow::ensure_null_next_offers;
 use daemon_tests::flow::next_maker_offers;
 use daemon_tests::start_both;
@@ -11,6 +10,8 @@ use model::ContractSymbol;
 use model::Leverage;
 use model::Position;
 use otel_tests::otel_test;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 #[otel_test]
 async fn taker_receives_btc_usd_offer_from_maker_on_publication() {
@@ -134,4 +135,17 @@ fn assert_eq_offer(published: Option<CfdOffer>, received: Option<CfdOffer>) {
     }
 
     assert_eq!(published, received);
+}
+
+/// The expected liquidation price for the taker given the `contract_symbol` and `taker_position`.
+/// The values depend on the offer parameters.
+fn expected_taker_liquidation_price(symbol: ContractSymbol, taker_position: Position) -> Decimal {
+    match (symbol, taker_position) {
+        // inverse payout curve
+        (ContractSymbol::BtcUsd, Position::Long) => dec!(33_333.333333333333333333333333),
+        (ContractSymbol::BtcUsd, Position::Short) => dec!(100_000),
+        // quanto linear payout curve
+        (ContractSymbol::EthUsd, Position::Long) => dec!(750),
+        (ContractSymbol::EthUsd, Position::Short) => dec!(2_250),
+    }
 }

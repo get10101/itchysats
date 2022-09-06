@@ -2,8 +2,6 @@ use daemon::projection::CfdState;
 use daemon_tests::confirm;
 use daemon_tests::dummy_btc_price;
 use daemon_tests::dummy_eth_price;
-use daemon_tests::expected_maker_liquidation_price;
-use daemon_tests::expected_taker_liquidation_price;
 use daemon_tests::flow::next_with;
 use daemon_tests::flow::one_cfd_with_state;
 use daemon_tests::initial_price_for;
@@ -17,8 +15,11 @@ use daemon_tests::Maker;
 use daemon_tests::OpenCfdArgs;
 use daemon_tests::Taker;
 use model::ContractSymbol;
+use model::Contracts;
+use model::Leverage;
 use model::Position;
 use otel_tests::otel_test;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 #[otel_test]
@@ -103,7 +104,8 @@ async fn collaboratively_close_an_open_cfd(
             contract_symbol,
             oracle_data,
             initial_price: initial_price_for(contract_symbol),
-            ..Default::default()
+            quantity: Contracts::new(100),
+            taker_leverage: Leverage::TWO,
         },
     )
     .await;
@@ -172,4 +174,30 @@ fn assert_taker_liquidation_price(taker: &mut Taker) {
         taker.first_cfd().liquidation_price,
         expected_taker_liquidation_price(symbol, taker_position)
     );
+}
+
+/// The expected liquidation price for the taker given the `contract_symbol` and `taker_position`.
+/// The values depend on the offer parameters.
+fn expected_taker_liquidation_price(symbol: ContractSymbol, taker_position: Position) -> Decimal {
+    match (symbol, taker_position) {
+        // inverse payout curve
+        (ContractSymbol::BtcUsd, Position::Long) => dec!(33_333.333333333333333333333333),
+        (ContractSymbol::BtcUsd, Position::Short) => dec!(100_000),
+        // quanto linear payout curve
+        (ContractSymbol::EthUsd, Position::Long) => dec!(750),
+        (ContractSymbol::EthUsd, Position::Short) => dec!(2_250),
+    }
+}
+
+/// The expected liquidation price for the taker given the `contract_symbol` and `taker_position`.
+/// The values depend on the offer parameters.
+fn expected_maker_liquidation_price(symbol: ContractSymbol, maker_position: Position) -> Decimal {
+    match (symbol, maker_position) {
+        // inverse payout curve
+        (ContractSymbol::BtcUsd, Position::Long) => dec!(25_000),
+        (ContractSymbol::BtcUsd, Position::Short) => dec!(21_000_000), // INFINITE
+        // quanto linear payout curve
+        (ContractSymbol::EthUsd, Position::Long) => dec!(1),
+        (ContractSymbol::EthUsd, Position::Short) => dec!(3_000),
+    }
 }
