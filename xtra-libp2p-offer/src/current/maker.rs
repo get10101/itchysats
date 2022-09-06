@@ -51,14 +51,14 @@ impl Actor {
         };
 
         let err_handler = move |e: anyhow::Error| async move {
-            if let Some(xtra_libp2p::Error::NegotiationFailed(
-                xtra_libp2p::NegotiationError::Failed,
-            )) = e.downcast_ref::<xtra_libp2p::Error>()
-            {
-                // It's normal to disagree on the protocols now that we broadcast on both versions
-                // to _all_ our peers
-            } else {
-                tracing::warn!(%peer_id, "Failed to send offers: {e:#}")
+            match e.downcast_ref::<xtra_libp2p::Error>() {
+                Some(xtra_libp2p::Error::ProtocolNotSupportedByPeer) => {
+                    // Some peers may not support this protocol as listeners
+                }
+                Some(xtra_libp2p::Error::NegotiationFailed(_)) => {
+                    tracing::debug!(%peer_id, "Failed to send offers: {e:#}")
+                }
+                _ => tracing::warn!(%peer_id, "Failed to send offers: {e:#}"),
             }
         };
 

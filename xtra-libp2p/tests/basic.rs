@@ -16,6 +16,7 @@ use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
 use xtra::Context;
 use xtra_libp2p::endpoint;
+use xtra_libp2p::endpoint::RegisterListenProtocols;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Connect;
 use xtra_libp2p::Disconnect;
@@ -310,6 +311,66 @@ async fn falls_back_to_next_protocol_if_unsupported() {
         .unwrap();
 
     assert_eq!(actual_protocol, "/hello-world/1.0.0");
+}
+
+#[tokio::test]
+async fn given_alice_knows_bob_does_not_support_hello_world_when_dial_then_fail_early() {
+    let (alice, bob, _) = alice_and_bob([], []).await;
+
+    alice
+        .endpoint
+        .send(RegisterListenProtocols {
+            peer_id: bob.peer_id,
+            listen_protocols: HashSet::default(), // Bob doesn't support any protocols!
+        })
+        .await
+        .unwrap();
+
+    let res = alice
+        .endpoint
+        .send(OpenSubstream::single_protocol(
+            bob.peer_id,
+            "/hello-world/1.0.0",
+        ))
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        res,
+        Err(xtra_libp2p::Error::ProtocolNotSupportedByPeer)
+    ));
+}
+
+#[tokio::test]
+async fn given_alice_knows_bob_does_support_hello_world_when_dial_then_open_substream() {
+    let hello_world_handler = HelloWorld::default().create(None).spawn_global();
+    let (alice, bob, _) = alice_and_bob(
+        [],
+        [("/hello-world/1.0.0", hello_world_handler.clone().into())],
+    )
+    .await;
+
+    alice
+        .endpoint
+        .send(RegisterListenProtocols {
+            peer_id: bob.peer_id,
+            listen_protocols: HashSet::from_iter(["/hello-world/1.0.0".to_string()]),
+        })
+        .await
+        .unwrap();
+
+    let res = alice
+        .endpoint
+        .send(OpenSubstream::single_protocol(
+            bob.peer_id,
+            "/hello-world/1.0.0",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .await;
+
+    assert!(matches!(res, Ok(_)));
 }
 
 async fn alice_and_bob<const AN: usize, const BN: usize>(

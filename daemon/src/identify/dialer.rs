@@ -8,6 +8,7 @@ use tokio_extras::spawn_fallible;
 use xtra::Address;
 use xtra::Context;
 use xtra_libp2p::endpoint;
+use xtra_libp2p::endpoint::RegisterListenProtocols;
 use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
@@ -114,6 +115,13 @@ impl Actor {
                     .await?;
 
                 let identify_msg = protocol::recv(stream).await?;
+
+                endpoint
+                    .send(RegisterListenProtocols {
+                        peer_id,
+                        listen_protocols: identify_msg.protocols(),
+                    })
+                    .await?;
 
                 this.send(IdentifyMsgReceived {
                     peer_id,
