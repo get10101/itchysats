@@ -111,7 +111,7 @@ impl Payouts {
     }
 
     #[tracing::instrument(err)]
-    fn new_inverse(
+    pub(crate) fn new_inverse(
         (position, role): (Position, Role),
         price: Price,
         quantity: Contracts,
@@ -219,7 +219,7 @@ impl Payouts {
 
 /// Configure the maximum price supported by the inverse payout curve.
 #[derive(Debug, Copy, Clone)]
-enum InverseMaxPrice {
+pub(crate) enum InverseMaxPrice {
     /// Set the maximum price to the maximum value Olivia can attest to.
     OliviaMax,
     /// Set the maximum price to double the value of the initial price.

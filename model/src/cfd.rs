@@ -5,6 +5,7 @@ use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve::inverse;
 use crate::payout_curve::quanto;
+use crate::payout_curve::InverseMaxPrice;
 use crate::payout_curve::Payouts;
 use crate::payout_curve::ETHUSD_MULTIPLIER;
 use crate::rollover::BaseDlcParams;
@@ -1021,7 +1022,8 @@ impl Cfd {
         self.can_settle_collaboratively()
             .context("Cannot collaboratively settle")?;
 
-        let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+        let (collab_settlement_tx, proposal) =
+            self.make_proposal(current_price, n_payouts, InverseMaxPrice::OliviaMax)?;
 
         Ok((
             CfdEvent::new(
@@ -1033,19 +1035,58 @@ impl Cfd {
         ))
     }
 
-    /// Use this function after receiving settlement proposal
-    pub fn start_collab_settlement_maker(
+    /// Process the taker's collaborative settlement proposal.
+    ///
+    /// It generates a local [`SettlementProposal`] setting the maximum payout price to Olivia's
+    /// maximum attestation price. This assumes that the counterparty has also used the same
+    /// configuration.
+    pub fn start_collab_settlement_maker_olivia_max(
         self,
         current_price: Price,
         n_payouts: usize,
         proposed_settlement_transaction: &Transaction,
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
+        self.start_collab_settlement_maker(
+            current_price,
+            n_payouts,
+            proposed_settlement_transaction,
+            InverseMaxPrice::OliviaMax,
+        )
+    }
+
+    /// Process the taker's collaborative settlement proposal.
+    ///
+    /// It generates a local [`SettlementProposal`] setting the maximum payout price to double of
+    /// the value of the inital price used to generate the CFD. This assumes that the counterparty
+    /// has also used the same configuration.
+    pub fn start_collab_settlement_maker_double_initial(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        proposed_settlement_transaction: &Transaction,
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
+        self.start_collab_settlement_maker(
+            current_price,
+            n_payouts,
+            proposed_settlement_transaction,
+            InverseMaxPrice::DoubleOfInitial,
+        )
+    }
+
+    fn start_collab_settlement_maker(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        proposed_settlement_transaction: &Transaction,
+        inverse_max_price_config: InverseMaxPrice,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Maker);
         self.can_settle_collaboratively()
             .context("Cannot collaboratively settle")?;
 
-        let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+        let (settlement_tx, proposal) =
+            self.make_proposal(current_price, n_payouts, inverse_max_price_config)?;
 
         let local_settlement_transaction = settlement_tx.unsigned_transaction();
 
@@ -1068,15 +1109,17 @@ impl Cfd {
         self,
         current_price: Price,
         n_payouts: usize,
+        inverse_max_price_config: InverseMaxPrice,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
         let payouts = match self.contract_symbol {
-            ContractSymbol::BtcUsd => Payouts::new_inverse_double_initial(
+            ContractSymbol::BtcUsd => Payouts::new_inverse(
                 (self.position, self.role),
                 self.initial_price,
                 self.quantity,
                 (self.long_leverage, self.short_leverage),
                 n_payouts,
                 self.fee_account.settle(),
+                inverse_max_price_config,
             )?,
             ContractSymbol::EthUsd => Payouts::new_quanto(
                 (self.position, self.role),
@@ -3279,8 +3322,12 @@ mod tests {
             .dummy_commit();
 
         let result_taker = taker_long.start_collab_settlement_taker(price, N_PAYOUTS);
-        let result_maker =
-            maker_short.start_collab_settlement_maker(Price::dummy(), N_PAYOUTS, &unsigned_tx);
+        let result_maker = maker_short.start_collab_settlement_maker(
+            Price::dummy(),
+            N_PAYOUTS,
+            &unsigned_tx,
+            InverseMaxPrice::OliviaMax,
+        );
 
         assert!(result_taker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
         assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
@@ -4086,6 +4133,7 @@ mod tests {
                     price,
                     N_PAYOUTS,
                     settlement_transaction.unsigned_transaction(),
+                    InverseMaxPrice::OliviaMax,
                 )
                 .unwrap();
 
@@ -4119,7 +4167,12 @@ mod tests {
 
             let (incoming_settlement, transaction, _) = self
                 .clone()
-                .start_collab_settlement_maker(price, N_PAYOUTS, taker_unsigned_tx)
+                .start_collab_settlement_maker(
+                    price,
+                    N_PAYOUTS,
+                    taker_unsigned_tx,
+                    InverseMaxPrice::OliviaMax,
+                )
                 .unwrap();
             events.push(incoming_settlement);
 
