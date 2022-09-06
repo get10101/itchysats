@@ -357,18 +357,18 @@ impl RatesChannel {
 }
 
 #[async_trait]
-impl rollover::current::protocol::GetRates for RatesChannel {
+impl rollover::deprecated::protocol::GetRates for RatesChannel {
     async fn get_rates(
         &self,
         contract_symbol: ContractSymbol,
-    ) -> Result<rollover::current::protocol::Rates> {
+    ) -> Result<rollover::deprecated::protocol::Rates> {
         let (FundingRates { long, short }, tx_fee_rate) = self
             .0
             .send(GetRolloverParams(contract_symbol))
             .await
             .context("CFD actor disconnected")??;
 
-        Ok(rollover::current::protocol::Rates::new(
+        Ok(rollover::deprecated::protocol::Rates::new(
             long,
             short,
             tx_fee_rate,

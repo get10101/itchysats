@@ -331,7 +331,7 @@ pub(crate) async fn build_own_cfd_transactions(
     let taker_lock_amount = dlc.taker_lock_amount;
 
     let payouts = match contract_symbol {
-        ContractSymbol::BtcUsd => Payouts::new_inverse_olivia_max(
+        ContractSymbol::BtcUsd => Payouts::new_inverse_double_initial(
             (our_position, role),
             rollover_params.price,
             rollover_params.quantity,

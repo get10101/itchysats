@@ -18,7 +18,7 @@ use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
 
-/// Permanent actor to handle incoming substreams for the `/itchysats/rollover/1.0.0`
+/// Permanent actor to handle incoming substreams for the `/itchysats/rollover/2.0.0`
 /// protocol.
 ///
 /// There is only one instance of this actor for all connections, meaning we must always spawn a
@@ -123,13 +123,19 @@ where
         } = msg;
         let order_id = propose.order_id;
 
-        let base_dlc_params = match self
+        let (base_dlc_params, contract_symbol) = match self
             .executor
             .execute(order_id, |cfd| {
                 cfd.verify_counterparty_peer_id(&peer_id.into())?;
-                cfd.start_rollover_maker(propose.from_commit_txid)
+
+                let (event, base_dlc_params) =
+                    cfd.start_rollover_maker(propose.from_commit_txid)?;
+                let contract_symbol = cfd.contract_symbol();
+
+                Ok((event, base_dlc_params, contract_symbol))
             })
             .await
+            .context("Rollover failed after handling taker proposal")
         {
             Ok(base_dlc_params) => base_dlc_params,
             Err(e) => {
@@ -178,9 +184,12 @@ where
                     funding_rate_long,
                     funding_rate_short,
                     tx_fee_rate,
-                } = rates.get_rates().await.context("Failed to get rates")?;
+                } = rates
+                    .get_rates(contract_symbol)
+                    .await
+                    .context("Failed to get rates")?;
 
-                let (rollover_params, dlc, position, oracle_event_id, funding_rate) = executor
+                let (rollover_params, dlc, position, oracle_event_ids, funding_rate) = executor
                     .execute(order_id, |cfd| {
                         let funding_rate = match cfd.position() {
                             Position::Long => funding_rate_long,
@@ -188,7 +197,7 @@ where
                         };
 
                         let (event, params, dlc, position, oracle_event_id) = cfd
-                            .accept_rollover_proposal_single_event(
+                            .accept_rollover_proposal(
                                 tx_fee_rate,
                                 funding_rate,
                                 Some((
@@ -210,7 +219,7 @@ where
                 framed
                     .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
                         order_id,
-                        oracle_event_id,
+                        oracle_event_ids: oracle_event_ids.clone(),
                         tx_fee_rate,
                         funding_rate,
                         complete_fee: complete_fee.into(),
@@ -218,10 +227,11 @@ where
                     .await
                     .context("Failed to send rollover confirmation message")?;
 
-                let announcement = oracle
-                    .get_announcements(vec![oracle_event_id])
+                let announcements = oracle
+                    .get_announcements(oracle_event_ids)
                     .await
                     .context("Failed to get announcement")?;
+                let settlement_event_id = announcements.last().context("Empty to_event_ids")?.id;
 
                 let funding_fee = *rollover_params.funding_fee();
 
@@ -256,24 +266,20 @@ where
                     .await
                     .context("Failed to send Msg0")?;
 
-                let punish_params = build_punish_params(
-                    our_role,
-                    dlc.identity,
-                    dlc.identity_counterparty,
-                    msg0,
-                    rev_pk,
-                    publish_pk,
-                );
+                let punish_params =
+                    PunishParams::new(rev_pk, msg0.revocation_pk, publish_pk, msg0.publish_pk);
 
                 let own_cfd_txs = build_own_cfd_transactions(
                     &dlc,
                     rollover_params,
-                    &announcement[0],
+                    announcements.clone(),
                     oracle_pk,
                     our_position,
                     n_payouts,
                     complete_fee,
                     punish_params,
+                    Role::Maker,
+                    contract_symbol,
                 )
                 .await?;
 
@@ -299,10 +305,13 @@ where
                     .await
                     .context("Failed to send Msg1")?;
 
-                let commit_desc = build_commit_descriptor(punish_params);
+                let commit_desc = build_commit_descriptor(
+                    dlc.identity_pk(),
+                    dlc.identity_counterparty,
+                    punish_params,
+                );
                 let (cets, refund_tx) = build_and_verify_cets_and_refund(
                     &dlc,
-                    &announcement[0],
                     oracle_pk,
                     publish_pk,
                     our_role,
@@ -350,9 +359,9 @@ where
                     identity: dlc.identity,
                     identity_counterparty: dlc.identity_counterparty,
                     revocation: rev_sk,
-                    revocation_pk_counterparty: punish_params.counterparty_params().revocation_pk,
+                    revocation_pk_counterparty: punish_params.taker.revocation_pk,
                     publish: publish_sk,
-                    publish_pk_counterparty: punish_params.counterparty_params().publish_pk,
+                    publish_pk_counterparty: punish_params.taker.publish_pk,
                     maker_address: dlc.maker_address,
                     taker_address: dlc.taker_address,
                     lock: dlc.lock.clone(),
@@ -362,7 +371,7 @@ where
                     maker_lock_amount: dlc.maker_lock_amount,
                     taker_lock_amount: dlc.taker_lock_amount,
                     revoked_commit: revoked_commits,
-                    settlement_event_id: announcement[0].id,
+                    settlement_event_id,
                     refund_timelock: rollover_params.refund_timelock,
                 };
 

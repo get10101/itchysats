@@ -1,4 +1,4 @@
-pub mod current;
-mod next;
+mod current;
+pub mod deprecated;
 
-pub use next::*;
+pub use current::*;
