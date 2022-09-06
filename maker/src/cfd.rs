@@ -162,9 +162,9 @@ pub struct Actor {
     projection: xtra::Address<projection::Actor>,
     rollover_params: RolloverParams,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
-    libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
-    libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
-    libp2p_offer_deprecated: xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
+    collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+    offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
+    offer_deprecated: xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
     order: xtra::Address<order::maker::Actor>,
 }
 
@@ -173,8 +173,8 @@ impl Actor {
         settlement_interval: Duration,
         projection: xtra::Address<projection::Actor>,
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
-        libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
-        (libp2p_offer, libp2p_offer_deprecated): (
+        collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+        (offer, offer_deprecated): (
             xtra::Address<xtra_libp2p_offer::maker::Actor>,
             xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
         ),
@@ -185,9 +185,9 @@ impl Actor {
             projection,
             rollover_params: RolloverParams::default(),
             time_to_first_position,
-            libp2p_collab_settlement,
-            libp2p_offer,
-            libp2p_offer_deprecated,
+            collab_settlement,
+            offer,
+            offer_deprecated,
             order,
         }
     }
@@ -247,7 +247,7 @@ impl Actor {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        self.libp2p_collab_settlement
+        self.collab_settlement
             .send(daemon::collab_settlement::maker::Accept { order_id })
             .await??;
 
@@ -257,7 +257,7 @@ impl Actor {
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        self.libp2p_collab_settlement
+        self.collab_settlement
             .send(daemon::collab_settlement::maker::Reject { order_id })
             .await??;
 
@@ -304,7 +304,7 @@ impl Actor {
 
         // 3. Broadcast to all peers via offer actor
         if let Err(e) = self
-            .libp2p_offer
+            .offer
             .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(offers.clone()))
             .await
         {
@@ -321,7 +321,7 @@ impl Actor {
 
             if let Some(btcusd_offers) = NonEmpty::from_vec(btcusd_offers) {
                 if let Err(e) = self
-                    .libp2p_offer_deprecated
+                    .offer_deprecated
                     .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(
                         btcusd_offers,
                     ))

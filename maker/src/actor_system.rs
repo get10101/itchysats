@@ -174,7 +174,7 @@ where
         });
         tasks.add(order_supervisor.run_log_summary());
 
-        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
+        let (collab_settlement_supervisor, collab_settlement_addr) = Supervisor::new({
             let executor = executor.clone();
             move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
         });
@@ -184,7 +184,7 @@ where
             settlement_interval,
             projection_actor,
             time_to_first_position_addr,
-            libp2p_collab_settlement_addr.clone(),
+            collab_settlement_addr.clone(),
             (
                 maker_offer_address.clone(),
                 maker_offer_address_deprecated.clone(),
@@ -269,7 +269,7 @@ where
                 order,
                 rollover_addr.clone(),
                 rollover_deprecated_addr.clone(),
-                libp2p_collab_settlement_addr,
+                collab_settlement_addr,
             ),
             endpoint::Subscribers::new(
                 vec![

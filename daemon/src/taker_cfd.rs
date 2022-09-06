@@ -40,7 +40,7 @@ pub struct ProposeSettlement {
 pub struct Actor {
     db: sqlite_db::Connection,
     projection_actor: xtra::Address<projection::Actor>,
-    libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
+    collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     order_actor: xtra::Address<order::taker::Actor>,
     offers: Offers,
     maker_identity: Identity,
@@ -51,7 +51,7 @@ impl Actor {
     pub fn new(
         db: sqlite_db::Connection,
         projection_actor: xtra::Address<projection::Actor>,
-        libp2p_collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
+        collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
         order_actor: xtra::Address<order::taker::Actor>,
         maker_identity: Identity,
         maker_peer_id: PeerId,
@@ -59,7 +59,7 @@ impl Actor {
         Self {
             db,
             projection_actor,
-            libp2p_collab_settlement_actor,
+            collab_settlement_actor,
             order_actor,
             offers: Offers::default(),
             maker_identity,
@@ -93,7 +93,7 @@ impl Actor {
         tracing::debug!(%order_id, %proposal_closing_price, %bid, %ask, %quote_timestamp, "Proposing settlement of contract");
 
         // Wait for the response to check for invariants (ie. whether it is possible to settle)
-        self.libp2p_collab_settlement_actor
+        self.collab_settlement_actor
             .send(Settle {
                 order_id,
                 price: proposal_closing_price,
