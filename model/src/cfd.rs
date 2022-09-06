@@ -1858,10 +1858,10 @@ pub fn calculate_long_liquidation_price(
     initial_price: Price,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
-) -> Price {
+) -> Decimal {
     match contract_symbol {
         ContractSymbol::BtcUsd => {
-            inverse::calculate_long_liquidation_price(leverage, initial_price)
+            inverse::calculate_long_liquidation_price(leverage, initial_price).into_decimal()
         }
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
@@ -1869,14 +1869,7 @@ pub fn calculate_long_liquidation_price(
             let liquidation_price =
                 quanto::bankruptcy_price_long(initial_price, leverage.as_decimal());
 
-            // The `model::Price` type does not allow non-positive values, but the quanto long
-            // liquidation price can easily be 0. We avoid this problem by defaulting to 1
-            if liquidation_price == 0 {
-                Price::new(Decimal::ONE).expect("one to be valid price")
-            } else {
-                Price::new(Decimal::from(liquidation_price))
-                    .expect("liquidation price to fit into Price")
-            }
+            Decimal::from(liquidation_price)
         }
     }
 }
@@ -1886,10 +1879,10 @@ pub fn calculate_short_liquidation_price(
     initial_price: Price,
     leverage: Leverage,
     contract_symbol: ContractSymbol,
-) -> Price {
+) -> Decimal {
     match contract_symbol {
         ContractSymbol::BtcUsd => {
-            inverse::calculate_short_liquidation_price(leverage, initial_price)
+            inverse::calculate_short_liquidation_price(leverage, initial_price).into_decimal()
         }
         ContractSymbol::EthUsd => {
             let initial_price = initial_price.to_u64();
@@ -1897,8 +1890,7 @@ pub fn calculate_short_liquidation_price(
             let liquidation_price =
                 quanto::bankruptcy_price_short(initial_price, leverage.as_decimal());
 
-            Price::new(Decimal::from(liquidation_price))
-                .expect("liquidation price to fit into Price")
+            Decimal::from(liquidation_price)
         }
     }
 }
@@ -2325,6 +2317,41 @@ impl Dlc {
             .copied()
             .filter(|id| *id != self.settlement_event_id) // only keep events which are _not_ the settlement event
             .collect()
+    }
+
+    pub fn liquidation_price(&self, role: Role, position: Position) -> u64 {
+        use Position::*;
+        use Role::*;
+
+        // We use the settlement event because all CFDs are guaranteed to have a settlement event,
+        // whereas they might not have any liquidation events
+        let (_, settlement_cets) = self
+            .cets
+            .iter()
+            .find(|(id, _)| id == &&self.settlement_event_id)
+            .expect("to have settlement CETs");
+
+        // We search for the settlement CET that gives us the least. That one must be the one that
+        // liquidates us, giving us the liquidation interval
+        let liquidation_cet = match role {
+            Maker => settlement_cets
+                .iter()
+                .min_by(|x, y| x.maker_amount.cmp(&y.maker_amount)),
+            Taker => settlement_cets
+                .iter()
+                .min_by(|x, y| x.taker_amount.cmp(&y.taker_amount)),
+        }
+        .expect("to have cets");
+        let liquidation_interval = &liquidation_cet.range;
+
+        match position {
+            // Long liquidation intervals are of the form `(0..=end)`, meaning the long liquidation
+            // price corresponds to the end of the range
+            Long => *liquidation_interval.end(),
+            // Short liquidation intervals are of the form `(start..=max)`, meaning the short
+            // liquidation price corresponds to the start of the range
+            Short => *liquidation_interval.start(),
+        }
     }
 
     pub fn identity_pk(&self) -> PublicKey {

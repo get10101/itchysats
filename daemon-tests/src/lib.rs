@@ -1135,27 +1135,3 @@ pub async fn mock_quotes(maker: &mut Maker, taker: &mut Taker, contract_symbol: 
         .await
         .unwrap(); // if quote is available on feed, it propagated through the system
 }
-
-pub fn expected_taker_liquidation_price(symbol: ContractSymbol, taker_position: Position) -> Price {
-    let expected_liquidation_price = match (symbol, taker_position) {
-        // inverse payout curve
-        (ContractSymbol::BtcUsd, Position::Long) => dec!(33_333.333333333333333333333333),
-        (ContractSymbol::BtcUsd, Position::Short) => dec!(100_000),
-        // quanto linear payout curve
-        (ContractSymbol::EthUsd, Position::Long) => dec!(750),
-        (ContractSymbol::EthUsd, Position::Short) => dec!(2_250),
-    };
-    Price::new(expected_liquidation_price).unwrap()
-}
-
-pub fn expected_maker_liquidation_price(symbol: ContractSymbol, maker_position: Position) -> Price {
-    let expected_liquidation_price = match (symbol, maker_position) {
-        // inverse payout curve
-        (ContractSymbol::BtcUsd, Position::Long) => dec!(25_000),
-        (ContractSymbol::BtcUsd, Position::Short) => dec!(21_000_000), // INFINITE
-        // quanto linear payout curve
-        (ContractSymbol::EthUsd, Position::Long) => dec!(1),
-        (ContractSymbol::EthUsd, Position::Short) => dec!(3_000),
-    };
-    Price::new(expected_liquidation_price).unwrap()
-}

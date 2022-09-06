@@ -151,7 +151,7 @@ pub struct Cfd {
     pub contract_symbol: ContractSymbol,
     pub position: Position,
     #[serde(with = "round_to_two_dp")]
-    pub liquidation_price: Price,
+    pub liquidation_price: Decimal,
 
     #[serde(with = "round_to_two_dp")]
     pub quantity: Contracts,
@@ -350,6 +350,8 @@ impl Cfd {
             counterparty_leverage,
         );
 
+        // This value will be updated as we apply `{ContractSetup,Rollover}Completed` events to the
+        // `Cfd`
         let liquidation_price = match position {
             Position::Long => {
                 calculate_long_liquidation_price(initial_price, our_leverage, contract_symbol)
@@ -428,6 +430,12 @@ impl Cfd {
             }
             ContractSetupCompleted { dlc } => {
                 self.expiry_timestamp = dlc.as_ref().map(|dlc| dlc.settlement_event_id.timestamp());
+
+                if let Some(dlc) = &dlc {
+                    self.liquidation_price =
+                        Decimal::from(dlc.liquidation_price(self.role, self.position));
+                }
+
                 self.aggregated.latest_dlc = dlc;
 
                 self.aggregated.state = CfdState::PendingOpen;
@@ -444,6 +452,12 @@ impl Cfd {
                 complete_fee,
             } => {
                 self.expiry_timestamp = dlc.as_ref().map(|dlc| dlc.settlement_event_id.timestamp());
+
+                if let Some(dlc) = &dlc {
+                    self.liquidation_price =
+                        Decimal::from(dlc.liquidation_price(self.role, self.position));
+                }
+
                 self.aggregated.latest_dlc = dlc;
 
                 self.aggregated.fee_account = match complete_fee {
@@ -1324,7 +1338,7 @@ pub struct LeverageDetails {
     pub leverage: Leverage,
     /// Own liquidation price according to position and leverage
     #[serde(with = "round_to_two_dp")]
-    pub liquidation_price: Price,
+    pub liquidation_price: Decimal,
     /// Margin per lot from the perspective of the role
     ///
     /// Since this is a calculated value that we need in the UI this value is based on the
@@ -1886,7 +1900,21 @@ mod tests {
                 .load_closed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            projection_closed.with_current_quote(None) // unconditional processing in `projection`
+            let mut projection_closed = projection_closed.with_current_quote(None); // unconditional processing in `projection`
+
+            // We expect these liquidation prices to differ, because they are calculated to
+            // different level of precision depending on whether the CFD is open, closed or failed
+            assert_ne!(
+                projection_closed.liquidation_price,
+                projection_open.liquidation_price
+            );
+
+            // We set the liquidation prices to be equal to ensure that when we compare CFDs we
+            // effectively don't take into account the liquidation price, because it will always be
+            // different
+            projection_closed.liquidation_price = projection_open.liquidation_price;
+
+            projection_closed
         };
 
         // this comparison actually omits the `aggregated` field on
