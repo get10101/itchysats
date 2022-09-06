@@ -18,11 +18,8 @@ pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::n
     collab_settlement::PROTOCOL,
 );
 
-pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols = TakerListenProtocols::new(
-    ping_pong::PROTOCOL,
-    identify::PROTOCOL,
-    xtra_libp2p_offer::PROTOCOL,
-);
+pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols =
+    TakerListenProtocols::new(ping_pong::PROTOCOL, identify::PROTOCOL, offer::PROTOCOL);
 
 pub const REQUIRED_MAKER_LISTEN_PROTOCOLS: RequiredMakerListenProtocols =
     RequiredMakerListenProtocols::new(
@@ -229,7 +226,7 @@ impl TakerListenProtocols {
         &self,
         ping_handler: Address<pong::Actor>,
         identify_handler: Address<identify::listener::Actor>,
-        offer_handler: Address<xtra_libp2p_offer::taker::Actor>,
+        offer_handler: Address<offer::taker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     {
         // We deconstruct to ensure that all protocols are being used

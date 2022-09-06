@@ -163,8 +163,8 @@ pub struct Actor {
     rollover_params: RolloverParams,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
     collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
-    offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
-    offer_deprecated: xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
+    offer: xtra::Address<offer::maker::Actor>,
+    offer_deprecated: xtra::Address<offer::deprecated::maker::Actor>,
     order: xtra::Address<order::maker::Actor>,
 }
 
@@ -175,8 +175,8 @@ impl Actor {
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
         collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
         (offer, offer_deprecated): (
-            xtra::Address<xtra_libp2p_offer::maker::Actor>,
-            xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
+            xtra::Address<offer::maker::Actor>,
+            xtra::Address<offer::deprecated::maker::Actor>,
         ),
         order: xtra::Address<order::maker::Actor>,
     ) -> Self {
@@ -305,7 +305,7 @@ impl Actor {
         // 3. Broadcast to all peers via offer actor
         if let Err(e) = self
             .offer
-            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(offers.clone()))
+            .send_async_safe(offer::maker::NewOffers::new(offers.clone()))
             .await
         {
             tracing::warn!("{e:#}");
@@ -322,9 +322,7 @@ impl Actor {
             if let Some(btcusd_offers) = NonEmpty::from_vec(btcusd_offers) {
                 if let Err(e) = self
                     .offer_deprecated
-                    .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(
-                        btcusd_offers,
-                    ))
+                    .send_async_safe(offer::deprecated::maker::NewOffers::new(btcusd_offers))
                     .await
                 {
                     tracing::warn!("{e:#}");

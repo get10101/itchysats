@@ -52,7 +52,7 @@ pub struct Actor {
     n_payouts: usize,
     decision_senders: HashMap<OrderId, oneshot::Sender<protocol::Decision>>,
     db: sqlite_db::Connection,
-    latest_offers: MessageChannel<xtra_libp2p_offer::maker::GetLatestOffers, Vec<model::Offer>>,
+    latest_offers: MessageChannel<offer::maker::GetLatestOffers, Vec<model::Offer>>,
 }
 
 impl Actor {
@@ -69,7 +69,7 @@ impl Actor {
             MessageChannel<wallet::Sign, Result<PartiallySignedTransaction>>,
         ),
         projection: xtra::Address<projection::Actor>,
-        latest_offers: MessageChannel<xtra_libp2p_offer::maker::GetLatestOffers, Vec<model::Offer>>,
+        latest_offers: MessageChannel<offer::maker::GetLatestOffers, Vec<model::Offer>>,
     ) -> Self {
         Self {
             executor: command::Executor::new(db.clone(), process_manager),
@@ -105,7 +105,7 @@ impl Actor {
     async fn pick_offer(&self, offer_id: OfferId) -> Result<model::Offer> {
         let latest_offers = self
             .latest_offers
-            .send(xtra_libp2p_offer::maker::GetLatestOffers)
+            .send(offer::maker::GetLatestOffers)
             .await
             .context("Failed to retrieve latest offer from offers actor")?;
 

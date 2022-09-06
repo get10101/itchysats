@@ -268,7 +268,7 @@ where
 
         let (offer_supervisor, offer_addr) = Supervisor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
-            move || xtra_libp2p_offer::taker::Actor::new(cfd_actor_addr.clone().into())
+            move || offer::taker::Actor::new(cfd_actor_addr.clone().into())
         });
 
         let (identify_listener_supervisor, identify_listener_actor) = Supervisor::new({

@@ -70,7 +70,7 @@ impl Actor {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle_latest_offers(&mut self, msg: xtra_libp2p_offer::taker::LatestOffers) {
+    async fn handle_latest_offers(&mut self, msg: offer::taker::LatestOffers) {
         self.offers.insert(msg.0.clone());
 
         if let Err(e) = self.projection_actor.send(projection::Update(msg.0)).await {

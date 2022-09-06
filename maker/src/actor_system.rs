@@ -143,13 +143,13 @@ where
 
         let (supervisor, maker_offer_address_deprecated) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
-            move || xtra_libp2p_offer::deprecated::maker::Actor::new(endpoint_addr.clone())
+            move || offer::deprecated::maker::Actor::new(endpoint_addr.clone())
         });
         tasks.add(supervisor.run_log_summary());
 
         let (supervisor, maker_offer_address) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
-            move || xtra_libp2p_offer::maker::Actor::new(endpoint_addr.clone())
+            move || offer::maker::Actor::new(endpoint_addr.clone())
         });
         tasks.add(supervisor.run_log_summary());
 
