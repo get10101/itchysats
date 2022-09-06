@@ -2732,6 +2732,7 @@ checksum = "8e22443d1643a904602595ba1cd8f7d896afe56d26712531c5ff73a15b2fbf64"
 [[package]]
 name = "otel-tests"
 version = "0.1.0"
+source = "git+https://github.com/itchysats/otel-tests/?rev=4a57d84ad5780c30d09222c56440482d9e722363#4a57d84ad5780c30d09222c56440482d9e722363"
 dependencies = [
  "futures",
  "opentelemetry",
@@ -2748,6 +2749,7 @@ dependencies = [
 [[package]]
 name = "otel-tests-macro"
 version = "0.1.0"
+source = "git+https://github.com/itchysats/otel-tests/?rev=4a57d84ad5780c30d09222c56440482d9e722363#4a57d84ad5780c30d09222c56440482d9e722363"
 dependencies = [
  "quote",
  "syn",
