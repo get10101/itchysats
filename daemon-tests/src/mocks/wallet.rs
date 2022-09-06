@@ -1,20 +1,16 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk_ext::new_test_wallet;
-use daemon::bdk;
 use daemon::bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Txid;
 use daemon::bdk::wallet::tx_builder::TxOrdering;
 use daemon::bdk::wallet::AddressIndex;
 use daemon::bdk::FeeRate;
-use daemon::maia_core::secp256k1_zkp::Secp256k1;
 use daemon::maia_core::PartyParams;
 use daemon::maia_core::TxBuilderExt;
 use daemon::wallet;
 use mockall::*;
-use model::Timestamp;
-use model::WalletInfo;
 use rand::thread_rng;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -75,20 +71,6 @@ pub trait Wallet {
     fn sync(&mut self, _msg: wallet::Sync) {
         unreachable!("mockall will reimplement this method")
     }
-}
-
-#[allow(dead_code)]
-/// tells the user they have plenty of moneys
-fn dummy_wallet_info() -> Result<WalletInfo> {
-    let s = Secp256k1::new();
-    let public_key = bdk::bitcoin::PublicKey::new(s.generate_keypair(&mut thread_rng()).1);
-    let address = bdk::bitcoin::Address::p2pkh(&public_key, bdk::bitcoin::Network::Testnet);
-
-    Ok(WalletInfo {
-        balance: bdk::bitcoin::Amount::ONE_BTC,
-        address,
-        last_updated_at: Timestamp::now(),
-    })
 }
 
 pub fn build_party_params(msg: wallet::BuildPartyParams) -> Result<PartyParams> {

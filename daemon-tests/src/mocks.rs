@@ -79,11 +79,10 @@ impl Mocks {
     }
 
     pub async fn mock_party_params(&mut self) {
-        #[allow(clippy::redundant_closure)] // clippy is in the wrong here
         self.wallet()
             .await
             .expect_build_party_params()
-            .returning(|msg| wallet::build_party_params(msg));
+            .returning(wallet::build_party_params);
     }
 
     pub async fn mock_latest_quotes(&mut self) {
