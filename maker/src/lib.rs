@@ -75,6 +75,12 @@ pub struct Opts {
     #[clap(short, long, default_value = "Debug")]
     pub log_level: LevelFilter,
 
+    /// Password for the web interface.
+    ///
+    /// If not provided, will be derived from the seed.
+    #[clap(long)]
+    pub password: Option<rocket_basicauth::Password>,
+
     #[clap(subcommand)]
     pub network: Network,
 }
