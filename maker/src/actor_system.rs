@@ -156,7 +156,7 @@ where
         let (order_supervisor, order) = Supervisor::new({
             let oracle = oracle_addr.clone();
             let db = db.clone();
-            let process_manager = process_manager_addr;
+            let process_manager = process_manager_addr.clone();
             let wallet = wallet_addr.clone();
             let projection = projection_actor.clone();
             let maker_offer_address = maker_offer_address.clone();
@@ -173,6 +173,27 @@ where
             }
         });
         tasks.add(order_supervisor.run_log_summary());
+
+        let (order_deprecated_supervisor, order_deprecated) = Supervisor::new({
+            let oracle = oracle_addr.clone();
+            let db = db.clone();
+            let process_manager = process_manager_addr;
+            let wallet = wallet_addr.clone();
+            let projection = projection_actor.clone();
+            let maker_offer_address = maker_offer_address.clone();
+            move || {
+                order::deprecated::maker::Actor::new(
+                    n_payouts,
+                    oracle_pk,
+                    oracle.clone().into(),
+                    (db.clone(), process_manager.clone()),
+                    (wallet.clone().into(), wallet.clone().into()),
+                    projection.clone(),
+                    maker_offer_address.clone().into(),
+                )
+            }
+        });
+        tasks.add(order_deprecated_supervisor.run_log_summary());
 
         let (collab_settlement_supervisor, collab_settlement_addr) = Supervisor::new({
             let executor = executor.clone();
@@ -201,7 +222,7 @@ where
                 maker_offer_address.clone(),
                 maker_offer_address_deprecated.clone(),
             ),
-            order.clone(),
+            (order.clone(), order_deprecated.clone()),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -278,7 +299,7 @@ where
             MAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
                 pong_address.clone(),
                 identify_listener_actor,
-                order,
+                (order, order_deprecated),
                 (rollover_addr.clone(), rollover_deprecated_addr.clone()),
                 (collab_settlement_addr, collab_settlement_deprecated_addr),
             ),

@@ -1,11 +1,11 @@
 use crate::command;
 use crate::oracle;
 use crate::oracle::NoAnnouncement;
-use crate::order::contract_setup;
-use crate::order::protocol;
-use crate::order::protocol::MakerMessage;
-use crate::order::protocol::SetupMsg;
-use crate::order::protocol::TakerMessage;
+use crate::order::current::contract_setup;
+use crate::order::current::protocol;
+use crate::order::current::protocol::MakerMessage;
+use crate::order::current::protocol::SetupMsg;
+use crate::order::current::protocol::TakerMessage;
 use crate::process_manager;
 use crate::projection;
 use crate::wallet;

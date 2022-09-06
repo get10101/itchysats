@@ -1,9 +1,9 @@
 use crate::bitcoin::secp256k1::SecretKey;
 use crate::bitcoin::PublicKey;
-use crate::order::protocol::Msg0;
-use crate::order::protocol::Msg1;
-use crate::order::protocol::Msg2;
-use crate::order::protocol::Msg3;
+use crate::order::current::protocol::Msg0;
+use crate::order::current::protocol::Msg1;
+use crate::order::current::protocol::Msg2;
+use crate::order::current::protocol::Msg3;
 use crate::wallet;
 use anyhow::bail;
 use anyhow::Context;

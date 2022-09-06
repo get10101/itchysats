@@ -12,11 +12,12 @@ use xtra_libp2p::NewInboundSubstream;
 pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::new(
     ping_pong::PROTOCOL,
     identify::PROTOCOL,
-    order::PROTOCOL,
-    rollover::PROTOCOL,
-    rollover::deprecated::PROTOCOL,
-    collab_settlement::PROTOCOL,
-    collab_settlement::deprecated::PROTOCOL,
+    (order::PROTOCOL, order::deprecated::PROTOCOL),
+    (rollover::PROTOCOL, rollover::deprecated::PROTOCOL),
+    (
+        collab_settlement::PROTOCOL,
+        collab_settlement::deprecated::PROTOCOL,
+    ),
 );
 
 pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols =
@@ -56,6 +57,7 @@ pub struct MakerListenProtocols {
     ping: &'static str,
     identify: &'static str,
     order: &'static str,
+    order_deprecated: &'static str,
     rollover: &'static str,
     rollover_deprecated: &'static str,
     collaborative_settlement: &'static str,
@@ -70,21 +72,23 @@ type RolloverDeprecatedAddress<RD> = Address<
 >;
 
 impl MakerListenProtocols {
-    pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 7;
+    pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 8;
 
     pub const fn new(
         ping: &'static str,
         identify: &'static str,
-        order: &'static str,
-        rollover: &'static str,
-        rollover_deprecated: &'static str,
-        collaborative_settlement: &'static str,
-        collaborative_settlement_deprecated: &'static str,
+        (order, order_deprecated): (&'static str, &'static str),
+        (rollover, rollover_deprecated): (&'static str, &'static str),
+        (collaborative_settlement, collaborative_settlement_deprecated): (
+            &'static str,
+            &'static str,
+        ),
     ) -> Self {
         Self {
             ping,
             identify,
             order,
+            order_deprecated,
             rollover,
             rollover_deprecated,
             collaborative_settlement,
@@ -100,7 +104,10 @@ impl MakerListenProtocols {
         &self,
         ping_handler: Address<pong::Actor>,
         identify_handler: Address<identify::listener::Actor>,
-        order_handler: Address<order::maker::Actor>,
+        (order_handler, order_deprecated_handler): (
+            Address<order::maker::Actor>,
+            Address<order::deprecated::maker::Actor>,
+        ),
         (rollover_handler, rollover_deprecated_handler): (
             RolloverAddress<R>,
             RolloverDeprecatedAddress<RD>,
@@ -119,6 +126,7 @@ impl MakerListenProtocols {
             ping,
             identify,
             order,
+            order_deprecated,
             rollover,
             rollover_deprecated,
             collaborative_settlement,
@@ -129,6 +137,7 @@ impl MakerListenProtocols {
             (ping, ping_handler.into()),
             (identify, identify_handler.into()),
             (order, order_handler.into()),
+            (order_deprecated, order_deprecated_handler.into()),
             (rollover, rollover_handler.into()),
             (rollover_deprecated, rollover_deprecated_handler.into()),
             (
@@ -150,6 +159,7 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping,
             identify,
             order,
+            order_deprecated,
             rollover,
             rollover_deprecated,
             collaborative_settlement,
@@ -160,6 +170,7 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping.to_string(),
             identify.to_string(),
             order.to_string(),
+            order_deprecated.to_string(),
             rollover.to_string(),
             rollover_deprecated.to_string(),
             collaborative_settlement.to_string(),

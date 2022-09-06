@@ -168,6 +168,7 @@ pub struct Actor {
     offer: xtra::Address<offer::maker::Actor>,
     offer_deprecated: xtra::Address<offer::deprecated::maker::Actor>,
     order: xtra::Address<order::maker::Actor>,
+    order_deprecated: xtra::Address<order::deprecated::maker::Actor>,
 }
 
 impl Actor {
@@ -183,7 +184,10 @@ impl Actor {
             xtra::Address<offer::maker::Actor>,
             xtra::Address<offer::deprecated::maker::Actor>,
         ),
-        order: xtra::Address<order::maker::Actor>,
+        (order, order_deprecated): (
+            xtra::Address<order::maker::Actor>,
+            xtra::Address<order::deprecated::maker::Actor>,
+        ),
     ) -> Self {
         Self {
             settlement_interval,
@@ -195,6 +199,7 @@ impl Actor {
             offer,
             offer_deprecated,
             order,
+            order_deprecated,
         }
     }
 
@@ -233,9 +238,27 @@ impl Actor {
     async fn handle_accept_order(&mut self, msg: AcceptOrder) -> Result<()> {
         let AcceptOrder { order_id } = msg;
 
-        self.order
+        let res = self
+            .order
             .send(order::maker::Decision::Accept(order_id))
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated order protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .order_deprecated
+                .send(order::deprecated::maker::Decision::Accept(order_id))
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to accept order.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -243,9 +266,27 @@ impl Actor {
     async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
         let RejectOrder { order_id } = msg;
 
-        self.order
+        let res = self
+            .order
             .send(order::maker::Decision::Reject(order_id))
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated order protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .order_deprecated
+                .send(order::deprecated::maker::Decision::Reject(order_id))
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to reject order.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
