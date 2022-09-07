@@ -2067,39 +2067,6 @@ impl SettlementTransaction {
 }
 
 impl Dlc {
-    /// Create a close transaction based on the current contract and a settlement proposals
-    #[deprecated]
-    pub fn close_transaction(
-        &self,
-        proposal: &SettlementProposal,
-    ) -> Result<(Transaction, Signature, Amount)> {
-        let (lock_tx, lock_desc) = &self.lock;
-        let (lock_outpoint, lock_amount) = {
-            let outpoint = lock_tx
-                .outpoint(&lock_desc.script_pubkey())
-                .expect("lock script to be in lock tx");
-            let amount = Amount::from_sat(lock_tx.output[outpoint.vout as usize].value);
-
-            (outpoint, amount)
-        };
-        // In order to preserve backwards compatibility, we are using maia
-        // v0.1.0 always (this code is called from legacy collab settlement protocol)
-        // TODO: Use maia v0.2.0 with libp2p-based collab close
-        let (tx, sighash) = maia_deprecated::close_transaction(
-            lock_desc,
-            lock_outpoint,
-            lock_amount,
-            (&self.maker_address, proposal.maker),
-            (&self.taker_address, proposal.taker),
-            1,
-        )
-        .context("Unable to build collaborative close transaction")?;
-
-        let sig = SECP256K1.sign_ecdsa(&sighash, &self.identity);
-
-        Ok((tx, sig, lock_amount))
-    }
-
     pub fn collab_settlement_transaction(
         &self,
         payout_maker: Amount,
@@ -3334,7 +3301,6 @@ mod tests {
             .dummy_open(dummy_event_id())
             .with_lock(taker_keys, maker_keys);
 
-        // Cannot be dummy_price() as it would trigger a bug in maia_deprecated
         let price = Price::new(dec!(1000)).unwrap();
 
         // Extract unsigned tx to be able to trigger collab settlement in the maker

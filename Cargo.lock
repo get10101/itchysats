@@ -904,8 +904,7 @@ dependencies = [
  "libp2p-core",
  "libp2p-noise",
  "libp2p-tcp",
- "maia 0.1.1",
- "maia 0.2.0",
+ "maia",
  "maia-core",
  "model",
  "parse-display",
@@ -2046,20 +2045,6 @@ dependencies = [
 
 [[package]]
 name = "maia"
-version = "0.1.1"
-source = "git+https://github.com/comit-network/maia?tag=0.1.1#e1354e9c0397326a99bb5068e3afbc8cf2e07a9d"
-dependencies = [
- "anyhow",
- "bdk",
- "itertools",
- "maia-core",
- "rand 0.6.5",
- "secp256k1-zkp",
- "thiserror",
-]
-
-[[package]]
-name = "maia"
 version = "0.2.0"
 source = "git+https://github.com/comit-network/maia?rev=fc6b78b98407b10b55f8cfd152062ad77f98cd9f#fc6b78b98407b10b55f8cfd152062ad77f98cd9f"
 dependencies = [
@@ -2098,7 +2083,7 @@ dependencies = [
  "hex",
  "http-api-problem",
  "libp2p-tcp",
- "maia 0.2.0",
+ "maia",
  "maia-core",
  "model",
  "nonempty",
@@ -2260,8 +2245,7 @@ dependencies = [
  "hex",
  "itertools",
  "libp2p-core",
- "maia 0.1.1",
- "maia 0.2.0",
+ "maia",
  "maia-core",
  "nalgebra 0.31.1",
  "ndarray",
@@ -4306,7 +4290,7 @@ dependencies = [
  "futures",
  "hex",
  "libp2p-core",
- "maia 0.2.0",
+ "maia",
  "maia-core",
  "model",
  "pretty_assertions",
@@ -5762,7 +5746,7 @@ dependencies = [
  "bdk-ext",
  "futures",
  "libp2p-core",
- "maia 0.2.0",
+ "maia",
  "maia-core",
  "model",
  "rand 0.6.5",
