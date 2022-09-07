@@ -2046,7 +2046,7 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.2.0"
-source = "git+https://github.com/comit-network/maia?rev=fc6b78b98407b10b55f8cfd152062ad77f98cd9f#fc6b78b98407b10b55f8cfd152062ad77f98cd9f"
+source = "git+https://github.com/comit-network/maia?rev=9899c9eda1f7685493aecdd7f8ba9124787056bd#9899c9eda1f7685493aecdd7f8ba9124787056bd"
 dependencies = [
  "anyhow",
  "bdk",
@@ -2060,7 +2060,7 @@ dependencies = [
 [[package]]
 name = "maia-core"
 version = "0.1.1"
-source = "git+https://github.com/comit-network/maia?tag=0.1.1#e1354e9c0397326a99bb5068e3afbc8cf2e07a9d"
+source = "git+https://github.com/comit-network/maia?rev=9899c9eda1f7685493aecdd7f8ba9124787056bd#9899c9eda1f7685493aecdd7f8ba9124787056bd"
 dependencies = [
  "anyhow",
  "bdk",
