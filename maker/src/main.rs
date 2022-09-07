@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
     }
 
     let auth_username = rocket_basicauth::Username("itchysats");
-    let auth_password = seed.derive_auth_password::<rocket_basicauth::Password>();
+    let auth_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
 
     let identities = seed.derive_identities();
 
