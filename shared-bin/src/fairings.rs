@@ -36,21 +36,8 @@ pub fn log_requests() -> impl Fairing {
 pub fn ui_browser_launch(open_browser: bool) -> impl Fairing {
     AdHoc::on_liftoff("ui browser launch", move |rocket| {
         Box::pin(async move {
-            let (username, password) = match (
-                rocket.state::<rocket_basicauth::Username>(),
-                rocket.state::<rocket_basicauth::Password>(),
-            ) {
-                (Some(username), Some(password)) => (username, password),
-                _ => {
-                    tracing::warn!("Username and password not configured correctly");
-                    return;
-                }
-            };
-
             let http_endpoint = format!(
-                "http://{}:{}@{}:{}",
-                username,
-                password,
+                "http://{}:{}",
                 rocket.config().address,
                 rocket.config().port
             );

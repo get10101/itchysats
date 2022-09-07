@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Breaking change: with bdk>0.20 key derivations will take into account the network, i.e. for mainnet it uses `m/84'/0'/0'` and for testnet/regtest it uses `m/84'/1'/0'`. This was caused by https://github.com/bitcoindevkit/bdk/pull/585. If you want to withdraw your testnet funds make sure to use the withdraw functionality prior upgrading to a different wallet or return them to the faucet. Existing mainnet wallets are not affected.
 - Breaking change: Rename `--umbrel-seed` to `--app-seed`. Integration with Umbrel and other environments might be affected. This is unlikely to affect regular users, as this parameter is not used outside such environments.
 
+### Added
+
+- Replaced basic-authentication with cookie-based authentication for taker-ui. The default password if no password is provided via the cli is `weareallsatoshi`. Once logged in, the user is requested to change the password.
+
 ## [0.6.1] - 2022-09-01
 
 ### Fixed

@@ -21,7 +21,7 @@ members = [
   "sqlite-db",
   "quiet-spans",
   "vergen-version",
-    "rocket-cookie-auth",
+  "rocket-cookie-auth",
 ]
 resolver = "2"
 
