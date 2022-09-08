@@ -41,14 +41,6 @@ pub fn create_listen_tcp_multiaddr(ip: &IpAddr, port: u16) -> Result<Multiaddr> 
         .with_context(|| "failed to construct multiaddr")
 }
 
-/// By convention we increment the port by 1 for libp2p-based connections.
-///
-/// The obvious drawback is that when doing blue/green deployment, we need to
-/// increment/decrement ports by 2.
-pub fn libp2p_socket_from_legacy_networking(legacy_addr: &SocketAddr) -> SocketAddr {
-    SocketAddr::new(legacy_addr.ip(), legacy_addr.port() + 1)
-}
-
 /// Determine whether to use libp2p or fallback to a legacy protocol
 pub fn can_use_libp2p(cfd: &model::Cfd) -> bool {
     // Our abitily to kick-off a libp2p version of protocol is constrained by
