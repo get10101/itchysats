@@ -720,7 +720,7 @@ dependencies = [
  "hmac",
  "percent-encoding",
  "rand 0.8.4",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "subtle",
  "time",
  "version_check",
@@ -917,7 +917,7 @@ dependencies = [
  "serde_json",
  "serde_test",
  "serde_with",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "snow",
  "sqlite-db",
  "sqlx",
@@ -1941,7 +1941,7 @@ dependencies = [
  "ring",
  "rw-stream-sink",
  "serde",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "smallvec",
  "thiserror",
  "unsigned-varint",
@@ -1964,7 +1964,7 @@ dependencies = [
  "prost 0.10.4",
  "prost-build 0.10.4",
  "rand 0.8.4",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "snow",
  "static_assertions",
  "x25519-dalek",
@@ -2319,7 +2319,7 @@ dependencies = [
  "multihash-derive",
  "serde",
  "serde-big-array",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "unsigned-varint",
 ]
 
@@ -4082,9 +4082,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.10.3"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "899bf02746a2c92bf1053d9327dadb252b01af1f81f90cdb902411f518bc7215"
+checksum = "cf9db03534dff993187064c4e0c05a5708d2a9728ace9a8959b77bedf415dac5"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -4227,7 +4227,7 @@ dependencies = [
  "rand_core 0.6.3",
  "ring",
  "rustc_version",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "subtle",
 ]
 
@@ -4352,7 +4352,7 @@ dependencies = [
  "rustls 0.20.2",
  "rustls-pemfile",
  "serde",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "smallvec",
  "sqlformat",
  "sqlx-rt",
@@ -4379,7 +4379,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.3",
+ "sha2 0.10.5",
  "sqlx-core",
  "sqlx-rt",
  "syn",
