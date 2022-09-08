@@ -353,8 +353,12 @@ interface LeverageProps {
 }
 
 function Leverage({ leverage_choices, onChange, currentChoice, isLong }: LeverageProps) {
-    const min = Math.min.apply(Math, leverage_choices);
-    const max = Math.max.apply(Math, leverage_choices);
+    let min = 2;
+    let max = 2;
+    if (leverage_choices.length > 0) {
+        min = Math.min.apply(Math, leverage_choices);
+        max = Math.max.apply(Math, leverage_choices);
+    }
 
     return (
         <Box id={isLong ? "longLeverage" : "shortLeverage"}>
@@ -366,8 +370,8 @@ function Leverage({ leverage_choices, onChange, currentChoice, isLong }: Leverag
                     value={currentChoice}
                     min={min}
                     max={max}
-                    onChange={(val) => onChange(val)}
-                    onChangeEnd={(val) => onChange(val)}
+                    onChange={(val) => onChange(val < min ? min : (val > max ? max : val))}
+                    onChangeEnd={(val) => onChange(val < min ? min : (val > max ? max : val))}
                 >
                     {leverage_choices.map(leverage => <SliderMark key={leverage} value={leverage} fontSize="sm" />)}
                     <SliderTrack>
