@@ -13,7 +13,7 @@ COPY $BINARY_PATH /usr/bin/binary
 
 VOLUME /data
 
-# HTTP Port and libp2p P2P Port
-EXPOSE 8000 10000
+# HTTP Port, legacy P2P Port and libp2p P2P Port
+EXPOSE 8000 9999 10000
 
 ENTRYPOINT ["/usr/bin/binary", "--data-dir=/data", "--http-address=0.0.0.0:8000"]

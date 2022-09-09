@@ -26,8 +26,8 @@ resolver = "2"
 
 [patch.crates-io]
 xtra = { git = "https://github.com/Restioson/xtra", rev = "285b3e986013888cb68b9219464ef325d2468c2c" } # Unreleased
-maia = { git = "https://github.com/comit-network/maia", rev = "9899c9eda1f7685493aecdd7f8ba9124787056bd" }
-maia-core = { git = "https://github.com/comit-network/maia", rev = "9899c9eda1f7685493aecdd7f8ba9124787056bd", package = "maia-core" }
+maia = { git = "https://github.com/comit-network/maia", rev = "fc6b78b98407b10b55f8cfd152062ad77f98cd9f" } # Unreleased
+maia-core = { git = "https://github.com/comit-network/maia", tag = "0.1.1", package = "maia-core" } # Pinned to support maia 0.1 and 0.2
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity", rev = "0bfd589b42a63149221dec7e95aca932875374dd" } # Unreleased
 electrum-client = { git = "https://github.com/comit-network/rust-electrum-client/", branch = "do-not-ignore-empty-lines" }
 otel-tests = { git = "https://github.com/itchysats/otel-tests/", rev = "4a57d84ad5780c30d09222c56440482d9e722363" } # unreleased
