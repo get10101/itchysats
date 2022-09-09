@@ -514,7 +514,7 @@ pub struct Cfd {
     // dynamic (based on events)
     fee_account: FeeAccount,
 
-    dlc: Option<Dlc>,
+    pub dlc: Option<Dlc>,
 
     /// Holds the decrypted CET transaction if we have previously emitted it as part of an event.
     ///
@@ -2932,6 +2932,22 @@ mod tests {
 
         let result = cfd.can_auto_rollover_taker(datetime!(2021-11-18 11:00:00).assume_utc());
 
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn given_incorrect_counterparty_id_then_verify_fail() {
+        let cfd = Cfd::dummy_maker_short();
+        let peer_id = PeerId::random();
+        let result = cfd.verify_counterparty_peer_id(&peer_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn given_correct_counterparty_id_then_verify_succeed() {
+        let cfd = Cfd::dummy_maker_short();
+        let peer_id = cfd.counterparty_peer_id.unwrap();
+        let result = cfd.verify_counterparty_peer_id(&peer_id);
         assert!(result.is_ok());
     }
 

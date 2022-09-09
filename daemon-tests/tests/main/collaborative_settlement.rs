@@ -14,8 +14,12 @@ use daemon_tests::wait_next_state;
 use daemon_tests::Maker;
 use daemon_tests::OpenCfdArgs;
 use daemon_tests::Taker;
+use daemon_tests::TakerConfig;
+use model::Cfd;
+use model::CfdEvent;
 use model::ContractSymbol;
 use model::Contracts;
+use model::EventKind;
 use model::Leverage;
 use model::Position;
 use otel_tests::otel_test;
@@ -85,6 +89,54 @@ async fn maker_accepts_collab_settlement_after_commit_finality() {
 
     maker.system.accept_settlement(order_id).await.unwrap();
     wait_next_state!(order_id, maker, taker, CfdState::OpenCommitted);
+}
+
+#[otel_test]
+async fn malicious_taker_tries_to_settle_unrelated_order() {
+    let (mut maker, mut taker) = start_both().await;
+    let cfd_args = OpenCfdArgs::default();
+    let order_id = open_cfd(&mut taker, &mut maker, cfd_args.clone()).await;
+    mock_quotes(&mut maker, &mut taker, cfd_args.contract_symbol).await;
+
+    let mut mallory = Taker::start(
+        &TakerConfig::default(),
+        maker.identity,
+        maker.connect_addr.clone(),
+    )
+    .await;
+
+    let cfd = taker.db.load_open_cfd::<Cfd>(order_id, ()).await.unwrap();
+
+    // copy cfd from alice to mallory to bypass load_open_cfd on the taker side.
+    mallory.db.insert_cfd(&cfd).await.unwrap();
+
+    // append contract setup completed event to propagate the dlc
+    let clone = cfd.clone();
+    let event = CfdEvent::new(
+        order_id,
+        EventKind::ContractSetupCompleted { dlc: clone.dlc },
+    );
+    mallory.db.append_event(event).await.unwrap();
+
+    // mock quotes for settlement proposal
+    mock_quotes(&mut maker, &mut mallory, cfd_args.contract_symbol).await;
+
+    mallory.system.propose_settlement(order_id).await.expect("");
+
+    // collaborative settlement started
+    mallory.cfd_feed().changed().await.expect("started");
+    // collaborative settlement failed event
+    mallory.cfd_feed().changed().await.expect("failed");
+
+    // after failing to propose the collaborative settlement mallorys cfd state should go back from
+    // OutgoingSettlementProposal to PendingOpen. Also the makers cfd state should remain open.
+    wait_next_state!(
+        order_id,
+        maker,
+        mallory,
+        CfdState::Open,
+        CfdState::PendingOpen
+    );
 }
 
 async fn collaboratively_close_an_open_cfd(

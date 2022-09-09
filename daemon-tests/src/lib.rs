@@ -803,7 +803,7 @@ pub struct Taker {
     pub mocks: mocks::Mocks,
     pub feeds: FeedReceivers,
     pub maker_peer_id: PeerId,
-    db: sqlite_db::Connection,
+    pub db: sqlite_db::Connection,
     _tasks: Tasks,
 }
 
