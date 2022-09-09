@@ -167,9 +167,8 @@ where
                 .context("Failed to sync wallet")
         })?;
 
-        let balance = tracing::debug_span!("Get wallet balance")
-            .in_scope(|| self.wallet.get_balance())?
-            .get_spendable();
+        let balance =
+            tracing::debug_span!("Get wallet balance").in_scope(|| self.wallet.get_balance())?;
 
         let utxo_values = tracing::debug_span!("Collect UTXO values").in_scope(|| {
             Ok::<_, bdk::Error>(Data::new(
