@@ -60,7 +60,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_extras::Tasks;
 use tracing::instrument;
@@ -788,12 +787,7 @@ impl Maker {
 }
 
 async fn find_random_free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    portpicker::pick_unused_port().expect("to be able to find a free port")
 }
 
 /// Taker Test Setup
