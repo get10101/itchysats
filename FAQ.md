@@ -29,6 +29,10 @@ A: Whilst we do not build Windows binaries directly, you should still be able to
 Q: I installed the app, but I can't log in - it asks me for password?
 A: Your password is derived from the `taker_seed` file, and the credentials can be seen it the taker logs right after startup.
 
+Q: Can I use ItchySats on mobile?
+A: Whilst we currently don't provide iOS or Android apps, our UI is mobile-friendly. This means that you can connect from your mobile browser to the machine running ItchySats app. At the moment the easiest way to do it is to run Itchysats on [Umbrel](https://getumbrel.com). tip: If you use [Tailscale](https://tailscale.com/) app on your Umbrel node, you can trade on-the-go 😃 (without needing to be on the same local network).
+Umbrel and RaspiBlitz also expose ItchySats with an onion address, which allows connecting remotely from mobile via [Tor](https://www.torproject.org/).
+
 ## Trading
 
 Q: How long does a CFD last?\
