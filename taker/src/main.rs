@@ -7,7 +7,6 @@ use clap::Parser;
 use daemon::bdk::bitcoin;
 use daemon::bdk::FeeRate;
 use daemon::libp2p_utils::create_connect_tcp_multiaddr;
-use daemon::libp2p_utils::libp2p_socket_from_legacy_networking;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
@@ -44,11 +43,11 @@ mod routes;
 
 pub const ANNOUNCEMENT_LOOKAHEAD: time::Duration = time::Duration::hours(24);
 
-const MAINNET_MAKER: &str = "mainnet.itchysats.network:10000";
+const MAINNET_MAKER: &str = "mainnet.itchysats.network:10001";
 const MAINNET_MAKER_ID: &str = "7e35e34801e766a6a29ecb9e22810ea4e3476c2b37bf75882edf94a68b1d9607";
 const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMwfTTu12wuY";
 
-const TESTNET_MAKER: &str = "testnet.itchysats.network:9999";
+const TESTNET_MAKER: &str = "testnet.itchysats.network:10000";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
 const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
 
@@ -297,13 +296,11 @@ async fn main() -> Result<()> {
     let possible_addresses = resolve_maker_addresses(maker_url.as_str()).await?;
 
     // Assume that the first resolved ipv4 address is good enough for libp2p.
-    let first_maker_address = possible_addresses
+    let maker_libp2p_address = possible_addresses
         .iter()
         .find(|x| x.is_ipv4())
         .context("Could not resolve maker URL")?;
-
-    let maker_libp2p_address = libp2p_socket_from_legacy_networking(first_maker_address);
-    let maker_multiaddr = create_connect_tcp_multiaddr(&maker_libp2p_address, maker_peer_id)?;
+    let maker_multiaddr = create_connect_tcp_multiaddr(maker_libp2p_address, maker_peer_id)?;
 
     let hex_pk = hex::encode(identities.identity_pk.to_bytes());
     let peer_id = identities.libp2p.public().to_peer_id().to_string();

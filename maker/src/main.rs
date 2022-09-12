@@ -123,14 +123,9 @@ async fn main() -> Result<()> {
     let db =
         sqlite_db::connect(data_dir.join("maker.sqlite"), opts.ignore_migration_errors).await?;
 
-    // Create actors
-
-    let libp2p_socket = daemon::libp2p_utils::libp2p_socket_from_legacy_networking(&p2p_socket);
-    let endpoint_listen = daemon::libp2p_utils::create_listen_tcp_multiaddr(
-        &libp2p_socket.ip(),
-        libp2p_socket.port(),
-    )
-    .expect("to parse properly");
+    let endpoint_listen =
+        daemon::libp2p_utils::create_listen_tcp_multiaddr(&p2p_socket.ip(), p2p_socket.port())
+            .expect("to parse properly");
 
     let (supervisor, price_feed) = Supervisor::with_policy(
         {
