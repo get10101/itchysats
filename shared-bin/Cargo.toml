@@ -26,7 +26,7 @@ time = "0.3.14"
 tracing = { version = "0.1" }
 tracing-opentelemetry = "0.17.4"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
-webbrowser = "0.7.1"
+webbrowser = "0.8.0"
 xtra-libp2p-offer = { path = "../xtra-libp2p-offer" }
 xtra-libp2p-ping = { path = "../xtra-libp2p-ping" }
 xtras = { path = "../xtras" }
