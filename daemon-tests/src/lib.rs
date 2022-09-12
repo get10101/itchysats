@@ -60,7 +60,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_extras::Tasks;
 use tracing::instrument;
@@ -563,16 +562,7 @@ pub struct MakerConfig {
     oracle_pk: XOnlyPublicKey,
     seed: RandomSeed,
     n_payouts: usize,
-    dedicated_libp2p_port: Option<u16>,
-}
-
-impl MakerConfig {
-    pub fn with_dedicated_libp2p_port(self, port: u16) -> Self {
-        Self {
-            dedicated_libp2p_port: Some(port),
-            ..self
-        }
-    }
+    libp2p_port: u16,
 }
 
 impl Default for MakerConfig {
@@ -581,7 +571,7 @@ impl Default for MakerConfig {
             oracle_pk: oracle_pk(),
             seed: RandomSeed::default(),
             n_payouts: N_PAYOUTS,
-            dedicated_libp2p_port: None,
+            libp2p_port: portpicker::pick_unused_port().expect("to be able to find a free port"),
         }
     }
 }
@@ -665,13 +655,7 @@ impl Maker {
 
     #[instrument(name = "Start maker", skip_all)]
     pub async fn start(config: &MakerConfig) -> Self {
-        let port = find_random_free_port().await;
-        let libp2p_port = match config.dedicated_libp2p_port {
-            Some(port) => port,
-            None => find_random_free_port().await,
-        };
-
-        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.libp2p_port);
 
         let db = sqlite_db::memory().await.unwrap();
 
@@ -697,7 +681,7 @@ impl Maker {
         let mut oracle_mock = None;
 
         let endpoint_listen =
-            daemon::libp2p_utils::create_listen_tcp_multiaddr(&address.ip(), libp2p_port)
+            daemon::libp2p_utils::create_listen_tcp_multiaddr(&address.ip(), address.port())
                 .expect("to parse properly");
 
         let maker = maker::ActorSystem::new(
@@ -785,15 +769,6 @@ impl Maker {
             .await
             .unwrap();
     }
-}
-
-async fn find_random_free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
 }
 
 /// Taker Test Setup
