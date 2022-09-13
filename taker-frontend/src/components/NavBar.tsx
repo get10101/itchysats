@@ -23,14 +23,14 @@ import {
     useDisclosure,
 } from "@chakra-ui/react";
 import { OnChangeValue, Select } from "chakra-react-select";
-import React, { ReactNode } from "react";
+import React, { ReactNode, useContext } from "react";
 import { IconType } from "react-icons";
 import { SiBitcoin } from "react-icons/all";
 import { FaWallet } from "react-icons/fa";
 import { FiMenu } from "react-icons/fi";
-import { Link as ReachLink, useNavigate, useParams } from "react-router-dom";
+import { Link as ReachLink, useNavigate } from "react-router-dom";
 import { SemVer } from "semver";
-import { HEADER_HEIGHT, Symbol } from "../App";
+import { HEADER_HEIGHT, Selection, SelectionContext, Symbol } from "../App";
 import logoIcon from "../images/logo.svg";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
@@ -138,13 +138,13 @@ const LogoWithoutText = () => {
 };
 
 const SidebarContent = ({ connectedToMaker, onClose, ...rest }: SidebarProps) => {
+    const selection: Selection = useContext(SelectionContext);
     const navigate = useNavigate();
-    const { symbol: symbolString } = useParams();
-    let currentSymbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
 
     const onSymbolChange = (symbol: string) => {
         onClose();
-        navigate(`/trade/${symbol}/long`);
+        selection.symbol = symbol as Symbol;
+        navigate(`/trade/${symbol}/${selection.position.get(selection.symbol)}`);
     };
 
     return (
@@ -173,7 +173,7 @@ const SidebarContent = ({ connectedToMaker, onClose, ...rest }: SidebarProps) =>
                 role="group"
                 w={"100%"}
             >
-                <SymbolSelector current={currentSymbol} onChange={onSymbolChange} />
+                <SymbolSelector current={selection.symbol} onChange={onSymbolChange} />
             </Flex>
             <Divider />
 

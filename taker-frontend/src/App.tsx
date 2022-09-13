@@ -4,7 +4,7 @@ import isBetween from "dayjs/plugin/isBetween";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
 import * as React from "react";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import useWebSocket from "react-use-websocket";
 import { SemVer } from "semver";
@@ -62,24 +62,30 @@ const BTC_USD_SHORT_EVENT = "btcusd_short_offer";
 const ETH_USD_LONG_EVENT = "ethusd_long_offer";
 const ETH_USD_SHORT_EVENT = "ethusd_short_offer";
 
+export interface Selection {
+    symbol: Symbol;
+    position: Map<Symbol, string>;
+}
+
+const defaultSelection: Selection = {
+    position: new Map().set(Symbol.btcusd, "long").set(Symbol.ethusd, "long"),
+    symbol: Symbol.btcusd,
+};
+export const SelectionContext = createContext(defaultSelection);
+
 export const App = () => {
     const toast = useToast();
     const navigate = useNavigate();
     const location = useLocation();
 
-    // ideally we could be using useParams() here but `App` is on the top level and is not aware of any params yet,
-    // hence we parse the location.
-    let symbol = Symbol.btcusd;
-    if (location.pathname.includes("ethusd")) {
-        symbol = Symbol.ethusd;
-    }
+    const selection: Selection = useContext(SelectionContext);
 
     let [referencePrice, setReferencePrice] = useState<number>();
     let [showExtraInfo, setExtraInfo] = useState(false);
     const [githubVersion, setGithubVersion] = useState<SemVer | null>();
     const [daemonVersion, setDaemonVersion] = useState<SemVer | null>();
 
-    useWebSocket(bitmexWebSocketURL(symbol), {
+    useWebSocket(bitmexWebSocketURL(selection.symbol), {
         shouldReconnect: () => true,
         onMessage: (message) => {
             const data: BXBTData[] = JSON.parse(message.data).data;
@@ -120,7 +126,7 @@ export const App = () => {
 
     let makerLong;
     let makerShort;
-    switch (symbol) {
+    switch (selection.symbol) {
         case Symbol.ethusd: {
             makerLong = makerLongEthUsd;
             makerShort = makerShortEthUsd;
@@ -251,31 +257,32 @@ export const App = () => {
 
     const pathname = location.pathname;
     useEffect(() => {
-        let btcusd = Symbol.btcusd;
         if (!pathname.includes("trade") && !pathname.includes("wallet")) {
-            navigate(`/trade/${btcusd}/long`);
+            navigate(`/trade/${selection.symbol}/${selection.position.get(selection.symbol)}`);
         }
-    }, [navigate, pathname]);
+    }, [selection, navigate, pathname]);
 
     return (
         <Routes>
             <Route
                 path="/"
                 element={
-                    <MainPageLayout
-                        outdatedWarningIsVisible={outdatedWarningIsVisible}
-                        incompatibleWarningIsVisible={incompatibleWarningIsVisible}
-                        githubVersion={githubVersion}
-                        daemonVersion={daemonVersion}
-                        onCloseOutdatedWarning={onCloseOutdatedWarning}
-                        onCloseIncompatibleWarning={onCloseIncompatibleWarning}
-                        connectedToMaker={connectedToMaker}
-                        nextFundingEvent={nextFundingEvent}
-                        referencePrice={referencePrice}
-                        identityOrUndefined={identityOrUndefined}
-                        setExtraInfo={setExtraInfo}
-                        showExtraInfo={showExtraInfo}
-                    />
+                    <SelectionContext.Provider value={selection}>
+                        <MainPageLayout
+                            outdatedWarningIsVisible={outdatedWarningIsVisible}
+                            incompatibleWarningIsVisible={incompatibleWarningIsVisible}
+                            githubVersion={githubVersion}
+                            daemonVersion={daemonVersion}
+                            onCloseOutdatedWarning={onCloseOutdatedWarning}
+                            onCloseIncompatibleWarning={onCloseIncompatibleWarning}
+                            connectedToMaker={connectedToMaker}
+                            nextFundingEvent={nextFundingEvent}
+                            referencePrice={referencePrice}
+                            identityOrUndefined={identityOrUndefined}
+                            setExtraInfo={setExtraInfo}
+                            showExtraInfo={showExtraInfo}
+                        />
+                    </SelectionContext.Provider>
                 }
             >
                 <Route
