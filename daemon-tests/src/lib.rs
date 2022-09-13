@@ -708,7 +708,7 @@ impl Maker {
             projection_actor,
             identities.clone(),
             endpoint_listen.clone(),
-            config.blocked_peers.clone(), // TODO(restioson): test
+            config.blocked_peers.clone(),
         )
         .unwrap();
 

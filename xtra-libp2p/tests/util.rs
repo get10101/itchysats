@@ -27,6 +27,13 @@ pub struct Node {
 pub fn make_node<const N: usize>(
     substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); N],
 ) -> Node {
+    make_node_with_blocklist(substream_handlers, Arc::new(HashSet::new()))
+}
+
+pub fn make_node_with_blocklist<const N: usize>(
+    substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); N],
+    blocked_peers: Arc<HashSet<PeerId>>,
+) -> Node {
     let id = Keypair::generate_ed25519();
     let peer_id = id.public().to_peer_id();
 
@@ -45,7 +52,7 @@ pub fn make_node<const N: usize>(
             vec![subscriber_stats.clone().into()],
             vec![subscriber_stats.clone().into()],
         ),
-        Arc::new(HashSet::default()),
+        blocked_peers,
     )
     .create(None)
     .spawn_global();
