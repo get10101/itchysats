@@ -78,12 +78,8 @@ async fn main() -> Result<()> {
     let mut wallet_dir = data_dir.clone();
 
     wallet_dir.push(MAKER_WALLET_ID);
-    let (wallet, wallet_feed_receiver) = wallet::Actor::spawn(
-        opts.network.electrum(),
-        ext_priv_key,
-        wallet_dir,
-        MAKER_WALLET_ID.to_string(),
-    )?;
+    let (wallet, wallet_feed_receiver) =
+        wallet::Actor::spawn(opts.network.electrum(), ext_priv_key, wallet_dir)?;
 
     if let Some(Withdraw::Withdraw {
         amount,

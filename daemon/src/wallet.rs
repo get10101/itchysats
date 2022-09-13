@@ -1,3 +1,4 @@
+use crate::bitcoin::secp256k1::Secp256k1;
 use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
@@ -21,6 +22,7 @@ use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
 use bdk::sled;
 use bdk::wallet::tx_builder::TxOrdering;
+use bdk::wallet::wallet_name_from_descriptor;
 use bdk::wallet::AddressIndex;
 use bdk::FeeRate;
 use bdk::KeychainKind;
@@ -107,7 +109,6 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
         db_path: PathBuf,
-        wallet_name: String,
     ) -> Result<(xtra::Address<Self>, watch::Receiver<Option<WalletInfo>>)> {
         let client = electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -116,6 +117,13 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
             seed_and_rpc_on_same_network(&client, ext_priv_key.network)?,
             "Wallet seed and Electrum RPC client on different networks."
         );
+
+        let wallet_name = wallet_name_from_descriptor(
+            bdk::template::Bip84(ext_priv_key, KeychainKind::External),
+            Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
+            ext_priv_key.network,
+            &Secp256k1::new(),
+        )?;
 
         // Create a database (using default sled type) to store wallet data
         let db = sled::open(db_path)?;
