@@ -30,7 +30,10 @@ pub fn log_requests() -> impl Fairing {
 }
 
 /// Attach this fairing to enable loading the UI in the system default browser
-pub fn ui_browser_launch() -> impl Fairing {
+///
+/// Passing `true` opens browser at launch, passing `false` logs the link to
+/// open it manually.
+pub fn ui_browser_launch(open_browser: bool) -> impl Fairing {
     AdHoc::on_liftoff("ui browser launch", move |rocket| {
         Box::pin(async move {
             let (username, password) = match (
@@ -51,6 +54,13 @@ pub fn ui_browser_launch() -> impl Fairing {
                 rocket.config().address,
                 rocket.config().port
             );
+
+            if !open_browser {
+                tracing::info!(
+                    "Running in headless mode. The UI can be accessed at {http_endpoint}"
+                );
+                return;
+            }
 
             match webbrowser::open(http_endpoint.as_str()) {
                 Ok(()) => {

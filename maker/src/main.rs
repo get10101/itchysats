@@ -191,7 +191,7 @@ async fn main() -> Result<()> {
         .register("/", default_catchers())
         .attach(fairings::log_launch())
         .attach(fairings::log_requests())
-        .attach(fairings::ui_browser_launch())
+        .attach(fairings::ui_browser_launch(!opts.headless))
         .launch()
         .await?;
 

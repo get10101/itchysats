@@ -50,6 +50,10 @@ pub struct Opts {
     #[clap(long)]
     pub verbose_spans: bool,
 
+    /// If enabled, browser UI is not automatically launched at startup.
+    #[clap(long)]
+    pub headless: bool,
+
     /// OTEL collector endpoint address
     ///
     /// If not specified it defaults to the local collector endpoint.
