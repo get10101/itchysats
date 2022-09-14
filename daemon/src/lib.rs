@@ -54,7 +54,6 @@ pub mod identify;
 pub mod libp2p_utils;
 pub mod listen_protocols;
 pub mod monitor;
-pub mod noise;
 pub mod online_status;
 pub mod oracle;
 pub mod order;
