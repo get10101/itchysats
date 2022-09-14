@@ -86,7 +86,8 @@ jobs:
       - run: yarn run test
       - run: yarn run build
 
-  test:
+  # Builds and archives the test so that they can be run later in multiple jobs
+  build-tests:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-12]
@@ -98,10 +99,40 @@ jobs:
       - uses: Swatinem/rust-cache@v2.0.0
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-      - name: Compile tests before running
-        run: cargo test --workspace --no-run
-      - name: Test execution
-        run: cargo nextest run --profile ci
+      - name: Build and archive tests
+        run: cargo nextest archive --archive-file nextest-archive.tar.zst
+      - name: Upload archive to workflow
+        uses: actions/upload-artifact@v3
+        with:
+          name: nextest-archive-${{ matrix.os }}
+          path: nextest-archive.tar.zst
+
+  # Run partitioned tests
+  # In order to change the number of jobs, amend `partition` array and `--partition count` argument
+  run-tests:
+    strategy:
+      matrix:
+        partition: [1, 2, 3, 4]
+        os: [ubuntu-latest, macos-12]
+    needs: build-tests
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      # In this example, the Rust toolchain is not installed. cargo nextest's run phase does not
+      # require Cargo. You can choose to install Rust if your tests require it, of course.
+      # Instead, create ~/.cargo/bin as required by the install action.
+      - run: mkdir -p ~/.cargo/bin
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Download archive
+        uses: actions/download-artifact@v3
+        with:
+          name: nextest-archive-${{ matrix.os }}
+      - name: Run tests
+        run: |
+          ~/.cargo/bin/cargo-nextest nextest run --archive-file nextest-archive.tar.zst \
+            --profile ci \
+            --partition count:${{ matrix.partition }}/4
 
   smoke_test:
     strategy:
