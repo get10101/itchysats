@@ -282,9 +282,9 @@ dependencies = [
 
 [[package]]
 name = "bdk"
-version = "0.19.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec2c4c49915b82a2576bc7dee83d2f274387904b79305e6ae8b622daa0b282c1"
+checksum = "3a7dad109193db0d196e9149bb56ba991aacfc1e1a2cf400053358b75f6c2fb5"
 dependencies = [
  "async-trait",
  "bdk-macros",
@@ -583,9 +583,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.2.20"
+version = "3.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b71c3ce99b7611011217b366d923f1d0a7e07a92bb2dbf1e84508c673ca3bd"
+checksum = "1ed5341b2301a26ab80be5cbdced622e80ed808483c52e45e3310a877d3b37d7"
 dependencies = [
  "atty",
  "bitflags",
@@ -2047,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "maia"
 version = "0.2.0"
-source = "git+https://github.com/comit-network/maia?rev=fc6b78b98407b10b55f8cfd152062ad77f98cd9f#fc6b78b98407b10b55f8cfd152062ad77f98cd9f"
+source = "git+https://github.com/comit-network/maia?rev=9899c9eda1f7685493aecdd7f8ba9124787056bd#9899c9eda1f7685493aecdd7f8ba9124787056bd"
 dependencies = [
  "anyhow",
  "bdk",
@@ -2061,7 +2061,7 @@ dependencies = [
 [[package]]
 name = "maia-core"
 version = "0.1.1"
-source = "git+https://github.com/comit-network/maia?tag=0.1.1#e1354e9c0397326a99bb5068e3afbc8cf2e07a9d"
+source = "git+https://github.com/comit-network/maia?rev=9899c9eda1f7685493aecdd7f8ba9124787056bd#9899c9eda1f7685493aecdd7f8ba9124787056bd"
 dependencies = [
  "anyhow",
  "bdk",
