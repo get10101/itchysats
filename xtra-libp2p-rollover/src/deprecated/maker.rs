@@ -10,13 +10,10 @@ use libp2p_core::PeerId;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::Dlc;
 use model::ExecuteOnCfd;
-use model::OrderId;
 use model::Position;
 use model::Role;
 use model::RolloverVersion;
-use std::collections::HashMap;
 use tokio_extras::FutureExt;
-use tokio_extras::Tasks;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
@@ -27,7 +24,6 @@ use xtra_productivity::xtra_productivity;
 /// There is only one instance of this actor for all connections, meaning we must always spawn a
 /// task whenever we interact with a substream to not block the execution of other connections.
 pub struct Actor<E, O, R> {
-    protocol_tasks: HashMap<OrderId, Tasks>,
     oracle_pk: XOnlyPublicKey,
     oracle: O,
     n_payouts: usize,
@@ -45,7 +41,6 @@ impl<E, O, R> Actor<E, O, R> {
         n_payouts: usize,
     ) -> Self {
         Self {
-            protocol_tasks: HashMap::default(),
             oracle_pk,
             oracle,
             n_payouts,
@@ -120,7 +115,7 @@ where
         );
     }
 
-    async fn handle(&mut self, msg: ProposeReceived) {
+    async fn handle(&mut self, msg: ProposeReceived, ctx: &mut xtra::Context<Self>) {
         let ProposeReceived {
             propose,
             mut framed,
@@ -147,11 +142,12 @@ where
             }
         };
 
+        let this = ctx.address().expect("we are alive");
         if !self.is_accepting_rollovers {
             emit_rejected(order_id, &self.executor).await;
 
-            let mut tasks = Tasks::default();
-            tasks.add_fallible(
+            tokio_extras::spawn_fallible(
+                &this,
                 async move {
                     framed
                         .send(ListenerMessage::Decision(Decision::Reject(Reject {
@@ -163,7 +159,6 @@ where
                     tracing::warn!(%order_id, "Failed to send reject rollover to the taker: {e:#}")
                 },
             );
-            self.protocol_tasks.insert(order_id, tasks);
 
             return;
         }
@@ -172,222 +167,219 @@ where
             tracing::debug_span!("next rollover message")
         }
 
-        let mut tasks = Tasks::default();
-        tasks.add_fallible(
-            {
-                let executor = self.executor.clone();
-                let oracle = self.oracle.clone();
-                let rates = self.rates.clone();
-                let oracle_pk = self.oracle_pk;
-                let n_payouts = self.n_payouts;
-                async move {
-                    let Rates {
-                        funding_rate_long,
-                        funding_rate_short,
+        let task = {
+            let executor = self.executor.clone();
+            let oracle = self.oracle.clone();
+            let rates = self.rates.clone();
+            let oracle_pk = self.oracle_pk;
+            let n_payouts = self.n_payouts;
+            async move {
+                let Rates {
+                    funding_rate_long,
+                    funding_rate_short,
+                    tx_fee_rate,
+                } = rates.get_rates().await.context("Failed to get rates")?;
+
+                let (rollover_params, dlc, position, oracle_event_id, funding_rate) = executor
+                    .execute(order_id, |cfd| {
+                        let funding_rate = match cfd.position() {
+                            Position::Long => funding_rate_long,
+                            Position::Short => funding_rate_short,
+                        };
+
+                        let (event, params, dlc, position, oracle_event_id) = cfd
+                            .accept_rollover_proposal_single_event(
+                                tx_fee_rate,
+                                funding_rate,
+                                Some((
+                                    base_dlc_params.settlement_event_id(),
+                                    base_dlc_params.complete_fee(),
+                                )),
+                                RolloverVersion::V3,
+                            )?;
+
+                        Ok((event, params, dlc, position, oracle_event_id, funding_rate))
+                    })
+                    .await?;
+
+                let complete_fee = rollover_params
+                    .fee_account
+                    .add_funding_fee(rollover_params.current_fee)
+                    .settle();
+
+                framed
+                    .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
+                        order_id,
+                        oracle_event_id,
                         tx_fee_rate,
-                    } = rates.get_rates().await.context("Failed to get rates")?;
+                        funding_rate,
+                        complete_fee: complete_fee.into(),
+                    })))
+                    .await
+                    .context("Failed to send rollover confirmation message")?;
 
-                    let (rollover_params, dlc, position, oracle_event_id, funding_rate) = executor
-                        .execute(order_id, |cfd| {
-                            let funding_rate = match cfd.position() {
-                                Position::Long => funding_rate_long,
-                                Position::Short => funding_rate_short,
-                            };
+                let announcement = oracle
+                    .get_announcements(vec![oracle_event_id])
+                    .await
+                    .context("Failed to get announcement")?;
 
-                            let (event, params, dlc, position, oracle_event_id) = cfd
-                                .accept_rollover_proposal_single_event(
-                                    tx_fee_rate,
-                                    funding_rate,
-                                    Some((
-                                        base_dlc_params.settlement_event_id(),
-                                        base_dlc_params.complete_fee(),
-                                    )),
-                                    RolloverVersion::V3,
-                                )?;
+                let funding_fee = *rollover_params.funding_fee();
 
-                            Ok((event, params, dlc, position, oracle_event_id, funding_rate))
-                        })
-                        .await?;
+                let our_role = Role::Maker;
+                let our_position = position;
 
-                    let complete_fee = rollover_params
-                        .fee_account
-                        .add_funding_fee(rollover_params.current_fee)
-                        .settle();
+                let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
+                let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
 
-                    framed
-                        .send(ListenerMessage::Decision(Decision::Confirm(Confirm {
-                            order_id,
-                            oracle_event_id,
-                            tx_fee_rate,
-                            funding_rate,
-                            complete_fee: complete_fee.into(),
-                        })))
-                        .await
-                        .context("Failed to send rollover confirmation message")?;
+                let msg0 = framed
+                    .next()
+                    .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Expected Msg0 within {} seconds",
+                            ROLLOVER_MSG_TIMEOUT.as_secs()
+                        )
+                    })?
+                    .context("Empty stream instead of Msg0")?
+                    .context("Unable to decode dialer Msg0")?
+                    .into_rollover_msg()?
+                    .try_into_msg0()?;
 
-                    let announcement = oracle
-                        .get_announcements(vec![oracle_event_id])
-                        .await
-                        .context("Failed to get announcement")?;
+                framed
+                    .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg0(
+                        RolloverMsg0 {
+                            revocation_pk: rev_pk,
+                            publish_pk,
+                        },
+                    ))))
+                    .await
+                    .context("Failed to send Msg0")?;
 
-                    let funding_fee = *rollover_params.funding_fee();
+                let punish_params = build_punish_params(
+                    our_role,
+                    dlc.identity,
+                    dlc.identity_counterparty,
+                    msg0,
+                    rev_pk,
+                    publish_pk,
+                );
 
-                    let our_role = Role::Maker;
-                    let our_position = position;
+                let own_cfd_txs = build_own_cfd_transactions(
+                    &dlc,
+                    rollover_params,
+                    &announcement[0],
+                    oracle_pk,
+                    our_position,
+                    n_payouts,
+                    complete_fee,
+                    punish_params,
+                )
+                .await?;
 
-                    let (rev_sk, rev_pk) = keypair::new(&mut rand::thread_rng());
-                    let (publish_sk, publish_pk) = keypair::new(&mut rand::thread_rng());
+                let msg1 = framed
+                    .next()
+                    .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Expected Msg1 within {} seconds",
+                            ROLLOVER_MSG_TIMEOUT.as_secs()
+                        )
+                    })?
+                    .context("Empty stream instead of Msg1")?
+                    .context("Unable to decode dialer Msg1")?
+                    .into_rollover_msg()?
+                    .try_into_msg1()?;
 
-                    let msg0 = framed
-                        .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "Expected Msg0 within {} seconds",
-                                ROLLOVER_MSG_TIMEOUT.as_secs()
-                            )
-                        })?
-                        .context("Empty stream instead of Msg0")?
-                        .context("Unable to decode dialer Msg0")?
-                        .into_rollover_msg()?
-                        .try_into_msg0()?;
+                framed
+                    .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg1(
+                        RolloverMsg1::from(own_cfd_txs.clone()),
+                    ))))
+                    .await
+                    .context("Failed to send Msg1")?;
 
-                    framed
-                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg0(
-                            RolloverMsg0 {
-                                revocation_pk: rev_pk,
-                                publish_pk,
-                            },
-                        ))))
-                        .await
-                        .context("Failed to send Msg0")?;
+                let commit_desc = build_commit_descriptor(punish_params);
+                let (cets, refund_tx) = build_and_verify_cets_and_refund(
+                    &dlc,
+                    &announcement[0],
+                    oracle_pk,
+                    publish_pk,
+                    our_role,
+                    &own_cfd_txs,
+                    &commit_desc,
+                    &msg1,
+                )
+                .await?;
 
-                    let punish_params = build_punish_params(
-                        our_role,
-                        dlc.identity,
-                        dlc.identity_counterparty,
-                        msg0,
-                        rev_pk,
-                        publish_pk,
-                    );
+                let msg2 = framed
+                    .next()
+                    .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Expected Msg2 within {} seconds",
+                            ROLLOVER_MSG_TIMEOUT.as_secs()
+                        )
+                    })?
+                    .context("Empty stream instead of Msg2")?
+                    .context("Unable to decode dialer Msg2")?
+                    .into_rollover_msg()?
+                    .try_into_msg2()?;
 
-                    let own_cfd_txs = build_own_cfd_transactions(
-                        &dlc,
-                        rollover_params,
-                        &announcement[0],
-                        oracle_pk,
-                        our_position,
-                        n_payouts,
-                        complete_fee,
-                        punish_params,
-                    )
-                    .await?;
-
-                    let msg1 = framed
-                        .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "Expected Msg1 within {} seconds",
-                                ROLLOVER_MSG_TIMEOUT.as_secs()
-                            )
-                        })?
-                        .context("Empty stream instead of Msg1")?
-                        .context("Unable to decode dialer Msg1")?
-                        .into_rollover_msg()?
-                        .try_into_msg1()?;
-
-                    framed
-                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg1(
-                            RolloverMsg1::from(own_cfd_txs.clone()),
-                        ))))
-                        .await
-                        .context("Failed to send Msg1")?;
-
-                    let commit_desc = build_commit_descriptor(punish_params);
-                    let (cets, refund_tx) = build_and_verify_cets_and_refund(
-                        &dlc,
-                        &announcement[0],
-                        oracle_pk,
-                        publish_pk,
-                        our_role,
-                        &own_cfd_txs,
-                        &commit_desc,
-                        &msg1,
-                    )
-                    .await?;
-
-                    let msg2 = framed
-                        .next()
-                        .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "Expected Msg2 within {} seconds",
-                                ROLLOVER_MSG_TIMEOUT.as_secs()
-                            )
-                        })?
-                        .context("Empty stream instead of Msg2")?
-                        .context("Unable to decode dialer Msg2")?
-                        .into_rollover_msg()?
-                        .try_into_msg2()?;
-
-                    // reveal revocation secrets to the counterparty
-                    if let Err(e) = framed
-                        .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg2(
-                            RolloverMsg2 {
-                                revocation_sk: base_dlc_params.revocation_sk_ours(),
-                            },
-                        ))))
-                        .await
-                    {
-                        // If the taker tries to rollover again, they will do so from a previous
-                        // commit TXID compared to the maker's.
-                        tracing::warn!(%order_id, "Failed to send revocation keys to taker: {e:#}");
-                    }
-
-                    let revocation_sk_theirs = msg2.revocation_sk;
-                    let revoked_commits = base_dlc_params
-                        .revoke_base_commit_tx(revocation_sk_theirs)
-                        .context("Taker sent invalid revocation sk")?;
-
-                    let dlc = Dlc {
-                        identity: dlc.identity,
-                        identity_counterparty: dlc.identity_counterparty,
-                        revocation: rev_sk,
-                        revocation_pk_counterparty: punish_params
-                            .counterparty_params()
-                            .revocation_pk,
-                        publish: publish_sk,
-                        publish_pk_counterparty: punish_params.counterparty_params().publish_pk,
-                        maker_address: dlc.maker_address,
-                        taker_address: dlc.taker_address,
-                        lock: dlc.lock.clone(),
-                        commit: (own_cfd_txs.commit.0.clone(), msg1.commit, commit_desc),
-                        cets,
-                        refund: (refund_tx, msg1.refund),
-                        maker_lock_amount: dlc.maker_lock_amount,
-                        taker_lock_amount: dlc.taker_lock_amount,
-                        revoked_commit: revoked_commits,
-                        settlement_event_id: announcement[0].id,
-                        refund_timelock: rollover_params.refund_timelock,
-                    };
-
-                    emit_completed(order_id, dlc, funding_fee, complete_fee, &executor).await;
-
-                    Ok(())
+                // reveal revocation secrets to the counterparty
+                if let Err(e) = framed
+                    .send(ListenerMessage::RolloverMsg(Box::new(RolloverMsg::Msg2(
+                        RolloverMsg2 {
+                            revocation_sk: base_dlc_params.revocation_sk_ours(),
+                        },
+                    ))))
+                    .await
+                {
+                    // If the taker tries to rollover again, they will do so from a previous
+                    // commit TXID compared to the maker's.
+                    tracing::warn!(%order_id, "Failed to send revocation keys to taker: {e:#}");
                 }
-            },
-            {
-                let executor = self.executor.clone();
-                move |e| async move {
-                    emit_failed(order_id, e, &executor).await;
-                }
-            },
-        );
-        self.protocol_tasks.insert(order_id, tasks);
+
+                let revocation_sk_theirs = msg2.revocation_sk;
+                let revoked_commits = base_dlc_params
+                    .revoke_base_commit_tx(revocation_sk_theirs)
+                    .context("Taker sent invalid revocation sk")?;
+
+                let dlc = Dlc {
+                    identity: dlc.identity,
+                    identity_counterparty: dlc.identity_counterparty,
+                    revocation: rev_sk,
+                    revocation_pk_counterparty: punish_params.counterparty_params().revocation_pk,
+                    publish: publish_sk,
+                    publish_pk_counterparty: punish_params.counterparty_params().publish_pk,
+                    maker_address: dlc.maker_address,
+                    taker_address: dlc.taker_address,
+                    lock: dlc.lock.clone(),
+                    commit: (own_cfd_txs.commit.0.clone(), msg1.commit, commit_desc),
+                    cets,
+                    refund: (refund_tx, msg1.refund),
+                    maker_lock_amount: dlc.maker_lock_amount,
+                    taker_lock_amount: dlc.taker_lock_amount,
+                    revoked_commit: revoked_commits,
+                    settlement_event_id: announcement[0].id,
+                    refund_timelock: rollover_params.refund_timelock,
+                };
+
+                emit_completed(order_id, dlc, funding_fee, complete_fee, &executor).await;
+
+                Ok(())
+            }
+        };
+
+        let err_handler = {
+            let executor = self.executor.clone();
+            move |e| async move {
+                emit_failed(order_id, e, &executor).await;
+            }
+        };
+
+        tokio_extras::spawn_fallible(&this, task, err_handler);
     }
 }
 

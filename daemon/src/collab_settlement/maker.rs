@@ -16,7 +16,6 @@ use model::SettlementProposal;
 use model::SettlementTransaction;
 use std::collections::HashMap;
 use tokio_extras::FutureExt;
-use tokio_extras::Tasks;
 use xtra_libp2p::NewInboundSubstream;
 use xtra_libp2p::Substream;
 use xtra_productivity::xtra_productivity;
@@ -34,7 +33,6 @@ type ListenerConnection = (
 /// There is only one instance of this actor for all connections, meaning we must always spawn a
 /// task whenever we interact with a substream to not block the execution of other connections.
 pub struct Actor {
-    protocol_tasks: HashMap<OrderId, Tasks>,
     pending_protocols: HashMap<OrderId, ListenerConnection>,
     executor: command::Executor,
     n_payouts: usize,
@@ -43,7 +41,6 @@ pub struct Actor {
 impl Actor {
     pub fn new(executor: command::Executor, n_payouts: usize) -> Self {
         Self {
-            protocol_tasks: HashMap::default(),
             pending_protocols: HashMap::default(),
             executor,
             n_payouts,
@@ -129,7 +126,7 @@ impl Actor {
             .insert(order_id, (framed, transaction, proposal, peer_id));
     }
 
-    async fn handle(&mut self, msg: Accept) -> Result<()> {
+    async fn handle(&mut self, msg: Accept, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let Accept { order_id } = msg;
 
         let (mut framed, transaction, proposal, _peer) =
@@ -137,8 +134,9 @@ impl Actor {
                 .remove(&order_id)
                 .with_context(|| format!("No active protocol for order {order_id}"))?;
 
-        let mut tasks = Tasks::default();
-        tasks.add_fallible(
+        let this = ctx.address().expect("we are alive");
+        tokio_extras::spawn_fallible(
+            &this,
             {
                 let executor = self.executor.clone();
                 async move {
@@ -212,12 +210,11 @@ impl Actor {
                 }
             },
         );
-        self.protocol_tasks.insert(order_id, tasks);
 
         Ok(())
     }
 
-    async fn handle(&mut self, msg: Reject) -> Result<()> {
+    async fn handle(&mut self, msg: Reject, ctx: &mut xtra::Context<Self>) -> Result<()> {
         let Reject { order_id } = msg;
 
         let (mut framed, ..) = self
@@ -226,8 +223,9 @@ impl Actor {
             .with_context(|| format!("No active protocol for order {order_id}"))?;
         emit_rejected(order_id, &self.executor).await;
 
-        let mut tasks = Tasks::default();
-        tasks.add_fallible(
+        let this = ctx.address().expect("we are alive");
+        tokio_extras::spawn_fallible(
+            &this,
             async move {
                 framed
                     .send(ListenerMessage::Decision(Decision::Reject))
@@ -237,7 +235,6 @@ impl Actor {
                 tracing::warn!(%order_id, "Failed to reject collaborative settlement: {e:#}")
             },
         );
-        self.protocol_tasks.insert(order_id, tasks);
 
         Ok(())
     }
