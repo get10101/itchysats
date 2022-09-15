@@ -153,15 +153,15 @@ impl Default for RandomSeed {
 }
 
 #[derive(Copy, Clone)]
-pub struct UmbrelSeed([u8; 32]);
+pub struct AppSeed([u8; 32]);
 
-impl Seed for UmbrelSeed {
+impl Seed for AppSeed {
     fn seed(&self) -> Vec<u8> {
         self.0.to_vec()
     }
 }
 
-impl From<[u8; 32]> for UmbrelSeed {
+impl From<[u8; 32]> for AppSeed {
     fn from(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }

@@ -48,7 +48,7 @@ Additionally, when a CFD is closed, your payout is sent to an address owned by t
 This wallet is completely under your control.
 You can withdraw from the wallet at any time.
 
-On Umbrel this wallet is derived from the Umbrel Seed, so the only thing you have to back up is the Umbrel seed.
+On Umbrel this wallet is derived from its app seed, so the only thing you have to back up is the Umbrel seed.
 
 When running the binary / docker container a random seed will be used to derive the wallet.
 Make sure to back up the `taker_seed` file that can be found in the data directory of the application.

@@ -10,9 +10,9 @@ use daemon::libp2p_utils::create_connect_tcp_multiaddr;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::seed::AppSeed;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
-use daemon::seed::UmbrelSeed;
 use daemon::wallet;
 use daemon::wallet::TAKER_WALLET_ID;
 use daemon::Environment;
@@ -126,10 +126,10 @@ struct Opts {
     #[clap(subcommand)]
     network: Option<Network>,
 
-    #[clap(short, long, parse(try_from_str = parse_umbrel_seed))]
-    umbrel_seed: Option<[u8; 32]>,
+    #[clap(short, long, parse(try_from_str = parse_app_seed))]
+    app_seed: Option<[u8; 32]>,
 
-    /// If provided will be used for internal wallet instead of a random key or umbrel_seed. The
+    /// If provided will be used for internal wallet instead of a random key or app_seed. The
     /// keys will be derived according to Bip84.
     #[clap(short, long)]
     pub wallet_xprv: Option<ExtendedPrivKey>,
@@ -186,7 +186,7 @@ fn parse_x25519_pubkey(s: &str) -> Result<x25519_dalek::PublicKey> {
     Ok(x25519_dalek::PublicKey::from(bytes))
 }
 
-fn parse_umbrel_seed(s: &str) -> Result<[u8; 32]> {
+fn parse_app_seed(s: &str) -> Result<[u8; 32]> {
     let mut bytes = [0u8; 32];
     hex::decode_to_slice(s, &mut bytes)?;
     Ok(bytes)
@@ -231,9 +231,9 @@ async fn main() -> Result<()> {
     let maker_identity = Identity::new(maker_id);
 
     let bitcoin_network = network.bitcoin_network();
-    let (ext_priv_key, identities, web_password) = match opts.umbrel_seed {
+    let (ext_priv_key, identities, web_password) = match opts.app_seed {
         Some(seed_bytes) => {
-            let seed = UmbrelSeed::from(seed_bytes);
+            let seed = AppSeed::from(seed_bytes);
             let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
             let identities = seed.derive_identities();
             let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
