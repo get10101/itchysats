@@ -38,7 +38,7 @@ serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.10"
 snow = "0.9"
 sqlite-db = { path = "../sqlite-db" }
-sqlx = { version = "0.6.1", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
+sqlx = { version = "0.6.2", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
 statrs = "0.16"
 strum = "0.24"
 thiserror = "1"
