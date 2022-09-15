@@ -180,10 +180,10 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
-
       - name: Install sqlx-cli
+        # Lock sqlx-cli version to the same version as sqlx in the workspace
         run: |
-          cargo install sqlx-cli
+          cargo install sqlx-cli@0.6.1
 
       - name: Run sqlx prepare
         run: |
