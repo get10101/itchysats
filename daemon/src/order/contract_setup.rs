@@ -312,7 +312,7 @@ async fn create_cfd_transactions(
     let settlement_event_id = announcements.last().context("Empty announcements")?.id;
 
     let payouts = match setup_params.contract_symbol {
-        ContractSymbol::BtcUsd => Payouts::new_inverse(
+        ContractSymbol::BtcUsd => Payouts::new_inverse_double_initial(
             (position, role),
             setup_params.price,
             setup_params.quantity,

@@ -1082,7 +1082,7 @@ impl Cfd {
         n_payouts: usize,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
         let payouts = match self.contract_symbol {
-            ContractSymbol::BtcUsd => Payouts::new_inverse(
+            ContractSymbol::BtcUsd => Payouts::new_inverse_double_initial(
                 (self.position, self.role),
                 self.initial_price,
                 self.quantity,

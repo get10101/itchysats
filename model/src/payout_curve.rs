@@ -68,16 +68,59 @@ pub struct Payouts {
 }
 
 impl Payouts {
+    /// Generate the inverse payout curve discretised [`Payouts`], with the maximum price set to
+    /// Olivia's maximum attestation price.
+    pub fn new_inverse_olivia_max(
+        (position, role): (Position, Role),
+        initial_price: Price,
+        quantity: Contracts,
+        (leverage_long, leverage_short): (Leverage, Leverage),
+        n_payouts: usize,
+        fee: CompleteFee,
+    ) -> Result<Self> {
+        Self::new_inverse(
+            (position, role),
+            initial_price,
+            quantity,
+            (leverage_long, leverage_short),
+            n_payouts,
+            fee,
+            InverseMaxPrice::OliviaMax,
+        )
+    }
+
+    /// Generate the inverse payout curve discretised [`Payouts`], with the maximum price set to
+    /// double the value of the `initial_price`.
+    pub fn new_inverse_double_initial(
+        (position, role): (Position, Role),
+        initial_price: Price,
+        quantity: Contracts,
+        (leverage_long, leverage_short): (Leverage, Leverage),
+        n_payouts: usize,
+        fee: CompleteFee,
+    ) -> Result<Self> {
+        Self::new_inverse(
+            (position, role),
+            initial_price,
+            quantity,
+            (leverage_long, leverage_short),
+            n_payouts,
+            fee,
+            InverseMaxPrice::DoubleOfInitial,
+        )
+    }
+
     #[tracing::instrument(err)]
-    pub fn new_inverse(
+    fn new_inverse(
         (position, role): (Position, Role),
         price: Price,
         quantity: Contracts,
         (leverage_long, leverage_short): (Leverage, Leverage),
         n_payouts: usize,
         fee: CompleteFee,
+        inverse_max_price_config: InverseMaxPrice,
     ) -> Result<Self> {
-        let payouts = payout_curve::inverse::calculate(
+        let mut payouts = payout_curve::inverse::calculate(
             price,
             quantity,
             leverage_long,
@@ -85,6 +128,13 @@ impl Payouts {
             n_payouts,
             fee,
         )?;
+
+        if let InverseMaxPrice::OliviaMax = inverse_max_price_config {
+            let n_payouts = payouts.len() - 1;
+            let short_liquidation = payouts.get_mut(n_payouts).expect("several payouts");
+            short_liquidation.range =
+                *short_liquidation.range.start()..=maia_core::interval::MAX_PRICE_DEC;
+        }
 
         let settlement: Vec<_> = match (position, role) {
             (Position::Long, Role::Taker) | (Position::Short, Role::Maker) => payouts
@@ -167,6 +217,17 @@ impl Payouts {
     }
 }
 
+/// Configure the maximum price supported by the inverse payout curve.
+#[derive(Debug, Copy, Clone)]
+enum InverseMaxPrice {
+    /// Set the maximum price to the maximum value Olivia can attest to.
+    OliviaMax,
+    /// Set the maximum price to double the value of the initial price.
+    ///
+    /// We support this option to ensure backwards-compatibility.
+    DoubleOfInitial,
+}
+
 struct Announcements {
     /// The announcement which corresponds to the oracle event that
     /// will mark the end of an epoch for a CFD.
@@ -232,6 +293,7 @@ mod tests {
                 (Leverage::ONE, short_leverage),
                 200,
                 fee_flow,
+                InverseMaxPrice::OliviaMax,
             )
                 .unwrap();
 

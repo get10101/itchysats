@@ -381,7 +381,7 @@ pub(crate) async fn build_own_cfd_transactions(
             id: announcement.id.to_string(),
             nonce_pks: announcement.nonce_pks.clone(),
         },
-        Payouts::new_inverse(
+        Payouts::new_inverse_double_initial(
             (our_position, punish_params.own_role),
             rollover_params.price,
             rollover_params.quantity,
