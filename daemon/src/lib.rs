@@ -448,6 +448,9 @@ where
 pub enum Environment {
     Umbrel,
     RaspiBlitz,
+    Citadel,
+    Start9,
+    MyNode,
     Docker,
     Binary,
     Test,
@@ -460,6 +463,9 @@ impl Environment {
         match envvar_val {
             "umbrel" => Environment::Umbrel,
             "raspiblitz" => Environment::RaspiBlitz,
+            "citadel" => Environment::Citadel,
+            "start9" => Environment::Start9,
+            "mynode" => Environment::MyNode,
             "docker" => Environment::Docker,
             _ => Environment::Unknown,
         }
@@ -476,14 +482,15 @@ fn into_price_feed_symbol(symbol: model::ContractSymbol) -> xtra_bitmex_price_fe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Environment::Docker;
-    use crate::Environment::RaspiBlitz;
-    use crate::Environment::Umbrel;
+    use crate::Environment::*;
 
     #[test]
     fn snapshot_test_environment_from_str_or_unknown() {
         assert_eq!(Environment::from_str_or_unknown("umbrel"), Umbrel);
         assert_eq!(Environment::from_str_or_unknown("raspiblitz"), RaspiBlitz);
+        assert_eq!(Environment::from_str_or_unknown("citadel"), Citadel);
+        assert_eq!(Environment::from_str_or_unknown("start9"), Start9);
+        assert_eq!(Environment::from_str_or_unknown("mynode"), MyNode);
         assert_eq!(Environment::from_str_or_unknown("docker"), Docker);
     }
 }
