@@ -183,7 +183,7 @@ jobs:
       - name: Install sqlx-cli
         # Lock sqlx-cli version to the same version as sqlx in the workspace
         run: |
-          cargo install sqlx-cli@0.6.1
+          cargo install sqlx-cli@0.6.2
 
       - name: Run sqlx prepare
         run: |
