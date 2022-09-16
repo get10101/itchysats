@@ -46,7 +46,7 @@
     "vite": "^3.1.0",
     "web-vitals": "^3.0.2",
     "jest-environment-jsdom": "^29.0.3",
-    "ts-jest": "^29.0.0"
+    "ts-jest": "^29.0.1"
   },
   "dependenciesComments": {
     "about": "https://stackoverflow.com/a/45815391/2489334"
