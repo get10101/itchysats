@@ -107,6 +107,10 @@ struct Opts {
     #[clap(long, default_value = LOCAL_COLLECTOR_ENDPOINT )]
     collector_endpoint: String,
 
+    /// If enabled, browser UI is not automatically launched at startup.
+    #[clap(long)]
+    pub headless: bool,
+
     /// Service name for OTEL.
     ///
     /// If not specified it defaults to the binary name.
@@ -389,7 +393,7 @@ async fn main() -> Result<()> {
         .register("/", default_catchers())
         .attach(fairings::log_launch())
         .attach(fairings::log_requests())
-        .attach(fairings::ui_browser_launch())
+        .attach(fairings::ui_browser_launch(!opts.headless))
         .launch()
         .await?;
 
