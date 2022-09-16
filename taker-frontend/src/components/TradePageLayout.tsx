@@ -14,8 +14,9 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { Link as ReachLink, Outlet, useLocation, useParams } from "react-router-dom";
-import { Symbol, VIEWPORT_WIDTH_PX } from "../App";
+import { useContext } from "react";
+import { Link as ReachLink, Outlet } from "react-router-dom";
+import { Selection, SelectionContext, Symbol, VIEWPORT_WIDTH_PX } from "../App";
 import { Cfd, ConnectionStatus, isClosed } from "../types";
 import History from "./History";
 
@@ -80,11 +81,9 @@ function HistoryLayout({ cfds, connectedToMaker, showExtraInfo }: HistoryLayoutP
 }
 
 function NavigationButtons() {
-    const location = useLocation();
-    let { symbol: symbolString } = useParams();
-    let symbol = symbolString ? Symbol[symbolString as keyof typeof Symbol] : Symbol.btcusd;
+    const selection: Selection = useContext(SelectionContext);
 
-    const isLongSelected = location.pathname.includes("long");
+    const isLongSelected = selection.position.get(selection.symbol) === "long";
     const isShortSelected = !isLongSelected;
 
     const unSelectedButton = "transparent";
@@ -93,7 +92,7 @@ function NavigationButtons() {
     const buttonText = useColorModeValue("black", "white");
 
     let buttonLabel;
-    switch (symbol) {
+    switch (selection.symbol) {
         case Symbol.btcusd: {
             buttonLabel = "BTC";
             break;
@@ -116,8 +115,9 @@ function NavigationButtons() {
                     id={"longShortButtonSwitch"}
                 >
                     <Button
+                        onClick={() => selection.position.set(selection.symbol, "long")}
                         as={ReachLink}
-                        to={"/trade/" + symbolString + "/long/"}
+                        to={"/trade/" + selection.symbol + "/long/"}
                         color={isLongSelected ? selectedButton : unSelectedButton}
                         bg={isLongSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
@@ -129,8 +129,9 @@ function NavigationButtons() {
                         <Text fontSize={"md"} color={buttonText}>Long {buttonLabel}</Text>
                     </Button>
                     <Button
+                        onClick={() => selection.position.set(selection.symbol, "short")}
                         as={ReachLink}
-                        to={"/trade/" + symbolString + "/short/"}
+                        to={"/trade/" + selection.symbol + "/short/"}
                         color={isShortSelected ? selectedButton : unSelectedButton}
                         bg={isShortSelected ? selectedButton : unSelectedButton}
                         border={buttonBorder}
