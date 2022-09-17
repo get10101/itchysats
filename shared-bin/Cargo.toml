@@ -14,7 +14,6 @@ console-subscriber = "0.1.8"
 daemon = { path = "../daemon" }
 http-api-problem = { version = "0.55.0", features = ["rocket"] }
 model = { path = "../model" }
-offer = { path = "../xtra-libp2p-offer", package = "xtra-libp2p-offer" }
 opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.10.0" }
 ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
