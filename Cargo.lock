@@ -2122,7 +2122,7 @@ dependencies = [
  "prometheus",
  "quiet-spans",
  "rocket",
- "rocket-basicauth",
+ "rocket-cookie-auth",
  "rust-embed",
  "rust-embed-rocket",
  "serde",

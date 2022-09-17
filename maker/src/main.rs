@@ -17,6 +17,7 @@ use maker::Opts;
 use model::olivia;
 use model::Role;
 use model::SETTLEMENT_INTERVAL;
+use rocket_cookie_auth::users::Users;
 use shared_bin::catchers::default_catchers;
 use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
@@ -98,14 +99,10 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let auth_username = rocket_basicauth::Username("itchysats");
-    let auth_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
-
     let identities = seed.derive_identities();
 
     let peer_id = identities.peer_id();
     let hex_pk = hex::encode(identities.identity_pk.to_bytes());
-    tracing::info!("Authentication details: username='{auth_username}' password='{auth_password}'");
     tracing::info!("Connection details: maker_id='{hex_pk}', peer_id='{peer_id}'");
 
     let figment = rocket::Config::figment()
@@ -165,12 +162,22 @@ async fn main() -> Result<()> {
         endpoint_listen,
     )?;
 
+    if let Some(password) = opts.password {
+        db.clone()
+            .update_password(rocket_cookie_auth::user::create_password(
+                password.to_string().as_str(),
+            )?)
+            .await?;
+    }
+
+    let rocket_auth_db_connection = RocketAuthDbConnection::new(db.clone());
+    let users = Users::new(Box::new(rocket_auth_db_connection));
+
     let mission_success = rocket::custom(figment)
         .manage(feed_receivers)
         .manage(wallet_feed_receiver)
         .manage(maker)
-        .manage(auth_username)
-        .manage(auth_password)
+        .manage(users)
         .manage(bitcoin_network)
         .mount(
             "/api",
@@ -184,6 +191,10 @@ async fn main() -> Result<()> {
                 routes::get_metrics,
                 routes::put_sync_wallet,
                 routes::get_version,
+                routes::change_password,
+                routes::post_login,
+                routes::logout,
+                routes::is_authenticated,
             ],
         )
         .register("/api", default_catchers())
@@ -200,4 +211,32 @@ async fn main() -> Result<()> {
     db.close().await;
 
     Ok(())
+}
+
+struct RocketAuthDbConnection {
+    inner: sqlite_db::Connection,
+}
+
+impl RocketAuthDbConnection {
+    fn new(db: sqlite_db::Connection) -> Self {
+        Self { inner: db }
+    }
+}
+
+#[rocket::async_trait]
+impl rocket_cookie_auth::Database for RocketAuthDbConnection {
+    async fn load_user(&self) -> Result<Option<rocket_cookie_auth::user::User>> {
+        let users = self.inner.clone().load_user().await?;
+        Ok(users.map(|user| rocket_cookie_auth::user::User {
+            id: user.id,
+            password: user.password,
+            auth_key: rocket_cookie_auth::NO_AUTH_KEY_SET.to_string(),
+            first_login: user.first_login,
+        }))
+    }
+
+    async fn update_password(&self, password: String) -> Result<()> {
+        self.inner.clone().update_password(password).await?;
+        Ok(())
+    }
 }
