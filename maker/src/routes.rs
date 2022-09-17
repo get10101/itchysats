@@ -278,14 +278,14 @@ struct Asset;
 
 #[rocket::get("/assets/<file..>")]
 #[instrument(name = "GET /assets/<file>", skip_all)]
-pub fn dist<'r>(file: PathBuf, _user: User) -> impl Responder<'r, 'static> {
+pub fn dist<'r>(file: PathBuf) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
 #[instrument(name = "GET /<_paths>", skip_all)]
-pub fn index<'r>(_paths: PathBuf, _user: User) -> impl Responder<'r, 'static> {
+pub fn index<'r>(_paths: PathBuf) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }

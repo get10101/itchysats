@@ -68,7 +68,6 @@ let Defaults: { [key: string]: SymbolDefaults } = {
 };
 
 export default function App() {
-    document.title = "Hermes Maker";
     const [symbol, setSymbol] = useState(Symbol.btcusd);
     let symbolDefaults = Defaults[symbol];
 
