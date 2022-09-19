@@ -19,7 +19,6 @@ status = [
   "clippy (sqlite-db)",
   "clippy (xtra-libp2p-offer)",
   "clippy (quiet-spans)",
-  "clippy (vergen-version)",
   "clippy (xtra-libp2p-rollover)",
   "lint-commits",
   "frontend (maker)",
