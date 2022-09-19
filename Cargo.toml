@@ -22,7 +22,6 @@ members = [
   "xtra-libp2p-rollover",
   "sqlite-db",
   "quiet-spans",
-  "vergen-version",
 ]
 resolver = "2"
 

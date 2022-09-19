@@ -65,6 +65,8 @@ pub mod seed;
 pub mod taker_cfd;
 pub mod wallet;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Duration between the restart attempts after a supervised actor has quit with
 /// a failure.
 pub const RESTART_INTERVAL: Duration = Duration::from_secs(5);
@@ -277,7 +279,7 @@ where
             let identity = identity.libp2p.clone();
             move || {
                 identify::listener::Actor::new(
-                    vergen_version::git_semver().to_string(),
+daemon::VERSION.to_string(),
                     environment,
                     identity.public(),
                     HashSet::new(),
