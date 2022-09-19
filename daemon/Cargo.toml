@@ -29,7 +29,7 @@ offer = { path = "../xtra-libp2p-offer", package = "xtra-libp2p-offer" }
 parse-display = "0.6.0"
 ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
 prometheus = { version = "0.13", default-features = false }
-rand = "0.6"
+rand = "0.8"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 rollover = { path = "../xtra-libp2p-rollover", package = "xtra-libp2p-rollover" }
 rust_decimal = { version = "1.26", features = ["serde-with-float"] }

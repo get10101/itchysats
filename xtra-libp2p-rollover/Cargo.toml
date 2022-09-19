@@ -15,7 +15,7 @@ libp2p-core = { version = "0.33", default-features = false }
 maia = "0.2.0"
 maia-core = "0.1.1"
 model = { path = "../model" }
-rand = "0.6"
+rand = "0.8"
 serde = { version = "1" }
 thiserror = "1"
 tokio = { version = "1" }

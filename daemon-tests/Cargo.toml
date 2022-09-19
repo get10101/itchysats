@@ -16,7 +16,7 @@ model = { path = "../model" }
 otel-tests = { version = "0.1", default-features = false }
 portpicker = "0.1.1"
 quiet-spans = { path = "../quiet-spans" }
-rand = "0.6"
+rand = "0.8"
 rust_decimal = "1.26"
 rust_decimal_macros = "1.26"
 sqlite-db = { path = "../sqlite-db" }
