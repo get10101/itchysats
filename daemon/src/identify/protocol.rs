@@ -110,6 +110,9 @@ where
 pub enum Environment {
     Umbrel,
     RaspiBlitz,
+    Citadel,
+    Start9,
+    MyNode,
     Docker,
     Binary,
     Test,
@@ -122,6 +125,9 @@ impl From<crate::Environment> for Environment {
         match environment {
             crate::Environment::Umbrel => Environment::Umbrel,
             crate::Environment::RaspiBlitz => Environment::RaspiBlitz,
+            crate::Environment::Citadel => Environment::Citadel,
+            crate::Environment::Start9 => Environment::Start9,
+            crate::Environment::MyNode => Environment::MyNode,
             crate::Environment::Docker => Environment::Docker,
             crate::Environment::Binary => Environment::Binary,
             crate::Environment::Test => Environment::Test,
@@ -136,6 +142,9 @@ impl From<Environment> for crate::Environment {
         match environment {
             Environment::Umbrel => crate::Environment::Umbrel,
             Environment::RaspiBlitz => crate::Environment::RaspiBlitz,
+            Environment::Citadel => crate::Environment::Citadel,
+            Environment::Start9 => crate::Environment::Start9,
+            Environment::MyNode => crate::Environment::MyNode,
             Environment::Docker => crate::Environment::Docker,
             Environment::Binary => crate::Environment::Binary,
             Environment::Test => crate::Environment::Test,
