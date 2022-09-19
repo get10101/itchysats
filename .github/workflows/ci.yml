@@ -28,7 +28,9 @@ jobs:
         run: rustup show
       - id: cargo-metadata
         run: |
-          WORKSPACE_MEMBERS=$(cargo metadata --format-version=1 --no-deps | jq -c '.packages | map(.name)')
+          # replacing itchysats with taker-electron: dirty fix, as neon and electron require the package name for processing. neon requires the package name to equal the crate name - 
+          # and electron uses the package name as name of the application.
+          WORKSPACE_MEMBERS=$(cargo metadata --format-version=1 --no-deps | jq -c '.packages |.[] | select(.name == "itchysats").name |= "taker-electron" | .name' | jq -s | jq -c '.')
 
           echo "::set-output name=members::${WORKSPACE_MEMBERS}"
 
