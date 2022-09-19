@@ -308,7 +308,8 @@ async fn main() -> Result<()> {
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
         .merge(("port", opts.http_address.port()))
-        .merge(("cli_colors", false));
+        .merge(("cli_colors", false))
+        .merge(("secret_key", RandomSeed::default().seed()));
 
     let db = sqlite_db::connect(data_dir.join("taker.sqlite"), true).await?;
 
