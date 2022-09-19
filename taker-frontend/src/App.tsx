@@ -74,8 +74,8 @@ const defaultSelection: Selection = {
 export const SelectionContext = createContext(defaultSelection);
 
 export const App = () => {
-    const toast = useToast();
     const navigate = useNavigate();
+    const toast = useToast();
     const location = useLocation();
 
     const selection: Selection = useContext(SelectionContext);
@@ -286,7 +286,7 @@ export const App = () => {
                 }
             >
                 <Route
-                    path="wallet"
+                    path="/wallet"
                     element={<Wallet walletInfo={walletInfo} />}
                 />
                 <Route

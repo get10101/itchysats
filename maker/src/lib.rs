@@ -4,6 +4,7 @@ use daemon::bdk;
 use shared_bin::cli::Network;
 use shared_bin::logger::LevelFilter;
 use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -13,6 +14,29 @@ mod actor_system;
 pub mod cfd;
 mod metrics;
 pub mod routes;
+
+#[derive(Debug)]
+pub struct Password(String);
+
+impl From<[u8; 32]> for Password {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(hex::encode(bytes))
+    }
+}
+
+impl std::str::FromStr for Password {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_owned()))
+    }
+}
+
+impl std::fmt::Display for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 #[derive(Parser)]
 pub struct Opts {
@@ -81,9 +105,10 @@ pub struct Opts {
 
     /// Password for the web interface.
     ///
-    /// If not provided, will be derived from the seed.
+    /// If not provided, the password will be loaded from the db which by default is
+    /// `weareallsatoshi`
     #[clap(long)]
-    pub password: Option<rocket_basicauth::Password>,
+    pub password: Option<Password>,
 
     #[clap(subcommand)]
     pub network: Network,

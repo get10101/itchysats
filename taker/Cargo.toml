@@ -15,7 +15,7 @@ libp2p-core = { version = "0.33", default-features = false }
 model = { path = "../model" }
 prometheus = { version = "0.13", default-features = false }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
-rocket-basicauth = { path = "../rocket-basicauth" }
+rocket-cookie-auth = { path = "../rocket-cookie-auth" }
 rust-embed = "6.4"
 rust-embed-rocket = { path = "../rust-embed-rocket" }
 serde = { version = "1", features = ["derive"] }

@@ -23,6 +23,8 @@ use model::olivia;
 use model::Identity;
 use model::Role;
 use model::SETTLEMENT_INTERVAL;
+use rocket::async_trait;
+use rocket_cookie_auth::users::Users;
 use shared_bin::catchers::default_catchers;
 use shared_bin::cli::Network;
 use shared_bin::cli::Withdraw;
@@ -30,6 +32,7 @@ use shared_bin::fairings;
 use shared_bin::logger;
 use shared_bin::logger::LevelFilter;
 use shared_bin::logger::LOCAL_COLLECTOR_ENDPOINT;
+use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -50,6 +53,29 @@ const MAINNET_MAKER_PEER_ID: &str = "12D3KooWP3BN6bq9jPy8cP7Grj1QyUBfr7U6BeQFgMw
 const TESTNET_MAKER: &str = "testnet.itchysats.network:10000";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
 const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
+
+#[derive(Debug)]
+pub struct Password(String);
+
+impl From<[u8; 32]> for Password {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(hex::encode(bytes))
+    }
+}
+
+impl std::str::FromStr for Password {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_owned()))
+    }
+}
+
+impl std::fmt::Display for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 #[derive(Parser)]
 struct Opts {
@@ -125,7 +151,7 @@ struct Opts {
     ///
     /// If not provided, will be derived from the seed.
     #[clap(long)]
-    password: Option<rocket_basicauth::Password>,
+    password: Option<Password>,
 
     #[clap(subcommand)]
     network: Option<Network>,
@@ -235,20 +261,18 @@ async fn main() -> Result<()> {
     let maker_identity = Identity::new(maker_id);
 
     let bitcoin_network = network.bitcoin_network();
-    let (ext_priv_key, identities, web_password) = match opts.app_seed {
+    let (ext_priv_key, identities) = match opts.app_seed {
         Some(seed_bytes) => {
             let seed = AppSeed::from(seed_bytes);
             let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
             let identities = seed.derive_identities();
-            let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
-            (ext_priv_key, identities, web_password)
+            (ext_priv_key, identities)
         }
         None => {
             let seed = RandomSeed::initialize(&data_dir.join("taker_seed")).await?;
             let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
             let identities = seed.derive_identities();
-            let web_password = opts.password.unwrap_or_else(|| seed.derive_auth_password());
-            (ext_priv_key, identities, web_password)
+            (ext_priv_key, identities)
         }
     };
 
@@ -280,9 +304,6 @@ async fn main() -> Result<()> {
 
         return Ok(());
     }
-
-    let auth_username = rocket_basicauth::Username("itchysats");
-    tracing::info!("Authentication details: username='{auth_username}' password='{web_password}'");
 
     let figment = rocket::Config::figment()
         .merge(("address", opts.http_address.ip()))
@@ -365,6 +386,17 @@ async fn main() -> Result<()> {
         environment,
     )?;
 
+    if let Some(password) = opts.password {
+        db.clone()
+            .update_password(rocket_cookie_auth::user::create_password(
+                password.to_string().as_str(),
+            )?)
+            .await?;
+    }
+
+    let rocket_auth_db_connection = RocketAuthDbConnection::new(db.clone());
+    let users = Users::new(Box::new(rocket_auth_db_connection));
+
     let mission_success = rocket::custom(figment)
         .manage(feed_receivers)
         .manage(wallet_feed_receiver)
@@ -373,8 +405,7 @@ async fn main() -> Result<()> {
         .manage(taker.maker_online_status_feed_receiver.clone())
         .manage(taker.identify_info_feed_receiver.clone())
         .manage(taker)
-        .manage(auth_username)
-        .manage(web_password)
+        .manage(users)
         .mount(
             "/api",
             rocket::routes![
@@ -386,6 +417,10 @@ async fn main() -> Result<()> {
                 routes::get_metrics,
                 routes::put_sync_wallet,
                 routes::get_version,
+                routes::change_password,
+                routes::post_login,
+                routes::logout,
+                routes::is_authenticated,
             ],
         )
         .register("/api", default_catchers())
@@ -415,4 +450,32 @@ async fn resolve_maker_addresses(maker_addr: &str) -> Result<Vec<SocketAddr>> {
         itertools::join(possible_addresses.iter(), ",")
     );
     Ok(possible_addresses)
+}
+
+struct RocketAuthDbConnection {
+    inner: sqlite_db::Connection,
+}
+
+impl RocketAuthDbConnection {
+    fn new(db: sqlite_db::Connection) -> Self {
+        Self { inner: db }
+    }
+}
+
+#[async_trait]
+impl rocket_cookie_auth::Database for RocketAuthDbConnection {
+    async fn load_user(&self) -> Result<Option<rocket_cookie_auth::user::User>> {
+        let users = self.inner.clone().load_user().await?;
+        Ok(users.map(|user| rocket_cookie_auth::user::User {
+            id: user.id,
+            password: user.password,
+            auth_key: rocket_cookie_auth::NO_AUTH_KEY_SET.to_string(),
+            first_login: user.first_login,
+        }))
+    }
+
+    async fn update_password(&self, password: String) -> Result<()> {
+        self.inner.clone().update_password(password).await?;
+        Ok(())
+    }
 }

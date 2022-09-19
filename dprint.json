@@ -12,7 +12,14 @@
     "uppercase": true
   },
   "includes": ["**/*.{md,rs,toml,ts,tsx,js,json,sql,yml,yaml}"],
-  "excludes": ["**/target", "**/sqlx-data.json", "maker-frontend/dist", "taker-frontend/dist", "**/node_modules"],
+  "excludes": [
+    "**/target",
+    "**/sqlx-data.json",
+    "maker-frontend/dist",
+    "taker-frontend/dist",
+    "**/node_modules",
+    "rocket-cookie-auth/example-http-cookie-auth.sql"
+  ],
   "plugins": [
     "https://plugins.dprint.dev/markdown-0.13.0.wasm",
     "https://plugins.dprint.dev/rustfmt-0.6.2.json@886c6f3161cf020c2d75160262b0f56d74a521e05cfb91ec4f956650c8ca76ca",

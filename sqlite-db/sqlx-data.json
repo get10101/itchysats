@@ -438,6 +438,36 @@
     },
     "query": "select id from cfds where order_id = $1"
   },
+  "5a50999068c1ee5d130c635bff1473cb9b587ed1cccaec27fa14263c23e61a4b": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "PASSWORD",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "first_login",
+          "ordinal": 2,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "\n            SELECT * from login_details where id = $1\n            "
+  },
   "76e71ec93cb68fc2a917844dd8ea20d307326f215d0a4b0356393b0d2f5067bc": {
     "describe": {
       "columns": [
@@ -847,6 +877,16 @@
       }
     },
     "query": "\n            UPDATE time_to_first_position\n            SET first_position_timestamp = $2\n            WHERE taker_id = $1 and first_position_timestamp is NULL\n            "
+  },
+  "c1fd407e94af1aa235c6ae90c2853cc7d583677725516bbfaf493174e73e6a18": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 2
+      }
+    },
+    "query": "\n            UPDATE login_details\n            SET password = $1, first_login = false\n            WHERE id = $2\n            "
   },
   "c73ad5e6953e1a587951b213cf07d4a98e08a25d774b693228c18113a832d72e": {
     "describe": {

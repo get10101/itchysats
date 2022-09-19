@@ -19,6 +19,7 @@ use model::OrderId;
 use model::Price;
 use model::TxFeeRate;
 use model::WalletInfo;
+use rocket::form::Form;
 use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::request::FromParam;
@@ -27,7 +28,10 @@ use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::State;
-use rocket_basicauth::Authenticated;
+use rocket_cookie_auth::auth::Auth;
+use rocket_cookie_auth::forms::ChangePassword;
+use rocket_cookie_auth::forms::Login;
+use rocket_cookie_auth::user::User;
 use rust_embed::RustEmbed;
 use rust_embed_rocket::EmbeddedFileExt;
 use serde::Deserialize;
@@ -48,7 +52,7 @@ pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sl
 pub async fn maker_feed(
     rx: &State<FeedReceivers>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
-    _auth: Authenticated,
+    _user: User,
 ) -> EventStream![] {
     let rx = rx.inner();
     let mut rx_cfds = rx.cfds.clone();
@@ -135,11 +139,11 @@ fn default_lot_size() -> LotSize {
 }
 
 #[rocket::put("/offer", data = "<offer_params>")]
-#[instrument(name = "PUT /offer", skip(maker, _auth), err)]
+#[instrument(name = "PUT /offer", skip(maker, _user), err)]
 pub async fn put_offer_params(
     offer_params: Json<CfdNewOfferParamsRequest>,
     maker: &State<Maker>,
-    _auth: Authenticated,
+    _user: User,
 ) -> Result<(), HttpApiProblem> {
     tracing::warn!("Deprecated /offer was called. Please use /<contract_symbol>/offer from now.");
     maker
@@ -194,12 +198,12 @@ impl<'r> FromParam<'r> for ContractSymbol {
 }
 
 #[rocket::put("/<symbol>/offer", data = "<offer_params>")]
-#[instrument(name = "PUT /offer", skip(maker, _auth), err)]
+#[instrument(name = "PUT /offer", skip(maker, _user), err)]
 pub async fn put_offer_params_for_symbol(
     symbol: Result<ContractSymbol>,
     offer_params: Json<CfdNewOfferParamsRequest>,
     maker: &State<Maker>,
-    _auth: Authenticated,
+    _user: User,
 ) -> Result<(), HttpApiProblem> {
     // if we use `ContractSymbol` as arg directly the error gets lost. So we need to do this:
     let symbol = symbol.map_err(|e| {
@@ -232,12 +236,12 @@ pub async fn put_offer_params_for_symbol(
 }
 
 #[rocket::post("/cfd/<order_id>/<action>")]
-#[instrument(name = "POST /cfd/<order_id>/<action>", skip(maker, _auth), err)]
+#[instrument(name = "POST /cfd/<order_id>/<action>", skip(maker, _user), err)]
 pub async fn post_cfd_action(
     order_id: Uuid,
     action: String,
     maker: &State<Maker>,
-    _auth: Authenticated,
+    _user: User,
 ) -> Result<(), HttpApiProblem> {
     let order_id = OrderId::from(order_id);
     let action = action.parse().map_err(|_| {
@@ -274,24 +278,21 @@ struct Asset;
 
 #[rocket::get("/assets/<file..>")]
 #[instrument(name = "GET /assets/<file>", skip_all)]
-pub fn dist<'r>(file: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
+pub fn dist<'r>(file: PathBuf) -> impl Responder<'r, 'static> {
     let filename = format!("assets/{}", file.display());
     Asset::get(&filename).into_response(file)
 }
 
 #[rocket::get("/<_paths..>", format = "text/html")]
 #[instrument(name = "GET /<_paths>", skip_all)]
-pub fn index<'r>(_paths: PathBuf, _auth: Authenticated) -> impl Responder<'r, 'static> {
+pub fn index<'r>(_paths: PathBuf) -> impl Responder<'r, 'static> {
     let asset = Asset::get("index.html").ok_or(Status::NotFound)?;
     Ok::<(ContentType, Cow<[u8]>), Status>((ContentType::HTML, asset.data))
 }
 
 #[rocket::put("/sync")]
 #[instrument(name = "PUT /sync", skip_all, err)]
-pub async fn put_sync_wallet(
-    maker: &State<Maker>,
-    _auth: Authenticated,
-) -> Result<(), HttpApiProblem> {
+pub async fn put_sync_wallet(maker: &State<Maker>, _user: User) -> Result<(), HttpApiProblem> {
     maker.sync_wallet().await.map_err(|e| {
         HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
             .title("Could not sync wallet")
@@ -305,7 +306,7 @@ pub async fn put_sync_wallet(
 #[instrument(name = "GET /cfds", skip_all, err)]
 pub async fn get_cfds<'r>(
     rx: &State<FeedReceivers>,
-    _auth: Authenticated,
+    _user: User,
 ) -> Result<Json<Vec<Cfd>>, HttpApiProblem> {
     let rx = rx.inner();
     let rx_cfds = rx.cfds.clone();
@@ -321,7 +322,7 @@ pub async fn get_cfds<'r>(
 
 #[rocket::get("/metrics")]
 #[instrument(name = "GET /metrics", skip_all, err)]
-pub async fn get_metrics<'r>(_auth: Authenticated) -> Result<String, HttpApiProblem> {
+pub async fn get_metrics<'r>(_user: User) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
         .map_err(|e| {
@@ -343,7 +344,7 @@ pub struct RolloverConfig {
 pub async fn update_rollover_configuration(
     config: Json<RolloverConfig>,
     maker: &State<Maker>,
-    _auth: Authenticated,
+    _user: User,
 ) -> Result<(), HttpApiProblem> {
     maker
         .update_rollover_configuration(config.is_accepting_rollovers)
@@ -368,4 +369,79 @@ pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
         daemon_version: vergen_version::git_semver().to_string(),
     })
+}
+
+/// Login a user. If successful a cookie will be return
+///
+/// E.g.
+/// curl -d "password=password" -X POST http://localhost:8000/api/login
+#[rocket::post("/login", data = "<form>")]
+pub async fn post_login(auth: Auth<'_>, form: Form<Login>) -> Result<Json<User>, HttpApiProblem> {
+    let user = auth.login(&form).await?;
+    Ok(Json(user))
+}
+
+#[rocket::post("/change-password", data = "<form>")]
+pub async fn change_password(
+    mut user: User,
+    auth: Auth<'_>,
+    form: Form<ChangePassword>,
+) -> Result<(), HttpApiProblem> {
+    form.clone().is_secure().map_err(|error| {
+        tracing::error!("{error:#}");
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Invalid password format")
+            .detail(format!("{error:#}"))
+    })?;
+
+    user.set_password(&form.password).map_err(|error| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could not set password")
+            .detail(format!("{error:#}"))
+    })?;
+    auth.users.update_user(user).await.map_err(|error| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could update user password")
+            .detail(format!("{error:#}"))
+    })?;
+    Ok(())
+}
+
+#[derive(Serialize, Copy, Clone)]
+pub struct Authenticated {
+    authenticated: bool,
+    first_login: bool,
+}
+
+#[rocket::get("/am-I-authenticated")]
+pub async fn is_authenticated(auth: Auth<'_>) -> Result<Json<Authenticated>, HttpApiProblem> {
+    let authenticated = auth.is_auth().map_err(|error| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could not check authentication")
+            .detail(format!("{error:#}"))
+    })?;
+    let first_login = auth
+        .get_user()
+        .await
+        .map_err(|error| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Could not get user from session")
+                .detail(format!("{error:#}"))
+        })?
+        .map(|user| user.first_login)
+        .unwrap_or_default();
+    Ok(Json(Authenticated {
+        authenticated,
+        first_login,
+    }))
+}
+
+#[rocket::get("/logout")]
+pub fn logout(auth: Auth<'_>) -> Result<(), HttpApiProblem> {
+    auth.logout().map_err(|error| {
+        HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+            .title("Could not logout")
+            .detail(format!("{error:#}"))
+    })?;
+    Ok(())
 }

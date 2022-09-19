@@ -22,7 +22,7 @@ nonempty = { version = "0.8.0", default-features = false }
 prometheus = { version = "0.13", default-features = false }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
-rocket-basicauth = { path = "../rocket-basicauth" }
+rocket-cookie-auth = { path = "../rocket-cookie-auth" }
 rollover = { path = "../xtra-libp2p-rollover", package = "xtra-libp2p-rollover" }
 rust-embed = "6.4"
 rust-embed-rocket = { path = "../rust-embed-rocket" }

@@ -25,12 +25,13 @@ import {
 import { OnChangeValue, Select } from "chakra-react-select";
 import React, { ReactNode, useContext } from "react";
 import { IconType } from "react-icons";
-import { SiBitcoin } from "react-icons/all";
+import { FiLogOut, SiBitcoin } from "react-icons/all";
 import { FaWallet } from "react-icons/fa";
 import { FiMenu } from "react-icons/fi";
 import { Link as ReachLink, useNavigate } from "react-router-dom";
 import { SemVer } from "semver";
 import { HEADER_HEIGHT, Selection, SelectionContext, Symbol } from "../App";
+import useAuth from "../authentication/useAuth";
 import logoIcon from "../images/logo.svg";
 import logoBlack from "../images/logo_nav_bar_black.svg";
 import logoWhite from "../images/logo_nav_bar_white.svg";
@@ -345,6 +346,7 @@ const TopBar = (
     }: TopBarProps,
 ) => {
     const { toggleColorMode } = useColorMode();
+    const { logout } = useAuth();
 
     const toggleIcon = useColorModeValue(
         <MoonIcon />,
@@ -452,6 +454,9 @@ const TopBar = (
                 <HStack spacing={{ base: "0", md: "0" }} display={{ base: "none", md: "flex" }}>
                     <Button onClick={toggleColorMode} variant={"unstyled"}>
                         {toggleIcon}
+                    </Button>
+                    <Button onClick={logout} variant={"unstyled"}>
+                        <FiLogOut />
                     </Button>
                 </HStack>
             </Flex>
