@@ -132,8 +132,13 @@ where
                         asynchronous_codec::JsonCodec::<DialerMessage, ListenerMessage>::new(),
                     );
 
-                    executor
-                        .execute(order_id, |cfd| cfd.start_rollover_taker())
+                    let contract_symbol = executor
+                        .execute(order_id, |cfd| {
+                            let event = cfd.start_rollover_taker()?;
+                            let contract_symbol = cfd.contract_symbol();
+
+                            Ok((event, contract_symbol))
+                        })
                         .await?;
 
                     framed
@@ -163,25 +168,28 @@ where
                     {
                         Decision::Confirm(Confirm {
                             order_id,
-                            oracle_event_id,
+                            oracle_event_ids,
                             tx_fee_rate,
                             funding_rate,
                             complete_fee,
                         }) => {
                             let (rollover_params, dlc, position) = executor
                                 .execute(order_id, |cfd| {
-                                    cfd.handle_rollover_accepted_taker_single_event(
+                                    cfd.handle_rollover_accepted_taker(
                                         tx_fee_rate,
                                         funding_rate,
+                                        &oracle_event_ids,
                                         from_settlement_event_id,
                                     )
                                 })
                                 .await?;
 
-                            let announcement = oracle
-                                .get_announcements(vec![oracle_event_id])
+                            let announcements = oracle
+                                .get_announcements(oracle_event_ids)
                                 .await
                                 .context("Failed to get announcement")?;
+                            let settlement_event_id =
+                                announcements.last().context("Empty to_event_ids")?.id;
 
                             tracing::info!(%order_id, "Rollover proposal got accepted");
 
@@ -223,24 +231,24 @@ where
                                 .into_rollover_msg()?
                                 .try_into_msg0()?;
 
-                            let punish_params = build_punish_params(
-                                our_role,
-                                dlc.identity,
-                                dlc.identity_counterparty,
-                                msg0,
+                            let punish_params = PunishParams::new(
+                                msg0.revocation_pk,
                                 rev_pk,
+                                msg0.publish_pk,
                                 publish_pk,
                             );
 
                             let own_cfd_txs = build_own_cfd_transactions(
                                 &dlc,
                                 rollover_params,
-                                &announcement[0],
+                                announcements.clone(),
                                 oracle_pk,
                                 our_position,
                                 n_payouts,
                                 complete_fee.into(),
                                 punish_params,
+                                Role::Taker,
+                                contract_symbol,
                             )
                             .await?;
 
@@ -266,10 +274,13 @@ where
                                 .into_rollover_msg()?
                                 .try_into_msg1()?;
 
-                            let commit_desc = build_commit_descriptor(punish_params);
+                            let commit_desc = build_commit_descriptor(
+                                dlc.identity_counterparty,
+                                dlc.identity_pk(),
+                                punish_params,
+                            );
                             let (cets, refund_tx) = build_and_verify_cets_and_refund(
                                 &dlc,
-                                &announcement[0],
                                 oracle_pk,
                                 publish_pk,
                                 our_role,
@@ -314,13 +325,9 @@ where
                                 identity: dlc.identity,
                                 identity_counterparty: dlc.identity_counterparty,
                                 revocation: rev_sk,
-                                revocation_pk_counterparty: punish_params
-                                    .counterparty_params()
-                                    .revocation_pk,
+                                revocation_pk_counterparty: punish_params.maker.revocation_pk,
                                 publish: publish_sk,
-                                publish_pk_counterparty: punish_params
-                                    .counterparty_params()
-                                    .publish_pk,
+                                publish_pk_counterparty: punish_params.maker.publish_pk,
                                 maker_address: dlc.maker_address,
                                 taker_address: dlc.taker_address,
                                 lock: dlc.lock.clone(),
@@ -330,7 +337,7 @@ where
                                 maker_lock_amount: dlc.maker_lock_amount,
                                 taker_lock_amount: dlc.taker_lock_amount,
                                 revoked_commit: revoked_commits,
-                                settlement_event_id: announcement[0].id,
+                                settlement_event_id,
                                 refund_timelock: rollover_params.refund_timelock,
                             };
 

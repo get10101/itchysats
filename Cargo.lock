@@ -4253,7 +4253,6 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "webbrowser",
- "xtra-libp2p-offer",
  "xtra-libp2p-ping",
  "xtras",
 ]

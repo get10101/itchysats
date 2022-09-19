@@ -162,10 +162,13 @@ pub struct Actor {
     projection: xtra::Address<projection::Actor>,
     rollover_params: RolloverParams,
     time_to_first_position: xtra::Address<time_to_first_position::Actor>,
-    libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
-    libp2p_offer: xtra::Address<xtra_libp2p_offer::maker::Actor>,
-    libp2p_offer_deprecated: xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
+    collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
+    collab_settlement_deprecated:
+        xtra::Address<daemon::collab_settlement::deprecated::maker::Actor>,
+    offer: xtra::Address<offer::maker::Actor>,
+    offer_deprecated: xtra::Address<offer::deprecated::maker::Actor>,
     order: xtra::Address<order::maker::Actor>,
+    order_deprecated: xtra::Address<order::deprecated::maker::Actor>,
 }
 
 impl Actor {
@@ -173,22 +176,30 @@ impl Actor {
         settlement_interval: Duration,
         projection: xtra::Address<projection::Actor>,
         time_to_first_position: xtra::Address<time_to_first_position::Actor>,
-        libp2p_collab_settlement: xtra::Address<daemon::collab_settlement::maker::Actor>,
-        (libp2p_offer, libp2p_offer_deprecated): (
-            xtra::Address<xtra_libp2p_offer::maker::Actor>,
-            xtra::Address<xtra_libp2p_offer::deprecated::maker::Actor>,
+        (collab_settlement, collab_settlement_deprecated): (
+            xtra::Address<daemon::collab_settlement::maker::Actor>,
+            xtra::Address<daemon::collab_settlement::deprecated::maker::Actor>,
         ),
-        order: xtra::Address<order::maker::Actor>,
+        (offer, offer_deprecated): (
+            xtra::Address<offer::maker::Actor>,
+            xtra::Address<offer::deprecated::maker::Actor>,
+        ),
+        (order, order_deprecated): (
+            xtra::Address<order::maker::Actor>,
+            xtra::Address<order::deprecated::maker::Actor>,
+        ),
     ) -> Self {
         Self {
             settlement_interval,
             projection,
             rollover_params: RolloverParams::default(),
             time_to_first_position,
-            libp2p_collab_settlement,
-            libp2p_offer,
-            libp2p_offer_deprecated,
+            collab_settlement,
+            collab_settlement_deprecated,
+            offer,
+            offer_deprecated,
             order,
+            order_deprecated,
         }
     }
 
@@ -227,9 +238,27 @@ impl Actor {
     async fn handle_accept_order(&mut self, msg: AcceptOrder) -> Result<()> {
         let AcceptOrder { order_id } = msg;
 
-        self.order
+        let res = self
+            .order
             .send(order::maker::Decision::Accept(order_id))
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated order protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .order_deprecated
+                .send(order::deprecated::maker::Decision::Accept(order_id))
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to accept order.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -237,9 +266,27 @@ impl Actor {
     async fn handle_reject_order(&mut self, msg: RejectOrder) -> Result<()> {
         let RejectOrder { order_id } = msg;
 
-        self.order
+        let res = self
+            .order
             .send(order::maker::Decision::Reject(order_id))
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated order protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .order_deprecated
+                .send(order::deprecated::maker::Decision::Reject(order_id))
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to reject order.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -247,9 +294,27 @@ impl Actor {
     async fn handle_accept_settlement(&mut self, msg: AcceptSettlement) -> Result<()> {
         let AcceptSettlement { order_id } = msg;
 
-        self.libp2p_collab_settlement
+        let res = self
+            .collab_settlement
             .send(daemon::collab_settlement::maker::Accept { order_id })
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated collaborative settlement protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .collab_settlement_deprecated
+                .send(daemon::collab_settlement::deprecated::maker::Accept { order_id })
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to accept collaborative settlement.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -257,9 +322,27 @@ impl Actor {
     async fn handle_reject_settlement(&mut self, msg: RejectSettlement) -> Result<()> {
         let RejectSettlement { order_id } = msg;
 
-        self.libp2p_collab_settlement
+        let res = self
+            .collab_settlement
             .send(daemon::collab_settlement::maker::Reject { order_id })
-            .await??;
+            .await
+            .map_err(anyhow::Error::new);
+
+        // We try with the deprecated collaborative settlement protocol if the latest version fails
+        if let Err(e0) | Ok(Err(e0)) = res {
+            if let Err(e1) | Ok(Err(e1)) = self
+                .collab_settlement_deprecated
+                .send(daemon::collab_settlement::deprecated::maker::Reject { order_id })
+                .await
+                .map_err(anyhow::Error::new)
+            {
+                bail!(
+                    "Failed to reject collaborative settlement.
+                     Current version error: {e0:#}.
+                     Deprecated version error: {e1:#}"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -304,8 +387,8 @@ impl Actor {
 
         // 3. Broadcast to all peers via offer actor
         if let Err(e) = self
-            .libp2p_offer
-            .send_async_safe(xtra_libp2p_offer::maker::NewOffers::new(offers.clone()))
+            .offer
+            .send_async_safe(offer::maker::NewOffers::new(offers.clone()))
             .await
         {
             tracing::warn!("{e:#}");
@@ -321,10 +404,8 @@ impl Actor {
 
             if let Some(btcusd_offers) = NonEmpty::from_vec(btcusd_offers) {
                 if let Err(e) = self
-                    .libp2p_offer_deprecated
-                    .send_async_safe(xtra_libp2p_offer::deprecated::maker::NewOffers::new(
-                        btcusd_offers,
-                    ))
+                    .offer_deprecated
+                    .send_async_safe(offer::deprecated::maker::NewOffers::new(btcusd_offers))
                     .await
                 {
                     tracing::warn!("{e:#}");
@@ -358,10 +439,13 @@ impl RatesChannel {
 
 #[async_trait]
 impl rollover::deprecated::protocol::GetRates for RatesChannel {
-    async fn get_rates(&self) -> Result<rollover::deprecated::protocol::Rates> {
+    async fn get_rates(
+        &self,
+        contract_symbol: ContractSymbol,
+    ) -> Result<rollover::deprecated::protocol::Rates> {
         let (FundingRates { long, short }, tx_fee_rate) = self
             .0
-            .send(GetRolloverParams(ContractSymbol::BtcUsd))
+            .send(GetRolloverParams(contract_symbol))
             .await
             .context("CFD actor disconnected")??;
 

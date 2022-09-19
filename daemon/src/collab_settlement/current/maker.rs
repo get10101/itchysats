@@ -105,7 +105,7 @@ impl Actor {
             .executor
             .execute(order_id, |cfd| {
                 cfd.verify_counterparty_peer_id(&peer_id.into())?;
-                cfd.start_collab_settlement_maker(
+                cfd.start_collab_settlement_maker_olivia_max(
                     propose.price,
                     self.n_payouts,
                     &propose.unsigned_tx,

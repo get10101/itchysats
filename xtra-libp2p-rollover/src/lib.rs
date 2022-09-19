@@ -1,4 +1,4 @@
-pub mod current;
+mod current;
 pub mod deprecated;
 
 pub use current::*;

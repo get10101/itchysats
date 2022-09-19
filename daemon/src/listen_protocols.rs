@@ -3,30 +3,29 @@ use crate::command;
 use crate::identify;
 use crate::oracle;
 use crate::order;
+use ping_pong::pong;
 use std::collections::HashSet;
 use xtra::message_channel::MessageChannel;
 use xtra::Address;
 use xtra_libp2p::NewInboundSubstream;
-use xtra_libp2p_ping::pong;
 
 pub const MAKER_LISTEN_PROTOCOLS: MakerListenProtocols = MakerListenProtocols::new(
-    xtra_libp2p_ping::PROTOCOL,
+    ping_pong::PROTOCOL,
     identify::PROTOCOL,
-    order::PROTOCOL,
-    rollover::PROTOCOL,
-    rollover::deprecated::PROTOCOL,
-    collab_settlement::PROTOCOL,
+    (order::PROTOCOL, order::deprecated::PROTOCOL),
+    (rollover::PROTOCOL, rollover::deprecated::PROTOCOL),
+    (
+        collab_settlement::PROTOCOL,
+        collab_settlement::deprecated::PROTOCOL,
+    ),
 );
 
-pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols = TakerListenProtocols::new(
-    xtra_libp2p_ping::PROTOCOL,
-    identify::PROTOCOL,
-    xtra_libp2p_offer::PROTOCOL,
-);
+pub const TAKER_LISTEN_PROTOCOLS: TakerListenProtocols =
+    TakerListenProtocols::new(ping_pong::PROTOCOL, identify::PROTOCOL, offer::PROTOCOL);
 
 pub const REQUIRED_MAKER_LISTEN_PROTOCOLS: RequiredMakerListenProtocols =
     RequiredMakerListenProtocols::new(
-        xtra_libp2p_ping::PROTOCOL,
+        ping_pong::PROTOCOL,
         identify::PROTOCOL,
         order::PROTOCOL,
         rollover::PROTOCOL,
@@ -58,29 +57,42 @@ pub struct MakerListenProtocols {
     ping: &'static str,
     identify: &'static str,
     order: &'static str,
+    order_deprecated: &'static str,
     rollover: &'static str,
     rollover_deprecated: &'static str,
     collaborative_settlement: &'static str,
+    collaborative_settlement_deprecated: &'static str,
 }
 
+type RolloverAddress<R> =
+    Address<rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>>;
+
+type RolloverDeprecatedAddress<RD> = Address<
+    rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
+>;
+
 impl MakerListenProtocols {
-    pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 6;
+    pub const NR_OF_SUPPORTED_PROTOCOLS: usize = 8;
 
     pub const fn new(
         ping: &'static str,
         identify: &'static str,
-        order: &'static str,
-        rollover: &'static str,
-        rollover_deprecated: &'static str,
-        collaborative_settlement: &'static str,
+        (order, order_deprecated): (&'static str, &'static str),
+        (rollover, rollover_deprecated): (&'static str, &'static str),
+        (collaborative_settlement, collaborative_settlement_deprecated): (
+            &'static str,
+            &'static str,
+        ),
     ) -> Self {
         Self {
             ping,
             identify,
             order,
+            order_deprecated,
             rollover,
             rollover_deprecated,
             collaborative_settlement,
+            collaborative_settlement_deprecated,
         }
     }
 
@@ -92,14 +104,18 @@ impl MakerListenProtocols {
         &self,
         ping_handler: Address<pong::Actor>,
         identify_handler: Address<identify::listener::Actor>,
-        order_handler: Address<order::maker::Actor>,
-        rollover_handler: Address<
-            rollover::maker::Actor<command::Executor, oracle::AnnouncementsChannel, R>,
-        >,
-        rollover_deprecated_handler: Address<
-            rollover::deprecated::maker::Actor<command::Executor, oracle::AnnouncementsChannel, RD>,
-        >,
-        collaborative_settlement_handler: Address<collab_settlement::maker::Actor>,
+        (order_handler, order_deprecated_handler): (
+            Address<order::maker::Actor>,
+            Address<order::deprecated::maker::Actor>,
+        ),
+        (rollover_handler, rollover_deprecated_handler): (
+            RolloverAddress<R>,
+            RolloverDeprecatedAddress<RD>,
+        ),
+        (collaborative_settlement_handler, collaborative_settlement_deprecated_handler): (
+            Address<collab_settlement::maker::Actor>,
+            Address<collab_settlement::deprecated::maker::Actor>,
+        ),
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     where
         R: rollover::protocol::GetRates + Send + Sync + Clone + 'static,
@@ -110,20 +126,27 @@ impl MakerListenProtocols {
             ping,
             identify,
             order,
+            order_deprecated,
             rollover,
             rollover_deprecated,
             collaborative_settlement,
+            collaborative_settlement_deprecated,
         } = self;
 
         [
             (ping, ping_handler.into()),
             (identify, identify_handler.into()),
             (order, order_handler.into()),
+            (order_deprecated, order_deprecated_handler.into()),
             (rollover, rollover_handler.into()),
             (rollover_deprecated, rollover_deprecated_handler.into()),
             (
                 collaborative_settlement,
                 collaborative_settlement_handler.into(),
+            ),
+            (
+                collaborative_settlement_deprecated,
+                collaborative_settlement_deprecated_handler.into(),
             ),
         ]
     }
@@ -136,18 +159,22 @@ impl From<MakerListenProtocols> for HashSet<String> {
             ping,
             identify,
             order,
+            order_deprecated,
             rollover,
             rollover_deprecated,
             collaborative_settlement,
+            collaborative_settlement_deprecated,
         } = maker;
 
         HashSet::from([
             ping.to_string(),
             identify.to_string(),
             order.to_string(),
+            order_deprecated.to_string(),
             rollover.to_string(),
             rollover_deprecated.to_string(),
             collaborative_settlement.to_string(),
+            collaborative_settlement_deprecated.to_string(),
         ])
     }
 }
@@ -229,7 +256,7 @@ impl TakerListenProtocols {
         &self,
         ping_handler: Address<pong::Actor>,
         identify_handler: Address<identify::listener::Actor>,
-        offer_handler: Address<xtra_libp2p_offer::taker::Actor>,
+        offer_handler: Address<offer::taker::Actor>,
     ) -> [(&'static str, MessageChannel<NewInboundSubstream, ()>); Self::NR_OF_SUPPORTED_PROTOCOLS]
     {
         // We deconstruct to ensure that all protocols are being used
@@ -278,7 +305,7 @@ mod tests {
     fn given_maker_maker_does_not_support_required_protocol_then_error_with_protocol_diff() {
         let mut maker_protocols_as_hashset: HashSet<String> = MAKER_LISTEN_PROTOCOLS.into();
         // remove the ping protocol, we assume that it always is in there
-        maker_protocols_as_hashset.remove(xtra_libp2p_ping::PROTOCOL);
+        maker_protocols_as_hashset.remove(ping_pong::PROTOCOL);
 
         let err = does_maker_satisfy_taker_needs(
             &maker_protocols_as_hashset,
@@ -286,7 +313,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(err, HashSet::from([xtra_libp2p_ping::PROTOCOL.to_string()]))
+        assert_eq!(err, HashSet::from([ping_pong::PROTOCOL.to_string()]))
     }
 
     #[test]

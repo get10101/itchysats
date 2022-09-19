@@ -1,6 +1,4 @@
-pub const PROTOCOL: &str = "/itchysats/order/1.0.0";
+mod current;
+pub mod deprecated;
 
-mod contract_setup;
-pub mod maker;
-mod protocol;
-pub mod taker;
+pub use current::*;

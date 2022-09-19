@@ -1,5 +1,4 @@
-pub mod maker;
-pub mod protocol;
-pub mod taker;
+mod current;
+pub mod deprecated;
 
-pub const PROTOCOL: &str = "/itchysats/collab-settlement/1.0.0";
+pub use current::*;

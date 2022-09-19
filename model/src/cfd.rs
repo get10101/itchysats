@@ -5,9 +5,9 @@ use crate::olivia;
 use crate::olivia::BitMexPriceEventId;
 use crate::payout_curve::inverse;
 use crate::payout_curve::quanto;
+use crate::payout_curve::InverseMaxPrice;
 use crate::payout_curve::Payouts;
 use crate::payout_curve::ETHUSD_MULTIPLIER;
-use crate::rollover;
 use crate::rollover::BaseDlcParams;
 use crate::rollover::RolloverParams;
 use crate::CompleteFee;
@@ -51,7 +51,6 @@ use maia_core::secp256k1_zkp::ecdsa::Signature;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::SECP256K1;
 use maia_core::TransactionExt;
-use num::Zero;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::de::Error as _;
@@ -64,8 +63,6 @@ use std::str;
 use time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
-
-mod rollover_deprecated;
 
 pub const CET_TIMELOCK: u32 = 12;
 
@@ -869,7 +866,6 @@ impl Cfd {
         tx_fee_rate: TxFeeRate,
         funding_rate: FundingRate,
         from_params: Option<(BitMexPriceEventId, CompleteFee)>,
-        version: rollover::Version,
     ) -> Result<(
         CfdEvent,
         RolloverParams,
@@ -911,15 +907,11 @@ impl Cfd {
             }
         };
 
-        let hours_to_charge = match version {
-            rollover::Version::V1 => 1,
-            rollover::Version::V2 => self.hours_to_extend_in_rollover(now)?,
-            rollover::Version::V3 => self.hours_to_extend_in_rollover_based_on_event(
-                *settlement_event_id,
-                now,
-                from_event_id,
-            )?,
-        };
+        let hours_to_charge = self.hours_to_extend_in_rollover_based_on_event(
+            *settlement_event_id,
+            now,
+            from_event_id,
+        )?;
 
         let funding_fee = FundingFee::calculate(
             self.initial_price,
@@ -933,7 +925,6 @@ impl Cfd {
 
         tracing::debug!(
             order_id = %self.id,
-            rollover_version = %version,
             %hours_to_charge,
             funding_fee = %funding_fee.compute_relative(self.position),
             "Accepting rollover proposal"
@@ -950,7 +941,6 @@ impl Cfd {
                 tx_fee_rate,
                 rollover_fee_account,
                 funding_fee,
-                version,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,
@@ -1016,7 +1006,6 @@ impl Cfd {
                 tx_fee_rate,
                 self.fee_account,
                 funding_fee,
-                rollover::Version::V2,
             ),
             self.dlc.clone().context("No DLC present")?,
             self.position,
@@ -1033,7 +1022,8 @@ impl Cfd {
         self.can_settle_collaboratively()
             .context("Cannot collaboratively settle")?;
 
-        let (collab_settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+        let (collab_settlement_tx, proposal) =
+            self.make_proposal(current_price, n_payouts, InverseMaxPrice::OliviaMax)?;
 
         Ok((
             CfdEvent::new(
@@ -1045,19 +1035,58 @@ impl Cfd {
         ))
     }
 
-    /// Use this function after receiving settlement proposal
-    pub fn start_collab_settlement_maker(
+    /// Process the taker's collaborative settlement proposal.
+    ///
+    /// It generates a local [`SettlementProposal`] setting the maximum payout price to Olivia's
+    /// maximum attestation price. This assumes that the counterparty has also used the same
+    /// configuration.
+    pub fn start_collab_settlement_maker_olivia_max(
         self,
         current_price: Price,
         n_payouts: usize,
         proposed_settlement_transaction: &Transaction,
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
+        self.start_collab_settlement_maker(
+            current_price,
+            n_payouts,
+            proposed_settlement_transaction,
+            InverseMaxPrice::OliviaMax,
+        )
+    }
+
+    /// Process the taker's collaborative settlement proposal.
+    ///
+    /// It generates a local [`SettlementProposal`] setting the maximum payout price to double of
+    /// the value of the inital price used to generate the CFD. This assumes that the counterparty
+    /// has also used the same configuration.
+    pub fn start_collab_settlement_maker_double_initial(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        proposed_settlement_transaction: &Transaction,
+    ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
+        self.start_collab_settlement_maker(
+            current_price,
+            n_payouts,
+            proposed_settlement_transaction,
+            InverseMaxPrice::DoubleOfInitial,
+        )
+    }
+
+    fn start_collab_settlement_maker(
+        self,
+        current_price: Price,
+        n_payouts: usize,
+        proposed_settlement_transaction: &Transaction,
+        inverse_max_price_config: InverseMaxPrice,
     ) -> Result<(CfdEvent, SettlementTransaction, SettlementProposal)> {
         ensure!(!self.is_in_collaborative_settlement());
         ensure!(self.role == Role::Maker);
         self.can_settle_collaboratively()
             .context("Cannot collaboratively settle")?;
 
-        let (settlement_tx, proposal) = self.make_proposal(current_price, n_payouts)?;
+        let (settlement_tx, proposal) =
+            self.make_proposal(current_price, n_payouts, inverse_max_price_config)?;
 
         let local_settlement_transaction = settlement_tx.unsigned_transaction();
 
@@ -1080,16 +1109,28 @@ impl Cfd {
         self,
         current_price: Price,
         n_payouts: usize,
+        inverse_max_price_config: InverseMaxPrice,
     ) -> Result<(SettlementTransaction, SettlementProposal)> {
-        let payouts = Payouts::new(
-            self.contract_symbol,
-            (self.position, self.role),
-            self.initial_price,
-            self.quantity,
-            (self.long_leverage, self.short_leverage),
-            n_payouts,
-            self.fee_account.settle(),
-        )?
+        let payouts = match self.contract_symbol {
+            ContractSymbol::BtcUsd => Payouts::new_inverse(
+                (self.position, self.role),
+                self.initial_price,
+                self.quantity,
+                (self.long_leverage, self.short_leverage),
+                n_payouts,
+                self.fee_account.settle(),
+                inverse_max_price_config,
+            )?,
+            ContractSymbol::EthUsd => Payouts::new_quanto(
+                (self.position, self.role),
+                self.initial_price.to_u64(),
+                self.quantity.to_u64(),
+                (self.long_leverage, self.short_leverage),
+                n_payouts,
+                ETHUSD_MULTIPLIER,
+                self.fee_account.settle(),
+            )?,
+        }
         .settlement();
 
         let payout = payouts
@@ -1457,45 +1498,6 @@ impl Cfd {
             }
         };
         Ok(())
-    }
-
-    /// Number of hours that the time-to-live of the contract will be
-    /// extended by with the next rollover.
-    ///
-    /// During rollover the time-to-live of the contract is extended
-    /// so that the non-collaborative settlement time is set to ~24
-    /// hours in the future from now.
-    fn hours_to_extend_in_rollover(&self, now: OffsetDateTime) -> Result<u64> {
-        let dlc = self.dlc.as_ref().context("Cannot roll over without DLC")?;
-        let settlement_time = dlc.settlement_event_id.timestamp();
-
-        let hours_left = settlement_time - now;
-
-        tracing::trace!(target = "cfd", time_left_in_cfd = %hours_left, "Calculating hours to extend in rollover");
-
-        if !hours_left.is_positive() {
-            tracing::warn!("Rolling over a contract that can be settled non-collaboratively");
-
-            return Ok(SETTLEMENT_INTERVAL.whole_hours() as u64);
-        }
-
-        let time_to_extend = SETTLEMENT_INTERVAL
-            .checked_sub(hours_left)
-            .context("Subtraction overflow")?;
-        let hours_to_extend = time_to_extend.whole_hours();
-
-        if hours_to_extend.is_negative() {
-            bail!(
-                "Cannot rollover if time-to-live of contract is > {} hours",
-                SETTLEMENT_INTERVAL.whole_hours()
-            );
-        }
-
-        Ok(if hours_to_extend.is_zero() {
-            1
-        } else {
-            hours_to_extend as u64
-        })
     }
 
     fn hours_to_extend_in_rollover_based_on_event(
@@ -3320,8 +3322,12 @@ mod tests {
             .dummy_commit();
 
         let result_taker = taker_long.start_collab_settlement_taker(price, N_PAYOUTS);
-        let result_maker =
-            maker_short.start_collab_settlement_maker(Price::dummy(), N_PAYOUTS, &unsigned_tx);
+        let result_maker = maker_short.start_collab_settlement_maker(
+            Price::dummy(),
+            N_PAYOUTS,
+            &unsigned_tx,
+            InverseMaxPrice::OliviaMax,
+        );
 
         assert!(result_taker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
         assert!(result_maker.is_err(), "When having commit tx available we should not be able to trigger collaborative settlement");
@@ -3617,106 +3623,6 @@ mod tests {
             maker
                 .hours_to_extend_in_rollover_based_on_event(earlier_event_id, now, from_event_id)
                 .unwrap_err();
-        }
-    }
-
-    #[test]
-    fn correctly_calculate_hours_to_extend_in_rollover() {
-        for now in common_time_boundaries() {
-            let settlement_interval = SETTLEMENT_INTERVAL.whole_hours();
-            for hour in 0..settlement_interval {
-                let event_id_in_x_hours =
-                    BitMexPriceEventId::with_20_digits(now + hour.hours(), ContractSymbol::BtcUsd);
-
-                let taker = Cfd::dummy_taker_long().dummy_open(event_id_in_x_hours);
-                let maker = Cfd::dummy_maker_short().dummy_open(event_id_in_x_hours);
-
-                assert_eq!(
-                    taker.hours_to_extend_in_rollover(now).unwrap(),
-                    (settlement_interval - hour) as u64,
-                    "Failed with now {}",
-                    now
-                );
-
-                assert_eq!(
-                    maker.hours_to_extend_in_rollover(now).unwrap(),
-                    (settlement_interval - hour) as u64,
-                    "Failed with now {}",
-                    now
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn rollover_extends_time_to_live_by_settlement_interval_if_cfd_can_be_settled() {
-        for now in common_time_boundaries() {
-            let event_id_1_hour_ago =
-                BitMexPriceEventId::with_20_digits(now - 1.hours(), ContractSymbol::BtcUsd);
-
-            let taker = Cfd::dummy_taker_long().dummy_open(event_id_1_hour_ago);
-            let maker = Cfd::dummy_maker_short().dummy_open(event_id_1_hour_ago);
-
-            assert_eq!(
-                taker.hours_to_extend_in_rollover(now).unwrap(),
-                SETTLEMENT_INTERVAL.whole_hours() as u64,
-                "Failed with now {}",
-                now
-            );
-
-            assert_eq!(
-                maker.hours_to_extend_in_rollover(now).unwrap(),
-                SETTLEMENT_INTERVAL.whole_hours() as u64,
-                "Failed with now {}",
-                now
-            );
-        }
-    }
-
-    #[test]
-    fn cannot_rollover_if_time_to_live_is_longer_than_settlement_interval() {
-        for now in common_time_boundaries() {
-            let more_than_settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours() + 2;
-            let event_id_way_in_the_future = BitMexPriceEventId::with_20_digits(
-                now + more_than_settlement_interval_hours.hours(),
-                ContractSymbol::BtcUsd,
-            );
-
-            let taker = Cfd::dummy_taker_long().dummy_open(event_id_way_in_the_future);
-            let maker = Cfd::dummy_maker_short().dummy_open(event_id_way_in_the_future);
-
-            taker.hours_to_extend_in_rollover(now).unwrap_err();
-            maker.hours_to_extend_in_rollover(now).unwrap_err();
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn rollover_extended_by_one_hour_if_time_to_live_is_within_one_hour_of_settlement_interval(
-            minutes in 0i64..=59
-        ) {
-            for now in common_time_boundaries() {
-                let close_to_settlement_interval = SETTLEMENT_INTERVAL + minutes.minutes();
-                let event_id_within_the_hour = BitMexPriceEventId::with_20_digits(
-                    now + close_to_settlement_interval, ContractSymbol::BtcUsd
-                );
-
-                let taker = Cfd::dummy_taker_long().dummy_open(event_id_within_the_hour);
-                let maker = Cfd::dummy_maker_short().dummy_open(event_id_within_the_hour);
-
-                prop_assert_eq!(
-                    taker.hours_to_extend_in_rollover(now).unwrap(),
-                    1,
-                    "Failed with now {}",
-                    now
-                );
-                prop_assert_eq!(
-                    maker.hours_to_extend_in_rollover(now).unwrap(),
-                    1,
-                    "Failed with now {}",
-                    now
-                );
-            }
         }
     }
 
@@ -4227,6 +4133,7 @@ mod tests {
                     price,
                     N_PAYOUTS,
                     settlement_transaction.unsigned_transaction(),
+                    InverseMaxPrice::OliviaMax,
                 )
                 .unwrap();
 
@@ -4260,7 +4167,12 @@ mod tests {
 
             let (incoming_settlement, transaction, _) = self
                 .clone()
-                .start_collab_settlement_maker(price, N_PAYOUTS, taker_unsigned_tx)
+                .start_collab_settlement_maker(
+                    price,
+                    N_PAYOUTS,
+                    taker_unsigned_tx,
+                    InverseMaxPrice::OliviaMax,
+                )
                 .unwrap();
             events.push(incoming_settlement);
 

@@ -5,7 +5,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bdk::bitcoin::secp256k1::ecdsa::Signature;
 use bdk::bitcoin::secp256k1::SecretKey;
-use bdk::bitcoin::secp256k1::SECP256K1;
 use bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::PublicKey;
@@ -14,14 +13,14 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use maia::commit_descriptor;
 use maia::renew_cfd_transactions;
-use maia_core::secp256k1_zkp;
 use maia_core::secp256k1_zkp::EcdsaAdaptorSignature;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
-use maia_core::Announcement;
+use maia_core::Cets;
 use maia_core::CfdTransactions;
 use maia_core::PartyParams;
 use model::olivia;
 use model::olivia::BitMexPriceEventId;
+use model::payout_curve::ETHUSD_MULTIPLIER;
 use model::shared_protocol::verify_adaptor_signature;
 use model::shared_protocol::verify_cets;
 use model::shared_protocol::verify_signature;
@@ -31,6 +30,7 @@ use model::Dlc;
 use model::ExecuteOnCfd;
 use model::FundingFee;
 use model::FundingRate;
+use model::OraclePayouts;
 use model::OrderId;
 use model::Payouts;
 use model::Position;
@@ -43,7 +43,6 @@ use model::CET_TIMELOCK;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
@@ -56,17 +55,6 @@ pub(crate) const ROLLOVER_MSG_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct RolloverCompletedParams {
     pub dlc: Dlc,
     pub funding_fee: FundingFee,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum DialerError {
-    #[error("Rollover got rejected")]
-    Rejected,
-    #[error("Rollover failed")]
-    Failed {
-        #[source]
-        source: anyhow::Error,
-    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -91,7 +79,7 @@ impl DialerMessage {
     }
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Decision {
     Confirm(Confirm),
     Reject(Reject),
@@ -128,10 +116,10 @@ pub struct Propose {
     pub from_commit_txid: Txid,
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Confirm {
     pub order_id: OrderId,
-    pub oracle_event_id: BitMexPriceEventId,
+    pub oracle_event_ids: Vec<BitMexPriceEventId>,
     pub tx_fee_rate: TxFeeRate,
     pub funding_rate: FundingRate,
     pub complete_fee: CompleteFee,
@@ -270,8 +258,6 @@ pub(crate) async fn emit_completed<E>(
     {
         tracing::error!(%order_id, "Failed to execute rollover completed: {e:#}")
     }
-
-    tracing::info!(%order_id, "Rollover completed");
 }
 
 pub(crate) async fn emit_rejected<E>(order_id: OrderId, executor: &E)
@@ -286,8 +272,6 @@ where
     {
         tracing::error!(%order_id, "Failed to execute rollover rejected: {e:#}")
     }
-
-    tracing::info!(%order_id, "Rollover rejected");
 }
 
 pub(crate) async fn emit_failed<E>(order_id: OrderId, e: anyhow::Error, executor: &E)
@@ -304,61 +288,27 @@ where
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct PunishParams {
-    maker_identity: PublicKey,
-    maker_params: maia_core::PunishParams,
-    taker_identity: PublicKey,
-    taker_params: maia_core::PunishParams,
-    own_role: Role,
+    pub(crate) maker: maia_core::PunishParams,
+    pub(crate) taker: maia_core::PunishParams,
 }
 
 impl PunishParams {
-    pub fn counterparty_params(&self) -> maia_core::PunishParams {
-        match self.own_role {
-            Role::Maker => self.taker_params,
-            Role::Taker => self.maker_params,
+    pub(crate) fn new(
+        maker_revocation: PublicKey,
+        taker_revocation: PublicKey,
+        maker_publish: PublicKey,
+        taker_publish: PublicKey,
+    ) -> Self {
+        Self {
+            maker: maia_core::PunishParams {
+                revocation_pk: maker_revocation,
+                publish_pk: maker_publish,
+            },
+            taker: maia_core::PunishParams {
+                revocation_pk: taker_revocation,
+                publish_pk: taker_publish,
+            },
         }
-    }
-}
-
-pub(crate) fn build_punish_params(
-    own_role: Role,
-    own_sk: SecretKey,
-    counterparty_pk: PublicKey,
-    counterparty_msg0: RolloverMsg0,
-    rev_pk: PublicKey,
-    publish_pk: PublicKey,
-) -> PunishParams {
-    let msg0 = counterparty_msg0;
-
-    let own_pk = PublicKey::new(secp256k1_zkp::PublicKey::from_secret_key(
-        SECP256K1, &own_sk,
-    ));
-
-    let counterparty_punish_params = maia_core::PunishParams {
-        revocation_pk: msg0.revocation_pk,
-        publish_pk: msg0.publish_pk,
-    };
-
-    let own_punish_params = maia_core::PunishParams {
-        revocation_pk: rev_pk,
-        publish_pk,
-    };
-
-    match own_role {
-        Role::Maker => PunishParams {
-            maker_identity: own_pk,
-            maker_params: own_punish_params,
-            taker_identity: counterparty_pk,
-            taker_params: counterparty_punish_params,
-            own_role,
-        },
-        Role::Taker => PunishParams {
-            maker_identity: counterparty_pk,
-            maker_params: counterparty_punish_params,
-            taker_identity: own_pk,
-            taker_params: own_punish_params,
-            own_role,
-        },
     }
 }
 
@@ -366,25 +316,23 @@ pub(crate) fn build_punish_params(
 pub(crate) async fn build_own_cfd_transactions(
     dlc: &Dlc,
     rollover_params: RolloverParams,
-    announcement: &olivia::Announcement,
+    announcements: Vec<olivia::Announcement>,
     oracle_pk: XOnlyPublicKey,
     our_position: Position,
     n_payouts: usize,
     complete_fee: model::CompleteFee,
     punish_params: PunishParams,
+    role: Role,
+    contract_symbol: ContractSymbol,
 ) -> Result<CfdTransactions> {
     let sk = dlc.identity;
 
     let maker_lock_amount = dlc.maker_lock_amount;
     let taker_lock_amount = dlc.taker_lock_amount;
-    let payouts = HashMap::from_iter([(
-        Announcement {
-            id: announcement.id.to_string(),
-            nonce_pks: announcement.nonce_pks.clone(),
-        },
-        Payouts::new(
-            ContractSymbol::BtcUsd,
-            (our_position, punish_params.own_role),
+
+    let payouts = match contract_symbol {
+        ContractSymbol::BtcUsd => Payouts::new_inverse_double_initial(
+            (our_position, role),
             rollover_params.price,
             rollover_params.quantity,
             (
@@ -393,9 +341,22 @@ pub(crate) async fn build_own_cfd_transactions(
             ),
             n_payouts,
             complete_fee,
-        )?
-        .settlement(),
-    )]);
+        )?,
+        ContractSymbol::EthUsd => Payouts::new_quanto(
+            (our_position, role),
+            rollover_params.price.to_u64(),
+            rollover_params.quantity.to_u64(),
+            (
+                rollover_params.long_leverage,
+                rollover_params.short_leverage,
+            ),
+            n_payouts,
+            ETHUSD_MULTIPLIER,
+            complete_fee,
+        )?,
+    };
+
+    let payouts_per_event = OraclePayouts::new(payouts, announcements)?;
 
     // unsign lock tx because PartiallySignedTransaction needs an unsigned tx
     let mut unsigned_lock_tx = dlc.lock.0.clone();
@@ -405,6 +366,8 @@ pub(crate) async fn build_own_cfd_transactions(
         .for_each(|input| input.witness.clear());
 
     let lock_tx = PartiallySignedTransaction::from_unsigned_tx(unsigned_lock_tx)?;
+    let maker_identity_pk = dlc.maker_identity_pk(role);
+    let taker_identity_pk = dlc.taker_identity_pk(role);
     let own_cfd_txs = tokio::task::spawn_blocking({
         let maker_address = dlc.maker_address.clone();
         let taker_address = dlc.taker_address.clone();
@@ -414,20 +377,26 @@ pub(crate) async fn build_own_cfd_transactions(
             renew_cfd_transactions(
                 lock_tx,
                 (
-                    punish_params.maker_identity,
+                    maker_identity_pk,
                     maker_lock_amount,
                     maker_address,
-                    punish_params.maker_params,
+                    maia_core::PunishParams {
+                        revocation_pk: punish_params.maker.revocation_pk,
+                        publish_pk: punish_params.maker.publish_pk,
+                    },
                 ),
                 (
-                    punish_params.taker_identity,
+                    taker_identity_pk,
                     taker_lock_amount,
                     taker_address,
-                    punish_params.taker_params,
+                    maia_core::PunishParams {
+                        revocation_pk: punish_params.taker.revocation_pk,
+                        publish_pk: punish_params.taker.publish_pk,
+                    },
                 ),
                 oracle_pk,
                 (CET_TIMELOCK, rollover_params.refund_timelock),
-                payouts,
+                payouts_per_event.into(),
                 sk,
                 rollover_params.fee_rate.to_u32(),
             )
@@ -439,17 +408,21 @@ pub(crate) async fn build_own_cfd_transactions(
     Ok(own_cfd_txs)
 }
 
-pub(crate) fn build_commit_descriptor(punish_params: PunishParams) -> Descriptor<PublicKey> {
+pub(crate) fn build_commit_descriptor(
+    maker_identity: PublicKey,
+    taker_identity: PublicKey,
+    punish_params: PunishParams,
+) -> Descriptor<PublicKey> {
     commit_descriptor(
         (
-            punish_params.maker_identity,
-            punish_params.maker_params.revocation_pk,
-            punish_params.maker_params.publish_pk,
+            maker_identity,
+            punish_params.maker.revocation_pk,
+            punish_params.maker.publish_pk,
         ),
         (
-            punish_params.taker_identity,
-            punish_params.taker_params.revocation_pk,
-            punish_params.taker_params.publish_pk,
+            taker_identity,
+            punish_params.taker.revocation_pk,
+            punish_params.taker.publish_pk,
         ),
     )
 }
@@ -457,7 +430,6 @@ pub(crate) fn build_commit_descriptor(punish_params: PunishParams) -> Descriptor
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_and_verify_cets_and_refund(
     dlc: &Dlc,
-    announcement: &olivia::Announcement,
     oracle_pk: XOnlyPublicKey,
     publish_pk: PublicKey,
     our_role: Role,
@@ -487,22 +459,22 @@ pub(crate) async fn build_and_verify_cets_and_refund(
         Role::Taker => dlc.maker_address.clone(),
     };
 
-    for own_grouped_cets in own_cets.iter() {
+    for Cets { event, cets } in own_cets.iter() {
         let counterparty_cets = msg1
             .cets
-            .get(&own_grouped_cets.event.id)
+            .get(&event.id)
             .cloned()
             .context("Expect event to exist in msg")?;
 
         verify_cets(
-            (oracle_pk, announcement.nonce_pks.clone()),
+            (oracle_pk, event.nonce_pks.clone()),
             PartyParams {
                 lock_psbt: own_cfd_txs.lock.clone(),
                 identity_pk: dlc.identity_counterparty,
                 lock_amount,
                 address: counterparty_address.clone(),
             },
-            own_grouped_cets.cets.clone(),
+            cets.clone(),
             counterparty_cets,
             commit_desc.clone(),
             commit_amount,
@@ -525,14 +497,13 @@ pub(crate) async fn build_and_verify_cets_and_refund(
     let taker_address = &dlc.taker_address;
     let cets = own_cets
         .into_iter()
-        .map(|grouped_cets| {
-            let event_id = grouped_cets.event.id;
+        .map(|Cets { event, cets }| {
+            let event_id = event.id;
             let counterparty_cets = msg1
                 .cets
                 .get(&event_id)
                 .with_context(|| format!("Counterparty CETs for event {event_id} missing"))?;
-            let cets = grouped_cets
-                .cets
+            let cets = cets
                 .into_iter()
                 .map(|(tx, _, digits)| {
                     let counterparty_encsig = counterparty_cets
@@ -591,7 +562,7 @@ pub trait GetAnnouncements {
 
 #[async_trait]
 pub trait GetRates {
-    async fn get_rates(&self) -> Result<Rates>;
+    async fn get_rates(&self, contract_symbol: ContractSymbol) -> Result<Rates>;
 }
 
 /// Set of rates needed to accept rollover proposals.

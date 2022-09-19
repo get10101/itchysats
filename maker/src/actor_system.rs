@@ -35,6 +35,8 @@ use model::OrderId;
 use model::Price;
 use model::Role;
 use model::TxFeeRate;
+use ping_pong::ping;
+use ping_pong::pong;
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio_extras::Tasks;
@@ -46,8 +48,6 @@ use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::Multiaddr;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
-use xtra_libp2p_ping::ping;
-use xtra_libp2p_ping::pong;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
 
@@ -143,20 +143,20 @@ where
 
         let (supervisor, maker_offer_address_deprecated) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
-            move || xtra_libp2p_offer::deprecated::maker::Actor::new(endpoint_addr.clone())
+            move || offer::deprecated::maker::Actor::new(endpoint_addr.clone())
         });
         tasks.add(supervisor.run_log_summary());
 
         let (supervisor, maker_offer_address) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
-            move || xtra_libp2p_offer::maker::Actor::new(endpoint_addr.clone())
+            move || offer::maker::Actor::new(endpoint_addr.clone())
         });
         tasks.add(supervisor.run_log_summary());
 
         let (order_supervisor, order) = Supervisor::new({
             let oracle = oracle_addr.clone();
             let db = db.clone();
-            let process_manager = process_manager_addr;
+            let process_manager = process_manager_addr.clone();
             let wallet = wallet_addr.clone();
             let projection = projection_actor.clone();
             let maker_offer_address = maker_offer_address.clone();
@@ -174,22 +174,55 @@ where
         });
         tasks.add(order_supervisor.run_log_summary());
 
-        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
+        let (order_deprecated_supervisor, order_deprecated) = Supervisor::new({
+            let oracle = oracle_addr.clone();
+            let db = db.clone();
+            let process_manager = process_manager_addr;
+            let wallet = wallet_addr.clone();
+            let projection = projection_actor.clone();
+            let maker_offer_address = maker_offer_address.clone();
+            move || {
+                order::deprecated::maker::Actor::new(
+                    n_payouts,
+                    oracle_pk,
+                    oracle.clone().into(),
+                    (db.clone(), process_manager.clone()),
+                    (wallet.clone().into(), wallet.clone().into()),
+                    projection.clone(),
+                    maker_offer_address.clone().into(),
+                )
+            }
+        });
+        tasks.add(order_deprecated_supervisor.run_log_summary());
+
+        let (collab_settlement_supervisor, collab_settlement_addr) = Supervisor::new({
             let executor = executor.clone();
             move || collab_settlement::maker::Actor::new(executor.clone(), n_payouts)
         });
         tasks.add(collab_settlement_supervisor.run_log_summary());
 
+        let (collab_settlement_deprecated_supervisor, collab_settlement_deprecated_addr) =
+            Supervisor::new({
+                let executor = executor.clone();
+                move || {
+                    collab_settlement::deprecated::maker::Actor::new(executor.clone(), n_payouts)
+                }
+            });
+        tasks.add(collab_settlement_deprecated_supervisor.run_log_summary());
+
         let cfd_actor_addr = cfd::Actor::new(
             settlement_interval,
             projection_actor,
             time_to_first_position_addr,
-            libp2p_collab_settlement_addr.clone(),
+            (
+                collab_settlement_addr.clone(),
+                collab_settlement_deprecated_addr.clone(),
+            ),
             (
                 maker_offer_address.clone(),
                 maker_offer_address_deprecated.clone(),
             ),
-            order.clone(),
+            (order.clone(), order_deprecated.clone()),
         )
         .create(None)
         .spawn(&mut tasks);
@@ -266,10 +299,9 @@ where
             MAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
                 pong_address.clone(),
                 identify_listener_actor,
-                order,
-                rollover_addr.clone(),
-                rollover_deprecated_addr.clone(),
-                libp2p_collab_settlement_addr,
+                (order, order_deprecated),
+                (rollover_addr.clone(), rollover_deprecated_addr.clone()),
+                (collab_settlement_addr, collab_settlement_deprecated_addr),
             ),
             endpoint::Subscribers::new(
                 vec![

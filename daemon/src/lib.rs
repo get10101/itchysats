@@ -27,6 +27,8 @@ use model::Price;
 use model::Role;
 use online_status::ConnectionStatus;
 use parse_display::Display;
+use ping_pong::ping;
+use ping_pong::pong;
 use seed::Identities;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -40,8 +42,6 @@ use xtra_libp2p::dialer;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
 use xtra_libp2p::Endpoint;
-use xtra_libp2p_ping::ping;
-use xtra_libp2p_ping::pong;
 use xtras::supervisor::always_restart_after;
 use xtras::supervisor::Supervisor;
 
@@ -194,8 +194,7 @@ where
             }
         });
         tasks.add(order_supervisor.run_log_summary());
-
-        let (collab_settlement_supervisor, libp2p_collab_settlement_addr) = Supervisor::new({
+        let (collab_settlement_supervisor, collab_settlement_addr) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
             move || {
@@ -211,7 +210,7 @@ where
         let cfd_actor_addr = taker_cfd::Actor::new(
             db.clone(),
             projection_actor,
-            libp2p_collab_settlement_addr,
+            collab_settlement_addr,
             order,
             maker_identity,
             PeerId::from(
@@ -224,7 +223,7 @@ where
         .create(None)
         .spawn(&mut tasks);
 
-        let (rollover_supervisor, libp2p_rollover_addr) = Supervisor::new({
+        let (rollover_supervisor, rollover_addr) = Supervisor::new({
             let endpoint_addr = endpoint_addr.clone();
             let executor = executor.clone();
             let oracle_addr = oracle_addr.clone();
@@ -240,7 +239,7 @@ where
         });
         tasks.add(rollover_supervisor.run_log_summary());
 
-        let auto_rollover_addr = auto_rollover::Actor::new(db.clone(), libp2p_rollover_addr)
+        let auto_rollover_addr = auto_rollover::Actor::new(db.clone(), rollover_addr)
             .create(None)
             .spawn(&mut tasks);
 
@@ -267,9 +266,9 @@ where
             always_restart_after(RESTART_INTERVAL),
         );
 
-        let (offers_supervisor, libp2p_offer_addr) = Supervisor::new({
+        let (offer_supervisor, offer_addr) = Supervisor::new({
             let cfd_actor_addr = cfd_actor_addr.clone();
-            move || xtra_libp2p_offer::taker::Actor::new(cfd_actor_addr.clone().into())
+            move || offer::taker::Actor::new(cfd_actor_addr.clone().into())
         });
 
         let (identify_listener_supervisor, identify_listener_actor) = Supervisor::new({
@@ -302,7 +301,7 @@ where
             TAKER_LISTEN_PROTOCOLS.inbound_substream_handlers(
                 pong_address.clone(),
                 identify_listener_actor,
-                libp2p_offer_addr,
+                offer_addr,
             ),
             endpoint::Subscribers::new(
                 vec![
@@ -324,7 +323,7 @@ where
         tasks.add(endpoint_context.run(endpoint));
 
         tasks.add(dialer_supervisor.run_log_summary());
-        tasks.add(offers_supervisor.run_log_summary());
+        tasks.add(offer_supervisor.run_log_summary());
         tasks.add(identify_listener_supervisor.run_log_summary());
 
         let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
