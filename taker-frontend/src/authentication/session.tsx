@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from "axios";
 
 export interface User {
-    expired: boolean;
+    first_login: boolean;
     id: number;
 }
 

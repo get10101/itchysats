@@ -67,7 +67,7 @@ export function AuthProvider({
 
         sessionsApi.login({ password })
             .then((user) => {
-                if (user.expired) {
+                if (user.first_login) {
                     setFirstLogin(true);
                     navigate("/change-password");
                 } else {
