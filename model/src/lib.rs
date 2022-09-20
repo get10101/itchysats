@@ -5,8 +5,10 @@ use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Denomination;
+use bdk::bitcoin::Network;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Txid;
+use bdk::TransactionDetails;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::de::Error as _;
@@ -451,9 +453,11 @@ impl str::FromStr for Identity {
 
 #[derive(Debug, Clone)]
 pub struct WalletInfo {
+    pub network: Network,
     pub balance: Amount,
     pub address: Address,
     pub last_updated_at: Timestamp,
+    pub transactions: Vec<TransactionDetails>,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]

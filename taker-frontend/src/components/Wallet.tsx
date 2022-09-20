@@ -3,7 +3,9 @@ import {
     Box,
     Button,
     Center,
+    CircularProgress,
     Divider,
+    Flex,
     FormControl,
     FormHelperText,
     FormLabel,
@@ -27,10 +29,12 @@ import {
 } from "@chakra-ui/react";
 import { useAsync } from "@react-hookz/web";
 import axios from "axios";
+import dayjs from "dayjs";
 import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
-import { WalletInfo, WithdrawRequest } from "../types";
+import { BsArrowDownRightCircle, BsArrowUpRightCircle } from "react-icons/all";
+import { Transaction, WalletInfo, WithdrawRequest } from "../types";
 import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
 
@@ -218,9 +222,71 @@ export default function Wallet(
                         </Button>
                     </form>
                 </VStack>
+
+                <Divider marginTop={2} marginBottom={2} />
+                <Box>
+                    <Center>
+                        <Heading size={"sm"}>History</Heading>
+                    </Center>
+                    <Transactions transactions={walletInfo?.transactions} />
+                </Box>
             </Box>
         </Center>
     );
 }
 
 export { Wallet };
+
+interface TransactionsProps {
+    transactions?: Transaction[];
+}
+
+function Transactions({ transactions }: TransactionsProps) {
+    if (!transactions) {
+        return <Text>You have no transactions so far</Text>;
+    }
+    let transaction = transactions.sort((a, b) => {
+        if (!a.confirmation_time) {
+            return -1;
+        } else if (!b.confirmation_time) {
+            return +1;
+        } else {
+            return b.confirmation_time.timestamp - a.confirmation_time.timestamp;
+        }
+    }).map((tx) => {
+        let symbol = <BsArrowDownRightCircle color={"green"} size={"24px"} />;
+        let outgoing = false;
+        if (tx.sent > 0) {
+            symbol = <BsArrowUpRightCircle color={"red"} size={"24px"} />;
+            outgoing = true;
+        }
+        let timeSince;
+        if (tx.confirmation_time) {
+            timeSince = dayjs.unix(tx.confirmation_time.timestamp).fromNow();
+        } else {
+            timeSince = "Pending...";
+            symbol = <CircularProgress isIndeterminate color="gray" size={"24px"} />;
+        }
+
+        let maybeLink = <></>;
+        if (tx.link) {
+            maybeLink = (
+                <Link href={`${tx.link}`} isExternal>
+                    {symbol}
+                </Link>
+            );
+        }
+        return (
+            <Box key={tx.txid}>
+                <Flex w={"100%"} padding={"0.5em"} gap={"2"}>
+                    {maybeLink}
+                    <Text>{timeSince}</Text>
+                    <Spacer />
+                    <Text>{outgoing ? "-" + tx.sent : "+" + tx.received} BTC</Text>
+                </Flex>
+                <Divider marginTop={2} marginBottom={2} />
+            </Box>
+        );
+    });
+    return <>{transaction}</>;
+}

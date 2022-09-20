@@ -198,11 +198,14 @@ where
         STD_DEV_UTXO_VALUE_GAUGE.set(utxo_values.std_dev().unwrap_or_default());
 
         let address = self.wallet.get_address(AddressIndex::LastUnused)?.address;
+        let transactions = self.wallet.list_transactions(false)?;
 
         let wallet_info = WalletInfo {
+            network: self.wallet.network(),
             balance: Amount::from_sat(balance),
             address,
             last_updated_at: Timestamp::now(),
+            transactions,
         };
 
         tracing::trace!(target : "wallet", sync_time_sec = %now.elapsed().as_secs(), "Wallet sync done");
