@@ -1,13 +1,11 @@
-use std::path::PathBuf;
-
+use crate::MAINNET_ELECTRUM;
+use crate::TESTNET_ELECTRUM;
 use clap::Parser;
 use clap::Subcommand;
 use daemon::bdk::bitcoin;
 use daemon::bdk::bitcoin::Address;
 use daemon::bdk::bitcoin::Amount;
-
-const MAINNET_ELECTRUM: &str = "ssl://blockstream.info:700";
-const TESTNET_ELECTRUM: &str = "ssl://blockstream.info:993";
+use std::path::PathBuf;
 
 #[derive(Parser, Clone)]
 pub enum Network {

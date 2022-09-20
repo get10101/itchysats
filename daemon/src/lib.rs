@@ -452,6 +452,7 @@ pub enum Environment {
     MyNode,
     Docker,
     Binary,
+    Electron,
     Test,
     Legacy,
     Unknown,
@@ -466,6 +467,7 @@ impl Environment {
             "start9" => Environment::Start9,
             "mynode" => Environment::MyNode,
             "docker" => Environment::Docker,
+            "electron" => Environment::Electron,
             _ => Environment::Unknown,
         }
     }
@@ -491,5 +493,6 @@ mod tests {
         assert_eq!(Environment::from_str_or_unknown("start9"), Start9);
         assert_eq!(Environment::from_str_or_unknown("mynode"), MyNode);
         assert_eq!(Environment::from_str_or_unknown("docker"), Docker);
+        assert_eq!(Environment::from_str_or_unknown("electron"), Electron);
     }
 }

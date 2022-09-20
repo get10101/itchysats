@@ -1,0 +1,71 @@
+{
+  "name": "itchysats",
+  "version": "0.1.0",
+  "description": "",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "cargo-cp-artifact -nc index.node -- cargo build --message-format=json-render-diagnostics",
+    "build:tsc": "tsc",
+    "build-debug": "yarn run build",
+    "build-release": "yarn run build --release",
+    "install": "yarn run build-release",
+    "test": "cargo test",
+    "start": "yarn run build:tsc && electron-forge start",
+    "lint": "eslint -c .eslintrc --ext .ts ./src",
+    "package": "electron-forge package",
+    "make": "electron-forge make --arch=x64,arm64"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^6.0.0-beta.66",
+    "@electron-forge/maker-deb": "^6.0.0-beta.66",
+    "@electron-forge/maker-rpm": "^6.0.0-beta.66",
+    "@electron-forge/maker-squirrel": "^6.0.0-beta.66",
+    "@electron-forge/maker-zip": "^6.0.0-beta.66",
+    "@types/electron": "^1.6.10",
+    "@typescript-eslint/eslint-plugin": "^5.38.0",
+    "@typescript-eslint/parser": "^5.38.0",
+    "cargo-cp-artifact": "^0.1",
+    "electron": "^20.1.4",
+    "eslint": "^8.23.1",
+    "typescript": "^4.8.3"
+  },
+  "dependencies": {
+    "electron-log": "^4.4.8",
+    "electron-squirrel-startup": "^1.0.0"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "name": "ItchySats",
+        "appBundleId": "ItchySats",
+        "icon": "logo.icns",
+        "overwrite": true,
+        "appVersion": "0.6.1"
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "taker_electron"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "darwin"
+          ]
+        },
+        {
+          "name": "@electron-forge/maker-deb",
+          "config": {}
+        },
+        {
+          "name": "@electron-forge/maker-rpm",
+          "config": {}
+        }
+      ]
+    }
+  }
+}

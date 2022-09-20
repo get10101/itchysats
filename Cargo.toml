@@ -4,6 +4,7 @@ members = [
   "rocket-basicauth",
   "rust-embed-rocket",
   "taker",
+  "taker-electron",
   "maker",
   "shared-bin",
   "daemon-tests",

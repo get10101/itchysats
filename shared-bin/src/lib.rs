@@ -5,3 +5,6 @@ pub mod logger;
 mod to_sse_event;
 
 pub use crate::to_sse_event::*;
+
+pub const MAINNET_ELECTRUM: &str = "ssl://blockstream.info:700";
+pub const TESTNET_ELECTRUM: &str = "ssl://blockstream.info:993";
