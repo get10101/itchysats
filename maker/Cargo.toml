@@ -47,3 +47,6 @@ xtra-bitmex-price-feed = { path = "../xtra-bitmex-price-feed" }
 xtra-libp2p = { path = "../xtra-libp2p" }
 xtra_productivity = { version = "0.1.0", features = ["instrumentation"] }
 xtras = { path = "../xtras" }
+
+[build-dependencies]
+anyhow = "1"
