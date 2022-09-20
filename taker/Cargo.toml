@@ -37,3 +37,6 @@ xtras = { path = "../xtras" }
 
 [dev-dependencies]
 serde_test = "1"
+
+[build-dependencies]
+anyhow = "1"
