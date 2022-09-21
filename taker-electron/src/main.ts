@@ -23,14 +23,16 @@ export default class Main {
         logger.debug("Waiting for ItchySats to become available.");
         Main.createWindow();
 
-        const userData = app.getPath("userData");
-        logger.info(`Storing wallet to ${userData}`);
-
         process.env.ITCHYSATS_ENV = "electron";
 
-        // start itchysats taker
+        const dataDir = app.isPackaged ? app.getPath("userData") : app.getAppPath();
+        const network = app.isPackaged ? "mainnet" : "testnet";
         logger.info("Starting ItchySats ...");
-        itchysats("mainnet", userData).then(() => {
+        logger.info(`Network: ${network}`);
+        logger.info(`Data Dir: ${dataDir}`);
+
+        // start itchysats taker
+        itchysats(network, dataDir).then(() => {
             logger.info("Stopped ItchySats.");
         }).catch((error: Error) => logger.error(error));
 
