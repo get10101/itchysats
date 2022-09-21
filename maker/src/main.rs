@@ -34,23 +34,6 @@ use xtras::supervisor::Supervisor;
 #[rocket::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
-    logger::init(
-        opts.log_level,
-        opts.json,
-        opts.json_span_list,
-        opts.instrumentation,
-        opts.tokio_console,
-        opts.verbose_spans,
-        &opts.service_name,
-        &opts.collector_endpoint,
-    )
-    .context("initialize logger")?;
-    tracing::info!("Running version: {}", daemon::version());
-    let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
-
-    tracing::info!(
-        "CFDs created with this release will settle after {settlement_interval_hours} hours"
-    );
 
     let data_dir = opts
         .data_dir
@@ -62,6 +45,26 @@ async fn main() -> Result<()> {
     if !data_dir.exists() {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
+
+    let _guard = logger::init(
+        opts.log_level,
+        opts.json,
+        opts.json_span_list,
+        opts.instrumentation,
+        opts.tokio_console,
+        opts.verbose_spans,
+        &opts.service_name,
+        &opts.collector_endpoint,
+        opts.log_to_file,
+        data_dir.to_str().expect("missing data dir"),
+    )
+    .context("initialize logger")?;
+    tracing::info!("Running version: {}", daemon::version());
+    let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
+
+    tracing::info!(
+        "CFDs created with this release will settle after {settlement_interval_hours} hours"
+    );
 
     let seed = RandomSeed::initialize(&data_dir.join("maker_seed")).await?;
 

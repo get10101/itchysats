@@ -169,13 +169,19 @@ pub struct Opts {
     /// keys will be derived according to Bip84.
     #[clap(short, long)]
     pub wallet_xprv: Option<ExtendedPrivKey>,
+
+    /// If enabled, the log will be printed to {service_name}.log in the data dir
+    #[clap(long)]
+    pub log_to_file: bool,
 }
 
 impl Opts {
+    // use this method to parse the options from the cli.
     pub fn read() -> Opts {
         Opts::parse()
     }
 
+    // use this method to construct the options from parameters.
     pub fn new(network: String, data_dir: String) -> Result<Self> {
         let network = PublicNetwork::from_str(&network)?;
 
@@ -202,6 +208,7 @@ impl Opts {
             network: Some(network.into()),
             app_seed: None,
             wallet_xprv: None,
+            log_to_file: true,
         })
     }
 
@@ -307,24 +314,6 @@ fn parse_app_seed(s: &str) -> Result<[u8; 32]> {
 pub async fn run(opts: Opts) -> Result<()> {
     let (maker_url, maker_id, maker_peer_id) = opts.maker()?;
 
-    logger::init(
-        opts.log_level,
-        opts.json,
-        opts.json_span_list,
-        opts.instrumentation,
-        opts.tokio_console,
-        opts.verbose_spans,
-        &opts.service_name,
-        &opts.collector_endpoint,
-    )
-    .context("initialize logger")?;
-    tracing::info!("Running version: {}", daemon::version());
-    let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
-
-    tracing::info!(
-        "CFDs created with this release will settle after {settlement_interval_hours} hours"
-    );
-
     let network = opts.network();
 
     let data_dir = opts
@@ -337,6 +326,26 @@ pub async fn run(opts: Opts) -> Result<()> {
     if !data_dir.exists() {
         tokio::fs::create_dir_all(&data_dir).await?;
     }
+
+    let _guard = logger::init(
+        opts.log_level,
+        opts.json,
+        opts.json_span_list,
+        opts.instrumentation,
+        opts.tokio_console,
+        opts.verbose_spans,
+        &opts.service_name,
+        &opts.collector_endpoint,
+        opts.log_to_file,
+        data_dir.to_str().expect("missing data dir"),
+    )
+    .context("initialize logger")?;
+    tracing::info!("Running version: {}", daemon::version());
+    let settlement_interval_hours = SETTLEMENT_INTERVAL.whole_hours();
+
+    tracing::info!(
+        "CFDs created with this release will settle after {settlement_interval_hours} hours"
+    );
 
     let maker_identity = Identity::new(maker_id);
 
