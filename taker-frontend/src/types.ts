@@ -10,6 +10,20 @@ export interface WalletInfo {
     balance: number;
     address: string;
     last_updated_at: number;
+    transactions: Transaction[];
+}
+
+export interface Transaction {
+    txid: string;
+    received: number;
+    sent: number;
+    confirmation_time?: BlockTime;
+    link?: String;
+}
+
+interface BlockTime {
+    height: number;
+    timestamp: number;
 }
 
 export function unixTimestampToDate(unixTimestamp: number): Date {
