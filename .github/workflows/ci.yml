@@ -148,16 +148,25 @@ jobs:
       - name: Smoke testing maker for ${{ matrix.os }} binary
         shell: bash
         run: |
-          cargo dev-maker &
-          sleep 10 # Wait for binaries to start
-          curl --fail http://localhost:8001/api/alive
+          cargo dev-maker-headless &
+          n=0
+          until [ "$n" -ge 3 ]
+          do
+            n=$((n+1))
+            sleep 10
+            curl --fail http://localhost:8001/api/alive && break;
+          done
       - name: Smoke testing taker for ${{ matrix.os }} binary
         shell: bash
         run: |
-          cargo dev-taker &
-          sleep 10 # Wait for binaries to start
-          curl --fail http://localhost:8000/api/alive
-
+          cargo dev-taker-headless &
+          n=0
+          until [ "$n" -ge 3 ]
+          do
+            n=$((n+1))
+            sleep 10
+            curl --fail http://localhost:8000/api/alive && break;
+          done
   daemons_arm_build:
     runs-on: ubuntu-latest
     steps:
