@@ -6,3 +6,5 @@ npm-debug.log*
 
 out/
 dist/
+mainnet/
+testnet/
