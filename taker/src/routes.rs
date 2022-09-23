@@ -297,9 +297,11 @@ pub async fn post_withdraw_request(
     Ok(projection::to_mempool_url(txid, *network.inner()))
 }
 
+// TODO: Use non-cookie auth for /metrics endpoint as Prometheus does not
+// support cookie-auth (for now, leave unauthenticated)
 #[rocket::get("/metrics")]
 #[instrument(name = "GET /metrics", skip_all, err)]
-pub async fn get_metrics<'r>(_user: User) -> Result<String, HttpApiProblem> {
+pub async fn get_metrics<'r>() -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
         .map_err(|e| {
