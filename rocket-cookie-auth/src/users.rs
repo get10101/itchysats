@@ -8,6 +8,7 @@ use crate::user::User;
 use crate::Database;
 use anyhow::Context;
 use anyhow::Result;
+use dashmap::DashMap;
 
 pub struct Users {
     db: Box<dyn Database>,
@@ -18,7 +19,7 @@ impl Users {
     pub fn new(db: Box<dyn Database>) -> Users {
         Self {
             db,
-            sessions: Box::new(chashmap::CHashMap::new()),
+            sessions: Box::new(DashMap::new()),
         }
     }
 
