@@ -15,7 +15,7 @@ daemon = { path = "../daemon" }
 http-api-problem = { version = "0.55.0", features = ["rocket"] }
 model = { path = "../model" }
 opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.10.0" }
+opentelemetry-otlp = { version = "0.11.0" }
 ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json"] }
