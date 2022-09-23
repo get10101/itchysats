@@ -34,6 +34,22 @@ impl Users {
         }
     }
 
+    pub(crate) async fn login_basicauth(&self, form: &Login) -> Result<(), Error> {
+        let user = self
+            .db
+            .load_user()
+            .await
+            .map_err(Error::Other)?
+            .context(Error::UserNotFound)?;
+
+        let user_pwd = &user.password;
+        if verify_password(user_pwd, form.password.as_str())? {
+            Ok(())
+        } else {
+            Err(Error::Unauthorized)
+        }
+    }
+
     pub(crate) async fn login(&self, form: &Login) -> Result<User, Error> {
         let user = self
             .db

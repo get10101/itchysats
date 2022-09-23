@@ -32,6 +32,7 @@ use rocket::serde::json::Json;
 use rocket::serde::uuid::Uuid;
 use rocket::State;
 use rocket_cookie_auth::auth::Auth;
+use rocket_cookie_auth::basic::BasicAuthGuard;
 use rocket_cookie_auth::forms::ChangePassword;
 use rocket_cookie_auth::forms::Login;
 use rocket_cookie_auth::user::User;
@@ -302,11 +303,9 @@ pub async fn post_withdraw_request(
     Ok(projection::to_mempool_url(txid, *network.inner()))
 }
 
-// TODO: Use non-cookie auth for /metrics endpoint as Prometheus does not
-// support cookie-auth (for now, leave unauthenticated)
 #[rocket::get("/metrics")]
 #[instrument(name = "GET /metrics", skip_all, err)]
-pub async fn get_metrics<'r>() -> Result<String, HttpApiProblem> {
+pub async fn get_metrics<'r>(_basic_auth: BasicAuthGuard) -> Result<String, HttpApiProblem> {
     let metrics = prometheus::TextEncoder::new()
         .encode_to_string(&prometheus::gather())
         .map_err(|e| {

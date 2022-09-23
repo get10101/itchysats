@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+base64 = "0.13"
 dashmap = "5"
+hex = "0.4"
 http-api-problem = { version = "0.55.0", features = ["rocket"] }
 rand = "0.8.5"
 rocket = { version = "0.5.0-rc.2", features = ["secrets"] }

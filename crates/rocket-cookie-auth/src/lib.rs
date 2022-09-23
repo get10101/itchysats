@@ -5,6 +5,7 @@ use anyhow::Result;
 use rocket::async_trait;
 
 pub mod auth;
+pub mod basic;
 pub mod error;
 pub mod forms;
 mod session;

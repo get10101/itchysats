@@ -3775,21 +3775,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "rocket-basicauth"
-version = "0.1.0"
-dependencies = [
- "base64",
- "hex",
- "rocket",
- "void",
-]
-
-[[package]]
 name = "rocket-cookie-auth"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "dashmap",
+ "hex",
  "http-api-problem",
  "rand 0.8.5",
  "rocket",
