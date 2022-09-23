@@ -1,7 +1,7 @@
 use crate::error::Error;
 use anyhow::Context;
 use anyhow::Result;
-use chashmap::CHashMap;
+use dashmap::DashMap;
 use rocket::http::CookieJar;
 use rocket::http::Status;
 use rocket::request::FromRequest;
@@ -51,7 +51,7 @@ pub trait SessionManager: Send + Sync {
     fn get(&self, id: u32) -> Result<Option<String>>;
 }
 
-impl SessionManager for CHashMap<u32, AuthKey> {
+impl SessionManager for DashMap<u32, AuthKey> {
     fn insert_for(&self, id: u32, key: String, time: Duration) {
         let key = AuthKey {
             expires: time.whole_seconds(),

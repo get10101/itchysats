@@ -3,7 +3,7 @@ mod sqlx_ext; // Must come first because it is a macro.
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use chashmap_async::CHashMap;
+use dashmap::DashMap;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use futures::Stream;
@@ -50,14 +50,14 @@ pub mod user;
 #[derive(Clone)]
 pub struct Connection {
     inner: SqlitePool,
-    aggregate_cache: Arc<CHashMap<(TypeId, OrderId), Box<dyn Any + Send + Sync + 'static>>>,
+    aggregate_cache: Arc<DashMap<(TypeId, OrderId), Box<dyn Any + Send + Sync + 'static>>>,
 }
 
 impl Connection {
     fn new(pool: SqlitePool) -> Self {
         Self {
             inner: pool,
-            aggregate_cache: Arc::new(CHashMap::new()),
+            aggregate_cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -302,7 +302,7 @@ impl Connection {
         let cache_key = (TypeId::of::<C>(), id);
         let aggregate = std::any::type_name::<C>();
 
-        let cfd = match self.aggregate_cache.remove(&cache_key).await {
+        let cfd = match self.aggregate_cache.remove(&cache_key) {
             None => {
                 // No cache entry? Load the CFD row. Version will be 0 because we haven't applied
                 // any events, thus all events will be loaded.
@@ -310,7 +310,7 @@ impl Connection {
 
                 C::new(args, cfd)
             }
-            Some(cfd) => {
+            Some((_, cfd)) => {
                 // Got a cache entry: Downcast it to the type at hand.
 
                 *cfd.downcast::<C>()
@@ -329,8 +329,7 @@ impl Connection {
         let cfd = events.into_iter().fold(cfd, C::apply);
 
         self.aggregate_cache
-            .insert(cache_key, Box::new(cfd.clone()))
-            .await;
+            .insert(cache_key, Box::new(cfd.clone()));
 
         db_tx.commit().await?;
 
