@@ -30,6 +30,7 @@ export default class Main {
         logger.info("Starting ItchySats ...");
         logger.info(`Network: ${network}`);
         logger.info(`Data Dir: ${dataDir}`);
+        logger.info(`Platform: ${process.platform}`);
 
         // start itchysats taker
         itchysats(network, dataDir).then(() => {
