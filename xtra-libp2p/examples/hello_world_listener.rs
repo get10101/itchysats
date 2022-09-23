@@ -7,6 +7,8 @@ use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::Multiaddr;
 use libp2p_tcp::TokioTcpConfig;
+use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::Level;
 use xtra::prelude::*;
@@ -56,6 +58,7 @@ async fn main() -> Result<()> {
         Duration::from_secs(30),
         [("/hello-world/1.0.0", hello_world_addr.clone().into())],
         Subscribers::default(),
+        Arc::new(HashSet::default()),
     )
     .create(None)
     .spawn_global();

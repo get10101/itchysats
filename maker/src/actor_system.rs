@@ -38,6 +38,7 @@ use model::TxFeeRate;
 use ping_pong::ping;
 use ping_pong::pong;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_extras::Tasks;
 use xtra::Actor;
@@ -46,6 +47,7 @@ use xtra::Context;
 use xtra::Handler;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::libp2p::Multiaddr;
+use xtra_libp2p::libp2p::PeerId;
 use xtra_libp2p::listener;
 use xtra_libp2p::Endpoint;
 use xtras::supervisor::always_restart_after;
@@ -103,6 +105,7 @@ where
         projection_actor: Address<projection::Actor>,
         identity: Identities,
         listen_multiaddr: Multiaddr,
+        blocked_peers: HashSet<PeerId>,
     ) -> Result<Self>
     where
         M: Handler<monitor::MonitorAfterContractSetup, Return = ()>
@@ -319,6 +322,7 @@ where
                 vec![],
                 vec![listener_actor.into()],
             ),
+            Arc::new(blocked_peers),
         );
 
         tasks.add(endpoint_context.run(endpoint));

@@ -1,4 +1,5 @@
 use crate::util::make_node;
+use crate::util::make_node_with_blocklist;
 use crate::util::GetConnectedPeers;
 use crate::util::GetListenAddresses;
 use crate::util::Node;
@@ -11,6 +12,7 @@ use futures::StreamExt;
 use libp2p_core::multiaddr::Protocol;
 use libp2p_core::Multiaddr;
 use std::collections::HashSet;
+use std::sync::Arc;
 use xtra::message_channel::MessageChannel;
 use xtra::spawn::TokioGlobalSpawnExt;
 use xtra::Actor;
@@ -55,6 +57,55 @@ async fn hello_world() {
     let string = hello_world_dialer(bob_to_alice, "Bob").await.unwrap();
 
     assert_eq!(string, "Hello Bob!");
+}
+
+#[tokio::test]
+async fn blocked_peers_cannot_connect() {
+    let bob = make_node([]);
+
+    let alice = make_node_with_blocklist(
+        [(
+            "/hello-world/1.0.0",
+            HelloWorld::default().create(None).spawn_global().into(),
+        )],
+        Arc::new(HashSet::from([bob.peer_id])),
+    );
+
+    let port = rand::random::<u16>();
+    let alice_listen = format!("/memory/{port}").parse::<Multiaddr>().unwrap();
+    alice
+        .endpoint
+        .send(ListenOn(alice_listen.clone()))
+        .await
+        .unwrap();
+
+    let alice_peer_id = &alice.peer_id;
+    bob.endpoint
+        .send(Connect(
+            format!("/memory/{port}/p2p/{alice_peer_id}")
+                .parse()
+                .unwrap(),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let alice_stats = alice.endpoint.send(GetConnectionStats).await.unwrap();
+    let bob_stats = bob.endpoint.send(GetConnectionStats).await.unwrap();
+
+    assert_eq!(alice_stats.connected_peers, HashSet::from([]));
+    assert_eq!(bob_stats.connected_peers, HashSet::from([]));
+
+    let bob_to_alice = bob
+        .endpoint
+        .send(OpenSubstream::single_protocol(
+            alice.peer_id,
+            "/hello-world/1.0.0",
+        ))
+        .await
+        .unwrap();
+
+    assert!(bob_to_alice.is_err());
 }
 
 #[tokio::test]

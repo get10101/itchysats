@@ -21,6 +21,8 @@ mod tests {
     use model::TxFeeRate;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use std::collections::HashSet;
+    use std::sync::Arc;
     use std::time::Duration;
     use time::macros::datetime;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -169,6 +171,7 @@ mod tests {
                 vec![],
                 vec![],
             ),
+            Arc::new(HashSet::default()),
         );
 
         #[allow(clippy::disallowed_methods)]
@@ -190,6 +193,7 @@ mod tests {
             Duration::from_secs(10),
             [(PROTOCOL, offer_taker_addr.into())],
             Subscribers::default(),
+            Arc::new(HashSet::default()),
         )
         .create(None)
         .spawn_global();

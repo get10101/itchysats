@@ -9,6 +9,8 @@ use futures::StreamExt;
 use libp2p_core::identity::Keypair;
 use libp2p_core::transport::MemoryTransport;
 use libp2p_core::Multiaddr;
+use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -157,6 +159,7 @@ async fn test_runner<
                     vec![subscriber_stats.clone().into()],
                     vec![subscriber_stats.clone().into()],
                 ),
+                Arc::new(HashSet::default()),
             );
 
             #[allow(clippy::disallowed_methods)]

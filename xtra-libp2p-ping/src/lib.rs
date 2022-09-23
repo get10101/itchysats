@@ -12,6 +12,8 @@ mod tests {
     use super::*;
     use futures::Future;
     use futures::FutureExt;
+    use std::collections::HashSet;
+    use std::sync::Arc;
     use std::time::Duration;
     use tracing_subscriber::util::SubscriberInitExt;
     use xtra::spawn::TokioGlobalSpawnExt;
@@ -101,6 +103,7 @@ mod tests {
                 vec![],
                 vec![],
             ),
+            Arc::new(HashSet::default()),
         );
 
         #[allow(clippy::disallowed_methods)]

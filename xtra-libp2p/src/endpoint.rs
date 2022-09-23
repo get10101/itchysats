@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio_extras::Tasks;
@@ -60,6 +61,7 @@ pub struct Endpoint {
     inbound_substream_channels: HashMap<&'static str, MessageChannel<NewInboundSubstream, ()>>,
     listen_addresses: HashSet<Multiaddr>,
     inflight_connections: HashSet<PeerId>,
+    blocked_peers: Arc<HashSet<PeerId>>,
     connection_timeout: Duration,
     subscribers: Subscribers,
     peer_listen_protocols: HashMap<PeerId, HashSet<String>>,
@@ -224,6 +226,7 @@ impl Endpoint {
         connection_timeout: Duration,
         inbound_substream_handlers: [(&'static str, MessageChannel<NewInboundSubstream, ()>); N],
         subscribers: Subscribers,
+        blocked_peers: Arc<HashSet<PeerId>>,
     ) -> Self
     where
         T: Transport + Send + Sync + 'static,
@@ -257,6 +260,7 @@ impl Endpoint {
             controls: HashMap::default(),
             listen_addresses: HashSet::default(),
             inflight_connections: HashSet::default(),
+            blocked_peers,
             connection_timeout,
             subscribers,
             peer_listen_protocols: HashMap::default(),
@@ -495,6 +499,7 @@ impl Endpoint {
         tokio_extras::spawn_fallible::<_, _, _, (), _, _, _>(
             &this.clone(),
             {
+                let blocked_peers = self.blocked_peers.clone();
                 let this = this.clone();
                 let listen_address = listen_address.clone();
 
@@ -518,6 +523,19 @@ impl Endpoint {
                                 remote_addr,
                                 ..
                             }) => {
+                                match PeerId::try_from_multiaddr(&remote_addr) {
+                                    Some(peer_id) if blocked_peers.contains(&peer_id) => {
+                                        tracing::info!(
+                                            target: "blocked_peers",
+                                            peer_id = %peer_id, // Weird but required
+                                            "Blocked peer from connecting"
+                                        );
+                                        continue; // Skip this peer
+                                    }
+                                    _ => (),
+                                };
+
+                                let blocked_peers = blocked_peers.clone();
                                 let this = this.clone();
                                 tasks.add_fallible(
                                     async move {
@@ -530,6 +548,16 @@ impl Endpoint {
                                                     None => format!("Failed to connect with multi-address: {remote_addr}"),
                                                 }
                                             })?;
+
+                                        if blocked_peers.contains(&peer_id) {
+                                            tracing::info!(
+                                                target: "blocked_peers",
+                                                peer_id = %peer_id, // Weird but required
+                                                "Blocked peer from connecting"
+                                            );
+                                            return Ok(()); // Skip this peer
+                                        }
+
                                         this.send_async_next(NewConnection {
                                             peer_id,
                                             control,
