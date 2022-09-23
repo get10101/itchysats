@@ -367,7 +367,7 @@ pub struct HealthCheck {
 #[instrument(name = "GET /version")]
 pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
-        daemon_version: vergen_version::git_semver().to_string(),
+        daemon_version: daemon::version(),
     })
 }
 

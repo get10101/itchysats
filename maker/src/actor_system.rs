@@ -280,7 +280,7 @@ where
             let identity = identity.libp2p.clone();
             move || {
                 identify::listener::Actor::new(
-                    vergen_version::git_semver().to_string(),
+                    daemon::version(),
                     Environment::Unknown,
                     identity.public(),
                     HashSet::from([listen_multiaddr.clone()]),
