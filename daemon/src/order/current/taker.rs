@@ -32,10 +32,15 @@ use model::Leverage;
 use model::Offer;
 use model::OrderId;
 use model::Role;
+use std::time::Duration;
+use tokio_extras::FutureExt;
 use xtra::prelude::MessageChannel;
 use xtra_libp2p::Endpoint;
 use xtra_libp2p::OpenSubstream;
 use xtra_productivity::xtra_productivity;
+
+/// Timeout for awaiting a response to an order request from the maker
+const PLACE_ORDER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct Actor {
     endpoint: xtra::Address<Endpoint>,
@@ -147,7 +152,20 @@ impl Actor {
                     })
                     .await?;
 
-                match framed.next().await.context("Stream terminated")?? {
+                match framed
+                    .next()
+                    .timeout(PLACE_ORDER_RESPONSE_TIMEOUT, || {
+                        tracing::debug_span!("receive make response")
+                    })
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "The maker did not respond within {} seconds",
+                            PLACE_ORDER_RESPONSE_TIMEOUT.as_secs()
+                        )
+                    })?
+                    .context("Stream terminated")??
+                {
                     MakerMessage::Decision(Decision::Accept) => {
                         tracing::info!(order_id = %msg.order_id, %maker_peer_id, "Order accepted");
                     }
