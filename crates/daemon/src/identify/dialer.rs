@@ -22,7 +22,7 @@ pub struct Actor {
 
 impl Actor {
     pub fn new(endpoint: Address<Endpoint>) -> Self {
-        NUM_LIBP2P_CONNECTIONS_GAUGE.reset();
+        LIBP2P_PEER_INFORMATION.reset();
 
         Self {
             endpoint,
@@ -34,7 +34,7 @@ impl Actor {
     pub fn new_with_subscriber(
         endpoint: Address<Endpoint>,
     ) -> (Self, watch::Receiver<Option<PeerInfo>>) {
-        NUM_LIBP2P_CONNECTIONS_GAUGE.reset();
+        LIBP2P_PEER_INFORMATION.reset();
 
         let (sender, receiver) = watch::channel::<Option<PeerInfo>>(None);
 
@@ -73,7 +73,6 @@ impl Actor {
             }
         };
 
-        let wire_version = peer_info.wire_version.clone();
         let daemon_version = peer_info.daemon_version.clone();
         let environment = peer_info.environment.clone();
 
@@ -81,7 +80,6 @@ impl Actor {
             %peer_id,
             %daemon_version,
             %environment,
-            %wire_version,
             protocols = ?peer_info.protocols,
             "New identify message received"
         );
@@ -89,9 +87,8 @@ impl Actor {
         if self.peer_infos.insert(peer_id, peer_info.clone()).is_none() {
             // Only increment if we don't know the peer info already because sometimes we are not
             // notified about ConnectionDropped
-            NUM_LIBP2P_CONNECTIONS_GAUGE
+            LIBP2P_PEER_INFORMATION
                 .with(&HashMap::from([
-                    (WIRE_VERSION_LABEL, wire_version.as_str()),
                     (DAEMON_VERSION_LABEL, daemon_version.as_str()),
                     (ENVIRONMENT_LABEL, environment.to_string().as_str()),
                 ]))
@@ -152,9 +149,8 @@ impl Actor {
         let peer_id = msg.peer_id;
         tracing::trace!(%peer_id, "Remove peer-info because connection dropped");
         if let Some(peer_info) = self.peer_infos.remove(&peer_id) {
-            NUM_LIBP2P_CONNECTIONS_GAUGE
+            LIBP2P_PEER_INFORMATION
                 .with(&HashMap::from([
-                    (WIRE_VERSION_LABEL, peer_info.wire_version.as_str()),
                     (DAEMON_VERSION_LABEL, peer_info.daemon_version.as_str()),
                     (
                         ENVIRONMENT_LABEL,
@@ -166,16 +162,15 @@ impl Actor {
     }
 }
 
-const WIRE_VERSION_LABEL: &str = "wire_version";
 const DAEMON_VERSION_LABEL: &str = "daemon_version";
 const ENVIRONMENT_LABEL: &str = "environment";
 
-static NUM_LIBP2P_CONNECTIONS_GAUGE: conquer_once::Lazy<prometheus::IntGaugeVec> =
+static LIBP2P_PEER_INFORMATION: conquer_once::Lazy<prometheus::IntGaugeVec> =
     conquer_once::Lazy::new(|| {
         prometheus::register_int_gauge_vec!(
-            "libp2p_connections_total",
-            "The number of active libp2p connections.",
-            &[WIRE_VERSION_LABEL, DAEMON_VERSION_LABEL, ENVIRONMENT_LABEL]
+            "libp2p_peer_information",
+            "The number of active libp2p connections broken down by daemon version and environment.",
+            &[DAEMON_VERSION_LABEL, ENVIRONMENT_LABEL]
         )
         .unwrap()
     });
