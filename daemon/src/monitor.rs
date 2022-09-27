@@ -230,19 +230,6 @@ impl Cfd {
                     ..self
                 }
             }
-            ContractSetupStarted | ContractSetupFailed | OfferRejected | RolloverRejected => Self {
-                monitor_lock_finality: None,
-                monitor_commit_finality: None,
-                monitor_cet_timelock: false,
-                monitor_refund_timelock: false,
-                monitor_refund_finality: None,
-                monitor_revoked_commit_transactions: Vec::new(),
-                monitor_collaborative_settlement_finality: None,
-                lock_tx: None,
-                cet: None,
-                commit_tx: None,
-                ..self
-            },
             LockConfirmed | LockConfirmedAfterFinality => Self {
                 monitor_lock_finality: None,
                 lock_tx: None,
@@ -297,7 +284,11 @@ impl Cfd {
             | CollaborativeSettlementStarted { .. }
             | CollaborativeSettlementRejected
             | CollaborativeSettlementFailed
-            | CollaborativeSettlementProposalAccepted => self,
+            | CollaborativeSettlementProposalAccepted
+            | ContractSetupStarted
+            | ContractSetupFailed
+            | OfferRejected
+            | RolloverRejected => self,
             RevokeConfirmed => {
                 // TODO: Implement revoked logic
                 self
