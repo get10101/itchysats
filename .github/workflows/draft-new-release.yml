@@ -34,13 +34,22 @@ jobs:
         with:
           version: ${{ github.event.inputs.version }}
 
+      - name: Bump version in Cargo.toml
+        uses: thomaseizinger/set-crate-version@1.0.0
+        with:
+          version: ${{ github.event.inputs.version }}
+          manifest: daemon/Cargo.toml
+
+      - name: Update Cargo.lock
+        run: cargo update --workspace
+
       - name: Commit changelog and manifest files
         id: make-commit
         run: |
           curl -fsSL https://dprint.dev/install.sh | sh
           /home/runner/.dprint/bin/dprint fmt
 
-          git add CHANGELOG.md
+          git add CHANGELOG.md Cargo.lock daemon/Cargo.toml
           git commit --message "Prepare release ${{ github.event.inputs.version }}"
 
           echo "::set-output name=commit::$(git rev-parse HEAD)"
