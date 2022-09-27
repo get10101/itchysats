@@ -117,19 +117,29 @@ pub struct Actor {
 struct Cfd {
     id: OrderId,
 
-    monitor_lock_finality: Option<Lock>,
-    monitor_commit_finality: Option<Commit>,
+    lock: Option<Lock>,
+    monitor_lock_finality: bool,
+
+    collaborative_settlement: Option<(Txid, Script)>,
+    monitor_collaborative_settlement_finality: bool,
+
+    commit: Option<Commit>,
+    monitor_commit_finality: bool,
     monitor_cet_timelock: bool,
     monitor_refund_timelock: bool,
-    monitor_refund_finality: Option<Refund>,
+
+    cet: Option<(Txid, Script)>,
+    monitor_cet_finality: bool,
+
+    refund: Option<Refund>,
+    monitor_refund_finality: bool,
+
     monitor_revoked_commit_transactions: Vec<RevokedCommit>,
-    monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
-    monitor_cet_finality: Option<(Txid, Script)>,
 
     // Rebroadcast transactions upon startup
-    lock_tx: Option<Transaction>,
-    cet: Option<Transaction>,
-    commit_tx: Option<Transaction>,
+    broadcast_lock: Option<Transaction>,
+    broadcast_cet: Option<Transaction>,
+    broadcast_commit: Option<Transaction>,
 
     version: u32,
 }
@@ -140,17 +150,22 @@ impl sqlite_db::CfdAggregate for Cfd {
     fn new(_: Self::CtorArgs, cfd: sqlite_db::Cfd) -> Self {
         Self {
             id: cfd.id,
-            monitor_lock_finality: None,
-            monitor_commit_finality: None,
+            lock: None,
+            monitor_lock_finality: false,
+            collaborative_settlement: None,
+            monitor_collaborative_settlement_finality: false,
+            commit: None,
+            monitor_commit_finality: false,
             monitor_cet_timelock: false,
             monitor_refund_timelock: false,
-            monitor_refund_finality: None,
-            monitor_revoked_commit_transactions: Vec::new(),
-            monitor_collaborative_settlement_finality: None,
-            monitor_cet_finality: None,
-            lock_tx: None,
             cet: None,
-            commit_tx: None,
+            monitor_cet_finality: false,
+            refund: None,
+            monitor_refund_finality: false,
+            monitor_revoked_commit_transactions: Vec::new(),
+            broadcast_lock: None,
+            broadcast_cet: None,
+            broadcast_commit: None,
             version: 0,
         }
     }
@@ -186,16 +201,16 @@ impl Cfd {
                 } = TransactionsAfterContractSetup::new(&dlc);
 
                 Self {
-                    monitor_lock_finality: Some(lock),
-                    monitor_commit_finality: Some(commit),
+                    lock: Some(lock),
+                    monitor_lock_finality: true,
+                    commit: Some(commit),
+                    monitor_commit_finality: true,
                     monitor_cet_timelock: true,
                     monitor_refund_timelock: true,
-                    monitor_refund_finality: Some(refund),
+                    refund: Some(refund),
+                    monitor_refund_finality: true,
                     monitor_revoked_commit_transactions: Vec::new(),
-                    monitor_collaborative_settlement_finality: None,
-                    lock_tx: Some(dlc.lock.0),
-                    cet: None,
-                    commit_tx: None,
+                    broadcast_lock: Some(dlc.lock.0),
                     ..self
                 }
             }
@@ -207,16 +222,15 @@ impl Cfd {
                 } = TransactionsAfterRollover::new(&dlc);
 
                 Self {
-                    monitor_lock_finality: None,
-                    monitor_commit_finality: Some(commit),
+                    monitor_lock_finality: false,
+                    commit: Some(commit),
+                    monitor_commit_finality: true,
                     monitor_cet_timelock: true,
                     monitor_refund_timelock: true,
-                    monitor_refund_finality: Some(refund),
+                    refund: Some(refund),
+                    monitor_refund_finality: true,
                     monitor_revoked_commit_transactions: revoked_commits,
-                    monitor_collaborative_settlement_finality: None,
-                    lock_tx: None,
-                    cet: self.cet,
-                    commit_tx: self.commit_tx,
+                    broadcast_lock: None,
                     ..self
                 }
             }
@@ -224,54 +238,52 @@ impl Cfd {
                 spend_tx, script, ..
             } => {
                 Self {
-                    monitor_collaborative_settlement_finality: Some((spend_tx.txid(), script)),
-                    monitor_lock_finality: None, // Lock is already final if we collab settle.
-                    lock_tx: None,
+                    collaborative_settlement: Some((spend_tx.txid(), script)),
+                    monitor_collaborative_settlement_finality: true,
+                    monitor_lock_finality: false, // Lock is already final if we collab settle.
+                    broadcast_lock: None,
                     ..self
                 }
             }
             LockConfirmed | LockConfirmedAfterFinality => Self {
-                monitor_lock_finality: None,
-                lock_tx: None,
+                monitor_lock_finality: false,
+                broadcast_lock: None,
                 ..self
             },
             CommitConfirmed => Self {
-                monitor_commit_finality: None,
-                commit_tx: None,
+                monitor_commit_finality: false,
+                broadcast_commit: None,
                 ..self
             },
-            // final states, don't monitor anything
+            // final states, don't monitor or re-broadcast anything
             CetConfirmed | RefundConfirmed | CollaborativeSettlementConfirmed => Self {
-                monitor_lock_finality: None,
-                monitor_commit_finality: None,
+                monitor_lock_finality: false,
+                monitor_commit_finality: false,
                 monitor_cet_timelock: false,
                 monitor_refund_timelock: false,
-                monitor_refund_finality: None,
+                monitor_refund_finality: false,
                 monitor_revoked_commit_transactions: Vec::new(),
-                monitor_collaborative_settlement_finality: None,
-                monitor_cet_finality: None,
-                lock_tx: None,
-                cet: None,
-                commit_tx: None,
+                monitor_collaborative_settlement_finality: false,
+                monitor_cet_finality: false,
+                broadcast_lock: None,
+                broadcast_cet: None,
+                broadcast_commit: None,
                 ..self
             },
             CetTimelockExpiredPriorOracleAttestation => Self {
                 monitor_cet_timelock: false,
                 ..self
             },
-            CetTimelockExpiredPostOracleAttestation { cet, .. } => Self {
-                cet: Some(cet.clone()),
-                monitor_cet_finality: cet_txid_and_script(cet),
+            CetTimelockExpiredPostOracleAttestation { cet, .. }
+            | OracleAttestedPostCetTimelock { cet, .. } => Self {
+                broadcast_cet: Some(cet.clone()),
+                cet: cet_txid_and_script(cet),
+                monitor_cet_finality: true,
                 monitor_cet_timelock: false,
                 ..self
             },
             RefundTimelockExpired { .. } => Self {
                 monitor_refund_timelock: false,
-                ..self
-            },
-            OracleAttestedPostCetTimelock { cet, .. } => Self {
-                cet: Some(cet.clone()),
-                monitor_cet_finality: cet_txid_and_script(cet),
                 ..self
             },
             ContractSetupCompleted { dlc: None, .. }
@@ -563,18 +575,23 @@ impl xtra::Actor for Actor {
 
                     while let Some(cfd) = stream.next().await {
                         let Cfd {
-                            cet,
-                            commit_tx,
-                            lock_tx,
                             id,
+                            lock,
                             monitor_lock_finality,
+                            collaborative_settlement,
+                            monitor_collaborative_settlement_finality,
+                            commit,
                             monitor_commit_finality,
                             monitor_cet_timelock,
                             monitor_refund_timelock,
+                            cet,
+                            monitor_cet_finality,
+                            refund,
                             monitor_refund_finality,
                             monitor_revoked_commit_transactions,
-                            monitor_collaborative_settlement_finality,
-                            monitor_cet_finality,
+                            broadcast_lock,
+                            broadcast_cet,
+                            broadcast_commit,
                             ..
                         } = match cfd {
                             Ok(cfd) => cfd,
@@ -583,7 +600,7 @@ impl xtra::Actor for Actor {
                                 continue;
                             }
                         };
-                        if let Some(tx) = commit_tx {
+                        if let Some(tx) = broadcast_commit {
                             let span = tracing::debug_span!("Broadcast commit TX", order_id = %id);
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
@@ -597,7 +614,7 @@ impl xtra::Actor for Actor {
                             }
                         }
 
-                        if let Some(tx) = cet {
+                        if let Some(tx) = broadcast_cet {
                             let span = tracing::debug_span!("Broadcast CET", order_id = %id);
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
@@ -611,7 +628,7 @@ impl xtra::Actor for Actor {
                             }
                         }
 
-                        if let Some(tx) = lock_tx {
+                        if let Some(tx) = broadcast_lock {
                             let span = tracing::debug_span!("Broadcast lock TX", order_id = %id);
                             if let Err(e) = this
                                 .send(TryBroadcastTransaction {
@@ -627,14 +644,19 @@ impl xtra::Actor for Actor {
 
                         this.send(ReinitMonitoring {
                             id,
+                            lock,
                             monitor_lock_finality,
+                            collaborative_settlement,
+                            monitor_collaborative_settlement_finality,
+                            commit,
                             monitor_commit_finality,
                             monitor_cet_timelock,
                             monitor_refund_timelock,
+                            cet,
+                            monitor_cet_finality,
+                            refund,
                             monitor_refund_finality,
                             monitor_revoked_commit_transactions,
-                            monitor_collaborative_settlement_finality,
-                            monitor_cet_finality,
                         })
                         .await?;
                     }
@@ -751,47 +773,53 @@ impl Actor {
     async fn handle_reinit_monitoring(&mut self, msg: ReinitMonitoring) {
         let ReinitMonitoring {
             id,
+            lock,
             monitor_lock_finality,
+            collaborative_settlement,
+            monitor_collaborative_settlement_finality,
+            commit,
             monitor_commit_finality,
             monitor_cet_timelock,
             monitor_refund_timelock,
+            cet,
+            monitor_cet_finality,
+            refund,
             monitor_refund_finality,
             monitor_revoked_commit_transactions,
-            monitor_collaborative_settlement_finality,
-            monitor_cet_finality,
         } = msg;
 
-        if let Some(lock) = monitor_lock_finality {
+        if let (Some(lock), true) = (lock, monitor_lock_finality) {
             self.monitor_lock_finality(id, lock);
         }
 
-        if let Some(commit) = &monitor_commit_finality {
-            self.monitor_commit_finality(id, commit.clone());
+        if let Some(commit) = commit {
+            if monitor_commit_finality {
+                self.monitor_commit_finality(id, commit.clone());
+            }
 
             if monitor_cet_timelock {
                 self.monitor_commit_cet_timelock(id, commit.clone());
             }
+
+            if let (Some(refund), true) = (&refund, monitor_refund_timelock) {
+                self.monitor_commit_refund_timelock(id, commit, refund.timelock);
+            }
         }
 
-        if let Some(refund) = &monitor_refund_finality {
-            self.monitor_refund_finality(id, refund.clone());
-        }
-
-        if let (Some(commit), Some(refund), true) = (
-            monitor_commit_finality,
-            monitor_refund_finality,
-            monitor_refund_timelock,
-        ) {
-            self.monitor_commit_refund_timelock(id, commit, refund.timelock);
+        if let (Some(refund), true) = (refund, monitor_refund_finality) {
+            self.monitor_refund_finality(id, refund);
         }
 
         self.monitor_revoked_commit_transactions(id, monitor_revoked_commit_transactions);
 
-        if let Some(params) = monitor_collaborative_settlement_finality {
+        if let (Some(params), true) = (
+            collaborative_settlement,
+            monitor_collaborative_settlement_finality,
+        ) {
             self.monitor_close_finality(id, params);
         }
 
-        if let Some(params) = monitor_cet_finality {
+        if let (Some(params), true) = (cet, monitor_cet_finality) {
             self.monitor_cet_finality(id, params);
         }
     }
@@ -940,14 +968,24 @@ struct RevokedCommit {
 struct ReinitMonitoring {
     id: OrderId,
 
-    monitor_lock_finality: Option<Lock>,
-    monitor_commit_finality: Option<Commit>,
+    lock: Option<Lock>,
+    monitor_lock_finality: bool,
+
+    collaborative_settlement: Option<(Txid, Script)>,
+    monitor_collaborative_settlement_finality: bool,
+
+    commit: Option<Commit>,
+    monitor_commit_finality: bool,
     monitor_cet_timelock: bool,
     monitor_refund_timelock: bool,
-    monitor_refund_finality: Option<Refund>,
+
+    cet: Option<(Txid, Script)>,
+    monitor_cet_finality: bool,
+
+    refund: Option<Refund>,
+    monitor_refund_finality: bool,
+
     monitor_revoked_commit_transactions: Vec<RevokedCommit>,
-    monitor_collaborative_settlement_finality: Option<(Txid, Script)>,
-    monitor_cet_finality: Option<(Txid, Script)>,
 }
 
 #[xtra_productivity]
