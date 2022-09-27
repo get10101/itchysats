@@ -423,8 +423,8 @@ pub async fn run(opts: Opts) -> Result<()> {
     };
 
     let environment = match env::var("ITCHYSATS_ENV") {
-        Ok(environment) => Environment::from_str_or_unknown(environment.as_str()),
-        Err(_) => Environment::Binary,
+        Ok(environment) => Environment::new(environment.as_str()),
+        Err(_) => Environment::new("binary"),
     };
 
     let (supervisor, price_feed_actor) =

@@ -279,7 +279,7 @@ where
             move || {
                 identify::listener::Actor::new(
                     version(),
-                    environment,
+                    environment.clone(),
                     identity.public(),
                     HashSet::new(),
                     TAKER_LISTEN_PROTOCOLS.into(),
@@ -447,32 +447,31 @@ where
     }
 }
 
-#[derive(Debug, Copy, Clone, Display, PartialEq, Eq)]
-pub enum Environment {
-    Umbrel,
-    RaspiBlitz,
-    Citadel,
-    Start9,
-    MyNode,
-    Docker,
-    Binary,
-    Electron,
-    Test,
-    Legacy,
-    Unknown,
-}
+/// A struct defining our environment
+///
+/// We can run on all kinds of environment, hence this is just a wrapper around string.
+/// However, for backwards compatibility with <=0.6.x we need to support to support
+/// `Unknown`. For all other we format the string to lowercase.
+#[derive(Debug, Clone, Display, PartialEq, Eq)]
+pub struct Environment(String);
 
 impl Environment {
-    pub fn from_str_or_unknown(envvar_val: &str) -> Environment {
-        match envvar_val {
-            "umbrel" => Environment::Umbrel,
-            "raspiblitz" => Environment::RaspiBlitz,
-            "citadel" => Environment::Citadel,
-            "start9" => Environment::Start9,
-            "mynode" => Environment::MyNode,
-            "docker" => Environment::Docker,
-            "electron" => Environment::Electron,
-            _ => Environment::Unknown,
+    pub fn new(val: &str) -> Environment {
+        Self(Environment::parse_known_variances(val))
+    }
+
+    pub fn unknown() -> Environment {
+        Self("Unknown".to_string())
+    }
+
+    pub fn as_string(&self) -> String {
+        self.0.clone()
+    }
+
+    fn parse_known_variances(string: &str) -> String {
+        match string.to_lowercase().as_str() {
+            "unknown" => "Unknown".to_string(),
+            s => s.to_string(),
         }
     }
 }
@@ -492,16 +491,13 @@ fn into_price_feed_symbol(symbol: model::ContractSymbol) -> xtra_bitmex_price_fe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Environment::*;
 
     #[test]
     fn snapshot_test_environment_from_str_or_unknown() {
-        assert_eq!(Environment::from_str_or_unknown("umbrel"), Umbrel);
-        assert_eq!(Environment::from_str_or_unknown("raspiblitz"), RaspiBlitz);
-        assert_eq!(Environment::from_str_or_unknown("citadel"), Citadel);
-        assert_eq!(Environment::from_str_or_unknown("start9"), Start9);
-        assert_eq!(Environment::from_str_or_unknown("mynode"), MyNode);
-        assert_eq!(Environment::from_str_or_unknown("docker"), Docker);
-        assert_eq!(Environment::from_str_or_unknown("electron"), Electron);
+        assert_eq!(Environment::new("umbrel").as_string(), "umbrel".to_string());
+        assert_eq!(
+            Environment::new("unknown").as_string(),
+            "Unknown".to_string()
+        );
     }
 }
