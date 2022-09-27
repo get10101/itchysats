@@ -13,6 +13,7 @@ use daemon::projection;
 use daemon::seed::AppSeed;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
+use daemon::seed::ThreadSafeSeed;
 use daemon::wallet;
 use daemon::wallet::TAKER_WALLET_ID;
 use daemon::Environment;
@@ -340,24 +341,23 @@ pub async fn run(opts: Opts) -> Result<()> {
     let maker_identity = Identity::new(maker_id);
 
     let bitcoin_network = network.bitcoin_network();
-    let (ext_priv_key, identities) = match opts.app_seed {
-        Some(seed_bytes) => {
-            let seed = AppSeed::from(seed_bytes);
-            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-            let identities = seed.derive_identities();
-            (ext_priv_key, identities)
-        }
-        None => {
-            let seed = RandomSeed::initialize(&data_dir.join("taker_seed")).await?;
-            let ext_priv_key = seed.derive_extended_priv_key(bitcoin_network)?;
-            let identities = seed.derive_identities();
-            (ext_priv_key, identities)
-        }
+
+    let seed: Arc<ThreadSafeSeed> = match opts.app_seed {
+        Some(seed_bytes) => Arc::new(AppSeed::from(seed_bytes)),
+        None => Arc::new(RandomSeed::initialize(&data_dir.join("taker_seed")).await?),
     };
 
+    let identities = seed.derive_identities();
+
     let ext_priv_key = match opts.wallet_xprv {
-        Some(wallet_xprv) => wallet_xprv,
-        None => ext_priv_key,
+        Some(wallet_xprv) => {
+            if wallet_xprv.network != bitcoin_network {
+                let network = wallet_xprv.network;
+                bail!("Invalid private key provided. Was '{network}' but should have been '{bitcoin_network}'");
+            }
+            wallet_xprv
+        }
+        None => seed.derive_extended_priv_key(bitcoin_network)?,
     };
 
     let mut tasks = Tasks::default();
@@ -499,11 +499,13 @@ pub async fn run(opts: Opts) -> Result<()> {
                 routes::change_password,
                 routes::post_login,
                 routes::logout,
-                routes::is_authenticated
+                routes::is_authenticated,
+                routes::get_seed_backup,
             ],
         )
         .register("/api", default_catchers())
         .manage(users)
+        .manage(seed)
         .mount("/", rocket::routes![routes::dist, routes::index])
         .register("/", default_catchers())
         .attach(fairings::log_launch())

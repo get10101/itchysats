@@ -45,16 +45,6 @@ pub trait Seed {
         Ok(ext_priv_key)
     }
 
-    fn derive_auth_password<P: From<[u8; 32]>>(&self) -> P {
-        let mut password = [0u8; 32];
-
-        Hkdf::<Sha256>::new(None, &self.seed())
-            .expand(b"HTTP_AUTH_PASSWORD", &mut password)
-            .expect("okm array is of correct length");
-
-        P::from(password)
-    }
-
     fn derive_identity(&self) -> (x25519_dalek::PublicKey, x25519_dalek::StaticSecret) {
         let mut secret = [0u8; 32];
 
@@ -166,3 +156,5 @@ impl From<[u8; 32]> for AppSeed {
         Self(bytes)
     }
 }
+
+pub type ThreadSafeSeed = dyn Seed + Send + Sync;

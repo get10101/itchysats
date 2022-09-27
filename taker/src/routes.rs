@@ -1,4 +1,5 @@
-#![allow(clippy::let_unit_value)] // see: https://github.com/SergioBenitez/Rocket/issues/2211
+#![allow(clippy::let_unit_value)]
+// see: https://github.com/SergioBenitez/Rocket/issues/2211
 use daemon::bdk;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Network;
@@ -10,6 +11,7 @@ use daemon::oracle;
 use daemon::projection;
 use daemon::projection::CfdAction;
 use daemon::projection::FeedReceivers;
+use daemon::seed::ThreadSafeSeed;
 use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
@@ -33,6 +35,8 @@ use rocket_cookie_auth::auth::Auth;
 use rocket_cookie_auth::forms::ChangePassword;
 use rocket_cookie_auth::forms::Login;
 use rocket_cookie_auth::user::User;
+use rocket_download_response::mime;
+use rocket_download_response::DownloadResponsePro;
 use rust_embed::RustEmbed;
 use rust_embed_rocket::EmbeddedFileExt;
 use serde::Deserialize;
@@ -40,6 +44,7 @@ use serde::Serialize;
 use shared_bin::ToSseEvent;
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::select;
 use tokio::sync::watch;
 use tracing::instrument;
@@ -336,6 +341,20 @@ pub async fn get_version() -> Json<HealthCheck> {
     Json(HealthCheck {
         daemon_version: daemon::version(),
     })
+}
+
+#[rocket::get("/backup")]
+#[instrument(name = "GET /backup", skip_all)]
+pub async fn get_seed_backup(
+    seed: &State<Arc<ThreadSafeSeed>>,
+    _user: User,
+) -> Result<DownloadResponsePro, HttpApiProblem> {
+    let resp = DownloadResponsePro::from_vec(
+        seed.inner().seed(),
+        Some("taker_seed"),
+        Some(mime::APPLICATION_OCTET_STREAM),
+    );
+    Ok(resp)
 }
 
 /// Login a user. If successful a cookie will be return
