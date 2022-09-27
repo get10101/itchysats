@@ -24,6 +24,12 @@ pub fn log_requests() -> impl Fairing {
             let path = request.uri().path();
             let status = response.status();
 
+            // Prevents logging binary blobs (e.g. seed) in logs
+            let path = if path.starts_with("/api") || path.starts_with("/assets") {
+                path.as_str()
+            } else {
+                "<hidden>"
+            };
             tracing::debug!(target: "http", %method, %path, %status, "Handled request");
         })
     })

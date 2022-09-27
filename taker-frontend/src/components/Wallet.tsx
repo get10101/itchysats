@@ -30,6 +30,7 @@ import {
 import { useAsync } from "@react-hookz/web";
 import axios from "axios";
 import dayjs from "dayjs";
+import FileSaver from "file-saver";
 import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
@@ -48,6 +49,7 @@ export default function Wallet(
     }: WalletProps,
 ) {
     const toast = useToast();
+
     const { hasCopied, onCopy } = useClipboard(walletInfo ? walletInfo.address : "");
     const { balance, address, last_updated_at } = walletInfo || {};
 
@@ -97,6 +99,20 @@ export default function Wallet(
         },
     );
     let isSyncingWallet = walletSyncing === "loading";
+
+    const exportSeed = () => {
+        // downloads the taker seed file directly from the endpoint. No error handling as this is using
+        // the native html 5 functionality similar to <a href="/api/backup" download></a>
+        FileSaver.saveAs("/api/backup", "taker-seed", { autoBom: false });
+
+        toast({
+            title: "Backup successful",
+            description: "Keep that safe!",
+            status: "success",
+            duration: 10000,
+            isClosable: true,
+        });
+    };
 
     return (
         <Center>
@@ -150,77 +166,76 @@ export default function Wallet(
                 <Divider marginTop={2} marginBottom={2} />
 
                 <VStack padding={2}>
-                    <form
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            runWithdraw([{
-                                amount: withdrawAmount,
-                                fee,
-                                address: withdrawAddress,
-                            }]);
-                        }}
-                    >
-                        <Heading as="h3" size="sm">Withdraw</Heading>
-                        <FormControl id="address">
-                            <FormLabel>Address</FormLabel>
-                            <Input
-                                onChange={(event) => setWithdrawAddress(event.target.value)}
-                                value={withdrawAddress}
-                                placeholder="Target address"
+                    <Heading as="h3" size="sm">Withdraw</Heading>
+                    <FormControl id="address">
+                        <FormLabel>Address</FormLabel>
+                        <Input
+                            onChange={(event) => setWithdrawAddress(event.target.value)}
+                            value={withdrawAddress}
+                            placeholder="Target address"
+                        >
+                        </Input>
+                    </FormControl>
+                    <HStack>
+                        <FormControl id="amount">
+                            <FormLabel>Amount</FormLabel>
+                            <NumberInput
+                                min={0}
+                                max={balance}
+                                defaultValue={0}
+                                onChange={(_, amount) => setWithdrawAmount(amount)}
+                                value={withdrawAmount}
+                                precision={8}
+                                step={0.001}
+                                placeholder="How much do you want to withdraw? (0 to withdraw all)"
                             >
-                            </Input>
+                                <NumberInputField />
+                                <NumberInputStepper>
+                                    <NumberIncrementStepper />
+                                    <NumberDecrementStepper />
+                                </NumberInputStepper>
+                            </NumberInput>
+                            <FormHelperText>How much do you want to withdraw? (0 to withdraw all)</FormHelperText>
                         </FormControl>
-                        <HStack>
-                            <FormControl id="amount">
-                                <FormLabel>Amount</FormLabel>
-                                <NumberInput
-                                    min={0}
-                                    max={balance}
-                                    defaultValue={0}
-                                    onChange={(_, amount) => setWithdrawAmount(amount)}
-                                    value={withdrawAmount}
-                                    precision={8}
-                                    step={0.001}
-                                    placeholder="How much do you want to withdraw? (0 to withdraw all)"
-                                >
-                                    <NumberInputField />
-                                    <NumberInputStepper>
-                                        <NumberIncrementStepper />
-                                        <NumberDecrementStepper />
-                                    </NumberInputStepper>
-                                </NumberInput>
-                                <FormHelperText>How much do you want to withdraw? (0 to withdraw all)</FormHelperText>
-                            </FormControl>
-                            <FormControl id="fee" w={"30%"}>
-                                <FormLabel>Fee</FormLabel>
-                                <NumberInput
-                                    min={1}
-                                    max={100}
-                                    defaultValue={0}
-                                    onChange={(_, amount) => setFee(amount)}
-                                    value={fee}
-                                    step={1}
-                                    placeholder="In sats/vbyte"
-                                >
-                                    <NumberInputField />
-                                    <NumberInputStepper>
-                                        <NumberIncrementStepper />
-                                        <NumberDecrementStepper />
-                                    </NumberInputStepper>
-                                </NumberInput>
-                                <FormHelperText>In sats/vbyte</FormHelperText>
-                            </FormControl>
-                        </HStack>
+                        <FormControl id="fee" w={"30%"}>
+                            <FormLabel>Fee</FormLabel>
+                            <NumberInput
+                                min={1}
+                                max={100}
+                                defaultValue={0}
+                                onChange={(_, amount) => setFee(amount)}
+                                value={fee}
+                                step={1}
+                                placeholder="In sats/vbyte"
+                            >
+                                <NumberInputField />
+                                <NumberInputStepper>
+                                    <NumberIncrementStepper />
+                                    <NumberDecrementStepper />
+                                </NumberInputStepper>
+                            </NumberInput>
+                            <FormHelperText>In sats/vbyte</FormHelperText>
+                        </FormControl>
+                    </HStack>
+                </VStack>
+                <VStack>
+                    <HStack marginTop={"5"} marginBottom={"5"}>
                         <Button
-                            marginTop={5}
                             variant={"solid"}
                             colorScheme={"blue"}
-                            type="submit"
                             isLoading={isWithdrawing}
+                            onClick={() => runWithdraw([{ amount: withdrawAmount, fee, address: withdrawAddress }])}
                         >
                             Withdraw
                         </Button>
-                    </form>
+                        <Button
+                            variant={"solid"}
+                            colorScheme={"blue"}
+                            onClick={exportSeed}
+                        >
+                            Backup Seed
+                        </Button>
+                    </HStack>
                 </VStack>
 
                 <Divider marginTop={2} marginBottom={2} />
