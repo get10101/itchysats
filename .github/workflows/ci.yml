@@ -28,7 +28,7 @@ jobs:
         run: rustup show
       - id: cargo-metadata
         run: |
-          # replacing itchysats with taker-electron: dirty fix, as neon and electron require the package name for processing. neon requires the package name to equal the crate name - 
+          # replacing itchysats with taker-electron: dirty fix, as neon and electron require the package name for processing. neon requires the package name to equal the crate name -
           # and electron uses the package name as name of the application.
           WORKSPACE_MEMBERS=$(cargo metadata --format-version=1 --no-deps | jq -c '.packages |.[] | select(.name == "itchysats").name |= "taker-electron" | .name' | jq -s | jq -c '.')
 
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ matrix.crate }}
+        working-directory: crates/${{ matrix.crate }}
     steps:
       - uses: actions/checkout@v3
       - name: Setup rust toolchain
@@ -198,7 +198,7 @@ jobs:
 
       - name: Run sqlx prepare
         run: |
-          cd sqlite-db
+          cd crates/sqlite-db
           ./prepare_db.sh
           git diff --exit-code sqlx-data.json
       - name: sqlx prepare was not run
