@@ -20,6 +20,7 @@ status = [
   "clippy (xtra-libp2p-offer)",
   "clippy (quiet-spans)",
   "clippy (xtra-libp2p-rollover)",
+  "clippy (taker-electron)",
   "lint-commits",
   "frontend (maker)",
   "frontend (taker)",
