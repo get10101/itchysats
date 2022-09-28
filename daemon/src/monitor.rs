@@ -250,6 +250,10 @@ impl Cfd {
                 broadcast_lock: None,
                 ..self
             },
+            ManualCommit { tx } => Self {
+                broadcast_commit: Some(tx),
+                ..self
+            },
             CommitConfirmed => Self {
                 monitor_commit_finality: false,
                 broadcast_commit: None,
@@ -291,7 +295,6 @@ impl Cfd {
             | RolloverStarted { .. }
             | RolloverAccepted
             | RolloverFailed
-            | ManualCommit { .. }
             | OracleAttestedPriorCetTimelock { .. }
             | CollaborativeSettlementStarted { .. }
             | CollaborativeSettlementRejected
