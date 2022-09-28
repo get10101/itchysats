@@ -26,7 +26,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
-      # For pull requests it's not necessary to checkout the code
+      - uses: actions/checkout@v3
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -238,3 +238,25 @@ jobs:
         if: failure()
         run: |
           echo "sqlx prepare was not run or sqlx-data.json was not checked-in"
+
+  # We need some "accummulation" job here because bors fails (timeouts) to
+  # listen on matrix builds. Bors will only listen on this job.
+  ci-success:
+    name: CI
+    needs:
+      - changes
+      - gather_workspace_members
+      - formatting
+      - lint-commits
+      - build-tests
+      - run-tests
+      - sqlx-db-check
+      - frontend
+      - smoke_test
+      - daemons_arm_build
+      - clippy
+    runs-on: ubuntu-latest
+    if: ${{ always() && contains(needs.*.result, 'success') && !(contains(needs.*.result, 'failure')) }}
+    steps:
+      - name: CI succeeded
+        run: exit 0
