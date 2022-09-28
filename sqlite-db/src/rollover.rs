@@ -13,6 +13,7 @@ mod tests {
     use anyhow::Context;
     use anyhow::Result;
     use bdk::bitcoin::Amount;
+    use model::libp2p::PeerId;
     use model::olivia::BitMexPriceEventId;
     use model::Cfd;
     use model::CfdEvent;
@@ -51,7 +52,7 @@ mod tests {
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                 .parse()
                 .unwrap(),
-            None,
+            Some(PeerId::placeholder()),
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),

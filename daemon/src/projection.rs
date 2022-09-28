@@ -18,6 +18,7 @@ use model::calculate_margin;
 use model::calculate_payout_at_price;
 use model::calculate_profit;
 use model::calculate_short_liquidation_price;
+use model::libp2p::PeerId;
 use model::long_and_short_leverage;
 use model::market_closing_price;
 use model::CfdEvent;
@@ -188,7 +189,7 @@ pub struct Cfd {
     #[serde(with = "::time::serde::timestamp::option")]
     pub expiry_timestamp: Option<OffsetDateTime>,
 
-    pub counterparty: model::Identity,
+    pub counterparty: PeerId,
 
     #[serde(with = "round_to_two_dp::opt")]
     pub pending_settlement_proposal_price: Option<Price>,
@@ -328,7 +329,7 @@ impl Cfd {
             initial_price,
             taker_leverage,
             quantity,
-            counterparty_network_identity,
+            counterparty_peer_id,
             role,
             opening_fee,
             initial_funding_rate,
@@ -410,7 +411,7 @@ impl Cfd {
                 tx_url_list: HashSet::new(),
             },
             expiry_timestamp: None,
-            counterparty: counterparty_network_identity,
+            counterparty: counterparty_peer_id.expect("peer ID to be present"),
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
             network,
@@ -846,7 +847,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             initial_price,
             taker_leverage,
             n_contracts: quantity,
-            counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fees,
             expiry_timestamp,
@@ -968,7 +969,7 @@ impl sqlite_db::ClosedCfdAggregate for Cfd {
             actions: HashSet::default(),
             details,
             expiry_timestamp: Some(expiry_timestamp),
-            counterparty: counterparty_network_identity,
+            counterparty: counterparty_peer_id,
             pending_settlement_proposal_price: None,
             aggregated,
             network,
@@ -985,7 +986,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
             initial_price,
             taker_leverage,
             n_contracts: quantity,
-            counterparty_network_identity,
+            counterparty_peer_id,
             role,
             fees,
             kind,
@@ -1053,7 +1054,7 @@ impl sqlite_db::FailedCfdAggregate for Cfd {
                 tx_url_list: HashSet::default(),
             },
             expiry_timestamp: None,
-            counterparty: counterparty_network_identity,
+            counterparty: counterparty_peer_id,
             pending_settlement_proposal_price: None,
             aggregated,
             network,
@@ -1707,7 +1708,7 @@ mod tests {
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
                 .parse()
                 .unwrap(),
-            None,
+            Some(PeerId::random()),
             OpeningFee::new(Amount::from_sat(2000)),
             FundingRate::default(),
             TxFeeRate::default(),
@@ -1748,7 +1749,7 @@ mod tests {
             "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e"
                 .parse()
                 .unwrap(),
-            None,
+            Some(PeerId::random()),
             OpeningFee::new(Amount::ZERO),
             FundingRate::default(),
             TxFeeRate::default(),
