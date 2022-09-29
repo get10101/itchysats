@@ -11,6 +11,7 @@ use daemon::seed::Seed;
 use daemon::wallet;
 use daemon::wallet::MAKER_WALLET_ID;
 use daemon::N_PAYOUTS;
+use maker::load_blocked_peers;
 use maker::routes;
 use maker::ActorSystem;
 use maker::Opts;
@@ -18,16 +19,13 @@ use model::olivia;
 use model::Role;
 use model::SETTLEMENT_INTERVAL;
 use rocket_cookie_auth::users::Users;
-use serde::Deserialize;
 use shared_bin::catchers::default_catchers;
 use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
 use shared_bin::logger;
 use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::path::Path;
 use tokio_extras::Tasks;
-use xtra_libp2p::libp2p::PeerId;
 use xtras::supervisor::always_restart;
 use xtras::supervisor::Supervisor;
 
@@ -258,19 +256,4 @@ impl rocket_cookie_auth::Database for RocketAuthDbConnection {
         self.inner.clone().update_password(password).await?;
         Ok(())
     }
-}
-
-/// Convenience type to load the blocked peer list from toml
-#[derive(Deserialize)]
-struct BlockedPeers {
-    blocked: HashSet<PeerId>,
-}
-
-async fn load_blocked_peers(blocked_peers_path: &Path) -> Result<HashSet<PeerId>> {
-    anyhow::ensure!(
-        blocked_peers_path.try_exists()?,
-        "No blocked peers file found in {blocked_peers_path:?}",
-    );
-    let raw = tokio::fs::read_to_string(blocked_peers_path).await?;
-    Ok(toml::from_str::<BlockedPeers>(&raw)?.blocked)
 }
