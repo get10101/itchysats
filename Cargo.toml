@@ -8,7 +8,7 @@ maia = { git = "https://github.com/comit-network/maia", rev = "9899c9eda1f768549
 maia-core = { git = "https://github.com/comit-network/maia", rev = "9899c9eda1f7685493aecdd7f8ba9124787056bd", package = "maia-core" }
 xtra_productivity = { git = "https://github.com/comit-network/xtra-productivity", rev = "0bfd589b42a63149221dec7e95aca932875374dd" } # Unreleased
 electrum-client = { git = "https://github.com/comit-network/rust-electrum-client/", branch = "do-not-ignore-empty-lines" }
-otel-tests = { git = "https://github.com/itchysats/otel-tests/", rev = "4a57d84ad5780c30d09222c56440482d9e722363" } # unreleased
+otel-tests = { git = "https://github.com/itchysats/otel-tests/", rev = "f65ac0e99480c20c3fa51c3b4426ac6f61463cfe" } # unreleased
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
