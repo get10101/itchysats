@@ -119,17 +119,13 @@ async fn main() -> Result<()> {
     let db =
         sqlite_db::connect(data_dir.join("maker.sqlite"), opts.ignore_migration_errors).await?;
 
-    let blocked_peers_path = data_dir.join("blocked_peers.toml");
-    let blocked_peers = load_blocked_peers(&blocked_peers_path)
-        .await
-        .unwrap_or_else(|err| {
-            tracing::error!(
-                ?blocked_peers_path,
-                %err,
-                "Error loading blocked peers list; ignoring and allowing all connections",
-            );
-            HashSet::default()
-        });
+    let blocked_peers = load_blocked_peers(&data_dir).await.unwrap_or_else(|err| {
+        tracing::error!(
+            %err,
+            "Error loading blocked peers list; ignoring and allowing all connections",
+        );
+        HashSet::default()
+    });
 
     // Create actors
     let endpoint_listen =
