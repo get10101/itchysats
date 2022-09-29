@@ -7,7 +7,9 @@ use opentelemetry::sdk::Resource;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use time::macros::format_description;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::filter::Directive;
+use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
@@ -32,9 +34,11 @@ pub fn init(
     verbose_spans: bool,
     service_name: &str,
     collector_endpoint: &str,
-) -> Result<()> {
+    log_to_file: bool,
+    data_dir: &str,
+) -> Result<Option<WorkerGuard>> {
     if level == LevelFilter::OFF {
-        return Ok(());
+        return Ok(None);
     }
 
     let is_terminal = atty::is(atty::Stream::Stderr);
@@ -116,18 +120,31 @@ pub fn init(
         None
     };
 
+    let (file_log, guard) = if log_to_file {
+        let file_appender =
+            tracing_appender::rolling::never(data_dir, format!("{service_name}.log"));
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        (
+            Some(fmt::Layer::new().with_writer(non_blocking)),
+            Some(guard),
+        )
+    } else {
+        (None, None)
+    };
+
     tracing_subscriber::registry()
         .with(console_layer)
         .with(quiet_spans::disable_noisy_spans(verbose_spans))
         .with(filter)
         .with(telemetry)
         .with(fmt_layer)
+        .with(file_log)
         .try_init()
         .context("Failed to init logger")?;
 
     tracing::info!("Initialized logger");
 
-    Ok(())
+    Ok(guard)
 }
 
 fn log_base_directives(env: EnvFilter) -> Result<EnvFilter> {

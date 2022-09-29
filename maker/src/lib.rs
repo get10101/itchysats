@@ -112,4 +112,8 @@ pub struct Opts {
 
     #[clap(subcommand)]
     pub network: Network,
+
+    /// If enabled, the log will be printed to {service_name}.log in the data dir
+    #[clap(long)]
+    pub log_to_file: bool,
 }
