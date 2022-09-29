@@ -9,8 +9,10 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 pub use actor_system::ActorSystem;
+pub use blocked_peers::load_blocked_peers;
 
 mod actor_system;
+mod blocked_peers;
 pub mod cfd;
 mod metrics;
 pub mod routes;

@@ -523,18 +523,6 @@ impl Endpoint {
                                 remote_addr,
                                 ..
                             }) => {
-                                match PeerId::try_from_multiaddr(&remote_addr) {
-                                    Some(peer_id) if blocked_peers.contains(&peer_id) => {
-                                        tracing::info!(
-                                            target: "blocked_peers",
-                                            peer_id = %peer_id, // Weird but required
-                                            "Blocked peer from connecting"
-                                        );
-                                        continue; // Skip this peer
-                                    }
-                                    _ => (),
-                                };
-
                                 let blocked_peers = blocked_peers.clone();
                                 let this = this.clone();
                                 tasks.add_fallible(
@@ -550,7 +538,7 @@ impl Endpoint {
                                             })?;
 
                                         if blocked_peers.contains(&peer_id) {
-                                            tracing::info!(
+                                            tracing::trace!(
                                                 target: "blocked_peers",
                                                 peer_id = %peer_id, // Weird but required
                                                 "Blocked peer from connecting"
