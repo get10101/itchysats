@@ -15,10 +15,12 @@ struct BlockedPeers {
 pub async fn load_blocked_peers(directory: &Path) -> Result<HashSet<PeerId>> {
     let path = directory.join(FILENAME);
 
-    anyhow::ensure!(
-        path.try_exists()?,
-        "No blocked peers file found in {path:?}",
-    );
+    if !path.try_exists()? {
+        tracing::info!("No blocked peers. Expected config file at: {path:?}");
+
+        return Ok(HashSet::default());
+    }
+
     let raw = tokio::fs::read_to_string(path).await?;
     Ok(toml::from_str::<BlockedPeers>(&raw)?.blocked)
 }
