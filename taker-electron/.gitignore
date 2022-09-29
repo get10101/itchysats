@@ -17,5 +17,6 @@ npm-debug.log.*
 
 /target
 /testnet
+/dist
 
 index.node
