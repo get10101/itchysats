@@ -24,6 +24,7 @@ pub fn start(mut cx: FunctionContext) -> JsResult<JsPromise> {
 
     let network = cx.argument::<JsString>(0)?.value(&mut cx);
     let data_dir = cx.argument::<JsString>(1)?.value(&mut cx);
+    let port = cx.argument::<JsNumber>(2)?.value(&mut cx) as u16;
 
     // Spawn an `async` task on the tokio runtime. Only Rust types that are
     // `Send` may be moved into this block. `Context` may not be passed and all
@@ -32,7 +33,7 @@ pub fn start(mut cx: FunctionContext) -> JsResult<JsPromise> {
     // This task will _not_ block the JavaScript main thread.
     rt.spawn(async move {
         // Inside this block, it is possible to `await` Rust `Future`
-        let opts = Opts::new(network, data_dir).expect("valid options");
+        let opts = Opts::new(network, data_dir, port).expect("valid options");
         let result = taker::run(opts).await;
 
         // Settle the promise from the result of a closure. JavaScript exceptions

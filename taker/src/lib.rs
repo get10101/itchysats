@@ -182,7 +182,7 @@ impl Opts {
     }
 
     // use this method to construct the options from parameters.
-    pub fn new(network: String, data_dir: String) -> Result<Self> {
+    pub fn new(network: String, data_dir: String, port: u16) -> Result<Self> {
         let network = PublicNetwork::from_str(&network)?;
 
         let maker = Self::maker_url(&network);
@@ -193,7 +193,7 @@ impl Opts {
             maker: Some(maker),
             maker_id: Some(maker_id),
             maker_peer_id: Some(maker_peer_id),
-            http_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8000),
+            http_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
             data_dir: Some(PathBuf::from(data_dir)),
             json: false,
             json_span_list: false,
