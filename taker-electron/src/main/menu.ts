@@ -47,17 +47,17 @@ export default class MenuBuilder {
 
     buildDarwinTemplate(): MenuItemConstructorOptions[] {
         const subMenuAbout: DarwinMenuItemConstructorOptions = {
-            label: "Electron",
+            label: "ItchySats",
             submenu: [
                 {
-                    label: "About ElectronReact",
+                    label: "About ItchySats",
                     selector: "orderFrontStandardAboutPanel:",
                 },
                 { type: "separator" },
                 { label: "Services", submenu: [] },
                 { type: "separator" },
                 {
-                    label: "Hide ElectronReact",
+                    label: "Hide ItchySats",
                     accelerator: "Command+H",
                     selector: "hide:",
                 },
@@ -161,6 +161,22 @@ export default class MenuBuilder {
                         );
                     },
                 },
+                {
+                    label: "Join the Community",
+                    click() {
+                        shell.openExternal(
+                            "https://t.me/joinchat/ULycH50PLV1jOTI0",
+                        );
+                    },
+                },
+                {
+                    label: "Ask for Help",
+                    click() {
+                        shell.openExternal(
+                            "https://github.com/itchysats/itchysats/discussions/",
+                        );
+                    },
+                },
             ],
         };
 
@@ -245,6 +261,22 @@ export default class MenuBuilder {
                         click() {
                             shell.openExternal(
                                 "https://github.com/itchysats/itchysats/blob/master/FAQ.md",
+                            );
+                        },
+                    },
+                    {
+                        label: "Join the Community",
+                        click() {
+                            shell.openExternal(
+                                "https://t.me/joinchat/ULycH50PLV1jOTI0",
+                            );
+                        },
+                    },
+                    {
+                        label: "Ask for Help",
+                        click() {
+                            shell.openExternal(
+                                "https://github.com/itchysats/itchysats/discussions/",
                             );
                         },
                     },

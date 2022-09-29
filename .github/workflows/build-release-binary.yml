@@ -91,3 +91,111 @@ jobs:
           asset_path: ./${{ steps.create-archive-name.outputs.archive }}
           asset_name: ${{ steps.create-archive-name.outputs.archive }}
           asset_content_type: application/gzip
+
+  publish_electron_binaries:
+    continue-on-error: true
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            package_arg: --mac --arm64
+            arch: arm64
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            package_arg: --mac
+            target: x86_64-apple-darwin
+            arch: x64
+          - os: windows-latest
+            package_arg: --win --x64
+            target: x86_64-pc-windows-msvc
+            arch: x64
+    defaults:
+      run:
+        working-directory: "taker-electron"
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.ITCHY_GITHUB_TOKEN }}
+
+      - name: Fetch all tags (workaround for https://github.com/actions/checkout/issues/290)
+        run: git fetch --tags --force
+
+      - name: Setup rust toolchain
+        working-directory: "./"
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2.0.0
+
+      - name: Install Protoc for Windows
+        if: matrix.os == 'windows-latest'
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup rust targets for aarch64-apple-darwin
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Install Node and Yarn
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: yarn
+          cache-dependency-path: |
+            taker-frontend/yarn.lock
+            taker-electron/package-lock.json
+
+      - name: Build taker frontend
+        working-directory: taker-frontend
+        shell: bash
+        run: |
+          yarn
+          yarn build
+
+      - name: Bump version in package.json to ${{github.event.inputs.version}}
+        uses: jaywcjlove/github-action-package@main
+        with:
+          path: taker-electron/release/app/package.json
+          data: |
+            {
+              "version": "${{github.event.inputs.version}}"
+            }
+      - name: Install
+        run: |
+          yarn install
+
+      - name: Install-app-deps
+        run: |
+          yarn run build:dll
+
+      - name: Build dll
+        run: |
+          yarn electron-builder -- install-app-deps --arch=${{matrix.arch}}
+          yarn run build:dll
+
+      - name: Build rust files ${{matrix.target}}
+        run: |
+          yarn run build:rust --release --target=${{matrix.target}}
+
+      - name: Build electron files main
+        run: |
+          yarn run build:main
+      - name: Build electron files rendered
+        run: |
+          yarn run build:renderer
+
+      - name: Publish releases
+        env:
+          # These values are used for auto updates signing
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # This is used for uploading release assets to github
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          yarn electron-builder -- --publish always ${{matrix.package_arg}}

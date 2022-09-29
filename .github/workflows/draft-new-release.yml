@@ -40,6 +40,23 @@ jobs:
           version: ${{ github.event.inputs.version }}
           manifest: daemon/Cargo.toml
 
+      - name: Bump version for taker-electron build file
+        uses: jaywcjlove/github-action-package@main
+        with:
+          path: taker-electron/release/app/package.json
+          data: |
+            {
+              "version": "${{github.event.inputs.version}}"
+            }
+      - name: Bump version for taker-electron package file
+        uses: jaywcjlove/github-action-package@main
+        with:
+          path: taker-electron/package.json
+          data: |
+            {
+              "version": "${{github.event.inputs.version}}"
+            }
+
       - name: Update Cargo.lock
         run: cargo update --workspace
 
@@ -49,7 +66,7 @@ jobs:
           curl -fsSL https://dprint.dev/install.sh | sh
           /home/runner/.dprint/bin/dprint fmt
 
-          git add CHANGELOG.md Cargo.lock daemon/Cargo.toml
+          git add CHANGELOG.md Cargo.lock daemon/Cargo.toml taker-electron/package.json taker-electron/release/app/package.json
           git commit --message "Prepare release ${{ github.event.inputs.version }}"
 
           echo "::set-output name=commit::$(git rev-parse HEAD)"
