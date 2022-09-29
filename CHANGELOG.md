@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2022-09-29
+
 ### Added
 
 - Support for `/itchysats/rollover/3.0.0`. This fixes a bug where inverse payout curves where capped at double the value of the initial price.
@@ -17,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Breaking change: with bdk>0.20 key derivations will take into account the network, i.e. for mainnet it uses `m/84'/0'/0'` and for testnet/regtest it uses `m/84'/1'/0'`. This was caused by https://github.com/bitcoindevkit/bdk/pull/585. If you want to withdraw your testnet funds make sure to use the withdraw functionality prior upgrading to a different wallet or return them to the faucet. Existing mainnet wallets are not affected.
+- Breaking change: with bdk>0.20 key derivations will take into account the network, i.e. for mainnet it uses `m/84'/0'/0'` and for testnet/regtest it uses `m/84'/1'/0'`. This was caused by <https://github.com/bitcoindevkit/bdk/pull/585>. If you want to withdraw your testnet funds make sure to use the withdraw functionality prior upgrading to a different wallet or return them to the faucet. Existing mainnet wallets are not affected.
 - Breaking change: Rename `--umbrel-seed` to `--app-seed`. Integration with Umbrel and other environments might be affected. This is unlikely to affect regular users, as this parameter is not used outside such environments.
 - Breaking change: Specify the maker port of libp2p connection instead of legacy connection (only relevant if port was specified manually; port should be incremented by 1)
 - Drop support for `/itchysats/rollover/1.0.0`.
@@ -344,7 +346,8 @@ Backport <https://github.com/itchysats/itchysats/pull/924> in an attempt to fix 
 
 Initial release for mainnet.
 
-[Unreleased]: https://github.com/itchysats/itchysats/compare/0.6.1...HEAD
+[Unreleased]: https://github.com/itchysats/itchysats/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/itchysats/itchysats/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/itchysats/itchysats/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/itchysats/itchysats/compare/0.5.5...0.6.0
 [0.5.5]: https://github.com/itchysats/itchysats/compare/0.5.4...0.5.5
