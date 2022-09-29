@@ -18,7 +18,10 @@
     "maker-frontend/dist",
     "taker-frontend/dist",
     "**/node_modules",
-    "rocket-cookie-auth/example-http-cookie-auth.sql"
+    "rocket-cookie-auth/example-http-cookie-auth.sql",
+    "**/dist",
+    "**/build",
+    "taker-electron/testnet"
   ],
   "plugins": [
     "https://plugins.dprint.dev/markdown-0.13.0.wasm",

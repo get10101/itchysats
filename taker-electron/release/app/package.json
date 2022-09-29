@@ -1,0 +1,13 @@
+{
+  "version": "0.6.2",
+  "name": "itchysats-desktop",
+  "description": "Trade CFDs on Bitcoin peer-to-peer and non-custodial",
+  "author": "hello@itchysats.network",
+  "main": "./dist/main/main.js",
+  "scripts": {
+    "electron-rebuild": "node -r ts-node/register ../../.erb/scripts/electron-rebuild.js",
+    "postinstall": "npm run electron-rebuild && npm run link-modules",
+    "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
+  },
+  "dependencies": {}
+}
