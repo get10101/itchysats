@@ -16,7 +16,6 @@
     "**/target",
     "**/sqlx-data.json",
     "**/node_modules",
-    "rocket-cookie-auth/example-http-cookie-auth.sql",
     "**/dist",
     "**/build"
   ],
