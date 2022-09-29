@@ -23,7 +23,6 @@ use shared_bin::catchers::default_catchers;
 use shared_bin::cli::Withdraw;
 use shared_bin::fairings;
 use shared_bin::logger;
-use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio_extras::Tasks;
 use xtras::supervisor::always_restart;
@@ -119,13 +118,9 @@ async fn main() -> Result<()> {
     let db =
         sqlite_db::connect(data_dir.join("maker.sqlite"), opts.ignore_migration_errors).await?;
 
-    let blocked_peers = load_blocked_peers(&data_dir).await.unwrap_or_else(|err| {
-        tracing::error!(
-            %err,
-            "Error loading blocked peers list; ignoring and allowing all connections",
-        );
-        HashSet::default()
-    });
+    let blocked_peers = load_blocked_peers(&data_dir)
+        .await
+        .context("Failed to load blocked peers")?;
 
     // Create actors
     let endpoint_listen =
