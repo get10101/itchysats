@@ -70,6 +70,10 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo clippy --all-targets -- -D warnings
 
   lint-commits:
@@ -125,6 +129,10 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - name: Build and archive tests
@@ -175,6 +183,10 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo build --bin maker --bin taker
       - name: Smoke testing maker for ${{ matrix.os }} binary
         shell: bash
@@ -207,7 +219,10 @@ jobs:
       - name: Setup rust toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2.0.0
-
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install compiler for aarch64 arch
         run: |
           sudo apt-get update
