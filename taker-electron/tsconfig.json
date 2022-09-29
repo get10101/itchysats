@@ -1,15 +1,26 @@
 {
   "compilerOptions": {
+    "incremental": true,
+    "target": "es2021",
     "module": "commonjs",
-    "noImplicitAny": true,
+    "lib": ["dom", "es2021"],
+    "declaration": true,
+    "declarationMap": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "pretty": true,
     "sourceMap": true,
-    "outDir": "dist",
-    "baseUrl": ".",
-    "paths": {
-      "*": ["node_modules/*"]
-    }
+    "baseUrl": "./src",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "outDir": "release/app/dist"
   },
-  "include": [
-    "src/**/*"
-  ]
+  "exclude": ["test", "release/build", "release/app/dist", ".erb/dll"]
 }

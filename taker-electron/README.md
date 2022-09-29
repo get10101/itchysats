@@ -18,12 +18,14 @@ The following command will start the taker daemon in an electron environment.
 yarn start
 ```
 
+Note: make sure you've built `taker-frontend` in [../taker-frontend](../taker-frontend).
+
 ## How to package the project
 
 The following command will package the itchysats electron app based on your host platform for the architectures x64 and arm64.
 
 ```bash
-yarn make
+yarn package
 ```
 
 ## FAQ
