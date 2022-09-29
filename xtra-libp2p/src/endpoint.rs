@@ -538,7 +538,7 @@ impl Endpoint {
                                             })?;
 
                                         if blocked_peers.contains(&peer_id) {
-                                            tracing::info!(
+                                            tracing::trace!(
                                                 target: "blocked_peers",
                                                 peer_id = %peer_id, // Weird but required
                                                 "Blocked peer from connecting"
