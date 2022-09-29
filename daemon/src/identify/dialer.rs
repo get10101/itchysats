@@ -77,7 +77,15 @@ impl Actor {
         let daemon_version = peer_info.daemon_version.clone();
         let environment = peer_info.environment;
 
-        tracing::info!(%peer_id, %daemon_version, %environment, %wire_version, "New identify message received");
+        tracing::info!(
+            %peer_id,
+            %daemon_version,
+            %environment,
+            %wire_version,
+            protocols = ?peer_info.protocols,
+            "New identify message received"
+        );
+
         if self.peer_infos.insert(peer_id, peer_info.clone()).is_none() {
             // Only increment if we don't know the peer info already because sometimes we are not
             // notified about ConnectionDropped
