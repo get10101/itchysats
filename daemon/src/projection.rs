@@ -411,7 +411,7 @@ impl Cfd {
                 tx_url_list: HashSet::new(),
             },
             expiry_timestamp: None,
-            counterparty: counterparty_peer_id.expect("peer ID to be present"),
+            counterparty: counterparty_peer_id.unwrap_or_else(PeerId::placeholder),
             pending_settlement_proposal_price: None,
             aggregated: Aggregated::new(fee_account),
             network,
