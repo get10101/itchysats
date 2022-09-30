@@ -47,6 +47,7 @@ export function AuthProvider({
             .then(({ authenticated, first_login }: Authenticated) => {
                 setAuthenticated(authenticated);
                 setFirstLogin(first_login);
+                localStorage.setItem("oldUser", "true");
             })
             .catch((_error) => {
                 setAuthenticated(false);

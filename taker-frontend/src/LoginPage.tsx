@@ -11,7 +11,7 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
-import { FormEvent } from "react";
+import { FormEvent, useEffect } from "react";
 import { useState } from "react";
 import useAuth from "./authentication/useAuth";
 import logo from "./images/logo.svg";
@@ -20,7 +20,15 @@ export default function Login() {
     const { login, loading, error } = useAuth();
     const [show, setShow] = useState(false);
     const handleClick = () => setShow(!show);
-    const [password, setPassword] = useState("");
+
+    const [password, setPassword] = useState("weareallsatoshi");
+
+    useEffect(() => {
+        if (localStorage.getItem("oldUser") != null) {
+            console.log("Not a new user, no need to prefill the default password");
+            setPassword("");
+        }
+    }, []);
 
     function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
