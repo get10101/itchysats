@@ -113,5 +113,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           # This is used for uploading release assets to github
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Enforce that electron-builder does not skip publication if the release was created more than two hours ago
+          EP_GH_IGNORE_TIME: true
         run: |
           yarn electron-builder -- --publish always ${{matrix.package_arg}}
