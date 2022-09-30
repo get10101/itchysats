@@ -156,13 +156,13 @@ jobs:
           yarn
           yarn build
 
-      - name: Bump version in package.json to ${{github.event.inputs.version}}
+      - name: Bump version in package.json to ${{ github.event.release.tag_name }}
         uses: jaywcjlove/github-action-package@main
         with:
           path: taker-electron/release/app/package.json
           data: |
             {
-              "version": "${{github.event.inputs.version}}"
+              "version": "${{ github.event.release.tag_name }}"
             }
       - name: Install
         run: |
