@@ -250,7 +250,7 @@ pub struct MarginResponse {
 }
 
 #[derive(RustEmbed)]
-#[folder = "../taker-frontend/dist/taker"]
+#[folder = "../../taker-frontend/dist/taker"]
 struct Asset;
 
 #[rocket::get("/assets/<file..>")]

@@ -18,7 +18,7 @@ The following command will start the taker daemon in an electron environment.
 yarn start
 ```
 
-Note: make sure you've built `taker-frontend` in [../taker-frontend](../taker-frontend).
+Note: make sure you've built `taker-frontend` in [../../taker-frontend](../../taker-frontend).
 
 ## How to package the project
 
