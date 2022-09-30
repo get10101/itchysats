@@ -14,8 +14,8 @@ console-subscriber = "0.1.8"
 daemon = { path = "../daemon" }
 http-api-problem = { version = "0.55.0", features = ["rocket"] }
 model = { path = "../model" }
-opentelemetry = { version = "0.17.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.10.0" }
+opentelemetry = { version = "0.18.0", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.11.0"
 ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json"] }
@@ -23,7 +23,7 @@ serde = { version = "1", features = ["derive"] }
 time = "0.3.14"
 tracing = { version = "0.1" }
 tracing-appender = "0.2.2"
-tracing-opentelemetry = "0.17.4"
+tracing-opentelemetry = "0.18.0"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "local-time", "tracing-log", "json"] }
 webbrowser = "0.8.0"
 xtras = { path = "../xtras" }
