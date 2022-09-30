@@ -8,6 +8,7 @@ import {
     Input,
     InputGroup,
     InputRightElement,
+    Text,
     VStack,
 } from "@chakra-ui/react";
 import * as React from "react";
@@ -39,34 +40,40 @@ export default function ChangePassword() {
             <Flex justifyContent={"center"} alignItems={"center"} height={"100vh"}>
                 <VStack spacing="6">
                     <Heading>Please change your password</Heading>
-                    <InputGroup size="md">
-                        <Input
-                            pr="4.5rem"
-                            type={showPw1 ? "text" : "password"}
-                            placeholder="Enter password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                        <InputRightElement width="4.5rem">
-                            <Button h="1.75rem" size="sm" onClick={handlePw1Click}>
-                                {showPw1 ? "Hide" : "Show"}
-                            </Button>
-                        </InputRightElement>
-                    </InputGroup>
-                    <InputGroup size="md">
-                        <Input
-                            pr="4.5rem"
-                            type={showPw2 ? "text" : "password"}
-                            placeholder="Confirm password"
-                            value={confirmedPassword}
-                            onChange={(e) => setConfirmedPassword(e.target.value)}
-                        />
-                        <InputRightElement width="4.5rem">
-                            <Button h="1.75rem" size="sm" onClick={handlePw2Click}>
-                                {showPw2 ? "Hide" : "Show"}
-                            </Button>
-                        </InputRightElement>
-                    </InputGroup>
+                    <Text as={"i"} align={"center"}>
+                        Remember to store this password securely.<br />
+                        It is your only way into ItchySats!
+                    </Text>
+                    <VStack>
+                        <InputGroup size="md">
+                            <Input
+                                pr="4.5rem"
+                                type={showPw1 ? "text" : "password"}
+                                placeholder="Enter password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                            <InputRightElement width="4.5rem">
+                                <Button h="1.75rem" size="sm" onClick={handlePw1Click}>
+                                    {showPw1 ? "Hide" : "Show"}
+                                </Button>
+                            </InputRightElement>
+                        </InputGroup>
+                        <InputGroup size="md">
+                            <Input
+                                pr="4.5rem"
+                                type={showPw2 ? "text" : "password"}
+                                placeholder="Confirm password"
+                                value={confirmedPassword}
+                                onChange={(e) => setConfirmedPassword(e.target.value)}
+                            />
+                            <InputRightElement width="4.5rem">
+                                <Button h="1.75rem" size="sm" onClick={handlePw2Click}>
+                                    {showPw2 ? "Hide" : "Show"}
+                                </Button>
+                            </InputRightElement>
+                        </InputGroup>
+                    </VStack>
 
                     <Button disabled={loading} variant={"solid"} colorScheme={"blue"} isLoading={loading} type="submit">
                         Submit
