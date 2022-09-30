@@ -35,7 +35,7 @@
     "file-saver": "^2.0.5",
     "framer-motion": "^7.5.0",
     "jest": "^29.1.2",
-    "jest-environment-jsdom": "^29.0.3",
+    "jest-environment-jsdom": "^29.1.2",
     "npm-package-json-lint": "^6.3.0",
     "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
