@@ -1,5 +1,3 @@
-/* eslint global-require: off, no-console: off, promise/always-return: off */
-
 /**
  * This module executes inside of electron's main process. You can start
  * electron renderer process from here and communicate with the other processes
@@ -10,12 +8,12 @@
  */
 import { app, BrowserWindow, net, shell } from "electron";
 import log from "electron-log";
+import { AddressInfo } from "net";
 import nodenet from "node:net";
 import path from "path";
 import MenuBuilder from "./menu";
 import { resolveHtmlPath } from "./util";
-import {AddressInfo} from "net";
-// eslint-disable-next-line import/no-unresolved
+/* eslint @typescript-eslint/no-var-requires: "off" */
 const { itchysats } = require("../../index.node");
 
 let mainWindow: BrowserWindow | null = null;
@@ -197,7 +195,6 @@ app
         log.info(`ItchySats Port: ${itchySatsPort}`);
 
         // start itchysats taker on random ports
-        // eslint-disable-next-line promise/no-nesting
         itchysats(network, dataDir, itchySatsPort)
             .then(() => log.info("Stopped ItchySats."))
             .catch((error: Error) => log.error(error));
