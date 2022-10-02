@@ -906,7 +906,7 @@ impl Taker {
             projection_actor,
             maker_identity,
             maker_multiaddr.clone(),
-            Environment::Test,
+            Environment::new("test"),
         )
         .unwrap();
 

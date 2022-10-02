@@ -284,7 +284,7 @@ where
             move || {
                 identify::listener::Actor::new(
                     daemon::version(),
-                    Environment::Unknown,
+                    Environment::unknown(),
                     identity.public(),
                     HashSet::from([listen_multiaddr.clone()]),
                     MAKER_LISTEN_PROTOCOLS.into(),

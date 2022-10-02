@@ -65,14 +65,14 @@ mod tests {
     async fn both_parties_request_identify_info_on_connection_established() {
         let (maker_peer_id, maker_endpoint, maker_receiver) = create_endpoint_with_identify(
             "0.4.22".to_string(),
-            Environment::Unknown,
+            Environment::unknown(),
             Keypair::generate_ed25519().public(),
             HashSet::new(),
             HashSet::from(["some_maker_protocol".to_string()]),
         );
         let (_, taker_endpoint, taker_receiver) = create_endpoint_with_identify(
             "0.4.22".to_string(),
-            Environment::Umbrel,
+            Environment::new("umbrel"),
             Keypair::generate_ed25519().public(),
             HashSet::new(),
             HashSet::from(["some_taker_protocol".to_string()]),
@@ -101,14 +101,14 @@ mod tests {
         let expected_maker_peer_info = PeerInfo {
             wire_version: "0.3.0".to_string(),
             daemon_version: "0.4.22".to_string(),
-            environment: Environment::Unknown,
+            environment: Environment::unknown(),
             protocols: HashSet::from(["some_maker_protocol".to_string()]),
         };
 
         let expected_taker_peer_info = PeerInfo {
             wire_version: "0.3.0".to_string(),
             daemon_version: "0.4.22".to_string(),
-            environment: Environment::Umbrel,
+            environment: Environment::new("umbrel"),
             protocols: HashSet::from(["some_taker_protocol".to_string()]),
         };
 

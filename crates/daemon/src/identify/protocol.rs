@@ -12,6 +12,7 @@ use libp2p_core::identity::PublicKey;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashSet;
+use std::string::ToString;
 use std::time::Duration;
 use tokio_extras::FutureExt;
 
@@ -64,7 +65,10 @@ impl IdentifyMsg {
     }
 
     pub fn environment(&self) -> Environment {
-        self.environment.unwrap_or(Environment::Unknown)
+        self.environment
+            .as_ref()
+            .unwrap_or(&Environment::unknown())
+            .clone()
     }
 
     pub fn wire_version(&self) -> String {
@@ -106,54 +110,28 @@ where
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub enum Environment {
-    Umbrel,
-    RaspiBlitz,
-    Citadel,
-    Start9,
-    MyNode,
-    Docker,
-    Binary,
-    Electron,
-    Test,
-    Legacy,
-    Unknown,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Environment(String);
+
+impl Environment {
+    pub fn new(val: &str) -> Self {
+        Self(val.to_string().to_lowercase())
+    }
+
+    pub fn unknown() -> Self {
+        Self("unknown".to_string())
+    }
 }
 
 impl From<crate::Environment> for Environment {
     fn from(environment: crate::Environment) -> Self {
-        match environment {
-            crate::Environment::Umbrel => Environment::Umbrel,
-            crate::Environment::RaspiBlitz => Environment::RaspiBlitz,
-            crate::Environment::Citadel => Environment::Citadel,
-            crate::Environment::Start9 => Environment::Start9,
-            crate::Environment::MyNode => Environment::MyNode,
-            crate::Environment::Docker => Environment::Docker,
-            crate::Environment::Binary => Environment::Binary,
-            crate::Environment::Electron => Environment::Electron,
-            crate::Environment::Test => Environment::Test,
-            crate::Environment::Legacy => Environment::Legacy,
-            crate::Environment::Unknown => Environment::Unknown,
-        }
+        Self(environment.as_string())
     }
 }
 
 impl From<Environment> for crate::Environment {
     fn from(environment: Environment) -> Self {
-        match environment {
-            Environment::Umbrel => crate::Environment::Umbrel,
-            Environment::RaspiBlitz => crate::Environment::RaspiBlitz,
-            Environment::Citadel => crate::Environment::Citadel,
-            Environment::Start9 => crate::Environment::Start9,
-            Environment::MyNode => crate::Environment::MyNode,
-            Environment::Docker => crate::Environment::Docker,
-            Environment::Binary => crate::Environment::Binary,
-            Environment::Electron => crate::Environment::Electron,
-            Environment::Test => crate::Environment::Test,
-            Environment::Legacy => crate::Environment::Legacy,
-            Environment::Unknown => crate::Environment::Unknown,
-        }
+        crate::Environment::new(environment.0.as_str())
     }
 }
 
@@ -166,7 +144,7 @@ mod tests {
     fn extract_daemon_version() {
         let msg = IdentifyMsg::new(
             "0.4.3".to_string(),
-            Environment::Umbrel,
+            Environment::unknown(),
             Keypair::generate_ed25519().public(),
             HashSet::new(),
             Multiaddr::empty(),

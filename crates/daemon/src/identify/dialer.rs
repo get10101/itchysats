@@ -75,7 +75,7 @@ impl Actor {
 
         let wire_version = peer_info.wire_version.clone();
         let daemon_version = peer_info.daemon_version.clone();
-        let environment = peer_info.environment;
+        let environment = peer_info.environment.clone();
 
         tracing::info!(
             %peer_id,

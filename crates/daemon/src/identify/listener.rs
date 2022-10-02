@@ -44,7 +44,7 @@ impl Actor {
         //  connection
         let identify_msg = protocol::IdentifyMsg::new(
             self.daemon_version.clone(),
-            self.environment.into(),
+            self.environment.clone().into(),
             self.identity.clone(),
             self.listen_addrs.clone(),
             Multiaddr::empty(),
