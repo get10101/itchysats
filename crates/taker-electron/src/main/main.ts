@@ -14,6 +14,7 @@ import nodenet from "node:net";
 import path from "path";
 import MenuBuilder from "./menu";
 import { resolveHtmlPath } from "./util";
+import {AddressInfo} from "net";
 // eslint-disable-next-line import/no-unresolved
 const { itchysats } = require("../../index.node");
 
@@ -167,7 +168,7 @@ const checkAvailablePort = (port: number): Promise<number> =>
         server.on("error", reject);
         log.debug(`Trying port: ${port}`);
         server.listen({ port, host: "127.0.0.1" }, () => {
-            const { port: serverPort } = <any> server.address();
+            const { port: serverPort } = <AddressInfo> server.address();
             server.close(() => {
                 log.debug(`Found open port: ${serverPort}!`);
                 resolve(serverPort);
