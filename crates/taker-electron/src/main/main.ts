@@ -167,10 +167,10 @@ const checkAvailablePort = (port: number): Promise<number> =>
         server.on("error", reject);
         log.debug(`Trying port: ${port}`);
         server.listen({ port, host: "127.0.0.1" }, () => {
-            const { port } = <any> server.address();
+            const { port: serverPort } = <any> server.address();
             server.close(() => {
-                log.debug(`Found open port: ${port}!`);
-                resolve(port);
+                log.debug(`Found open port: ${serverPort}!`);
+                resolve(serverPort);
             });
         });
     });
