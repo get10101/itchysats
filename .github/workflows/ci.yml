@@ -112,7 +112,6 @@ jobs:
       - run: yarn install
       - run: yarn run eslint
       - run: yarn run tsc
-      - run: yarn run npmPkgJsonLint .
       - run: yarn run test
       - run: yarn run build
 
