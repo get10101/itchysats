@@ -137,13 +137,13 @@ app.on("window-all-closed", () => {
 // retry checking random `itchySatsPort` by the given amount of max retries.
 const retry = (
     maxRetries: number,
-    fn: (port: number) => Promise<number>,
+    checkPort: (port: number) => Promise<number>,
     port: number,
 ): Promise<number> => {
     const minPort = 10_000;
     const maxPort = 65_535;
 
-    return fn(port).catch((err) => {
+    return checkPort(port).catch((err) => {
         log.info(
             `Port: ${port} is not available retrying another random port. Retries: ${maxRetries}`,
         );
@@ -153,7 +153,7 @@ const retry = (
         }
         return retry(
             maxRetries - 1,
-            fn,
+            checkPort,
             Math.floor(Math.random() * (maxPort - minPort + 1) + minPort),
         );
     });
