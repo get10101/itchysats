@@ -143,7 +143,7 @@ const retry = (
     const minPort = 10_000;
     const maxPort = 65_535;
 
-    return fn(port).catch(function(err) {
+    return fn(port).catch((err) => {
         log.info(
             `Port: ${port} is not available retrying another random port. Retries: ${maxRetries}`,
         );
