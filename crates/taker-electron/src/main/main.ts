@@ -18,7 +18,7 @@ import { resolveHtmlPath } from "./util";
 const { itchysats } = require("../../index.node");
 
 let mainWindow: BrowserWindow | null = null;
-let port = 8000;
+let itchySatsPort = 8000;
 
 if (process.env.NODE_ENV === "production") {
     const sourceMapSupport = require("source-map-support");
@@ -45,8 +45,8 @@ const installExtensions = async () => {
 };
 
 const alive = (timeout: number) => {
-    log.info(`Probing if ItchySats is alive at http://127.0.0.1:${port}`);
-    const request = net.request(`http://127.0.0.1:${port}`);
+    log.info(`Probing if ItchySats is alive at http://127.0.0.1:${itchySatsPort}`);
+    const request = net.request(`http://127.0.0.1:${itchySatsPort}`);
     request.on("response", () => {
         if (!mainWindow) {
             log.error("Main window not defined. Terminating");
@@ -55,7 +55,7 @@ const alive = (timeout: number) => {
         log.log("ItchySats is available!");
         log.debug("Loading ItchySats into browser window.");
         mainWindow
-            .loadURL(`http://127.0.0.1:${port}`)
+            .loadURL(`http://127.0.0.1:${itchySatsPort}`)
             .then(() => {
                 log.info("Successfully loaded ItchySats!");
             })
@@ -134,7 +134,7 @@ app.on("window-all-closed", () => {
     }
 });
 
-// retry checking random port by the given amount of max retries.
+// retry checking random `itchySatsPort` by the given amount of max retries.
 const retry = (
     maxRetries: number,
     fn: (port: number) => Promise<number>,
@@ -159,7 +159,7 @@ const retry = (
     });
 };
 
-// checks if the provided port is already taken on the localhost.
+// checks if the provided `itchySatsPort` is already taken on the localhost.
 const checkAvailablePort = (port: number): Promise<number> =>
     new Promise((resolve, reject) => {
         const server = nodenet.createServer();
@@ -186,18 +186,18 @@ app
         const dataDir = app.isPackaged ? app.getPath("userData") : app.getAppPath();
         const network = app.isPackaged ? "mainnet" : "testnet";
 
-        // try to pick the standard port and retry random ports if not available.
-        port = await retry(5, checkAvailablePort, 7113);
+        // try to pick the standard `itchySatsPort` and retry random ports if not available.
+        itchySatsPort = await retry(5, checkAvailablePort, 7113);
 
         log.info("Starting ItchySats ...");
         log.info(`Network: ${network}`);
         log.info(`Data Dir: ${dataDir}`);
         log.info(`Platform: ${process.platform}`);
-        log.info(`Port: ${port}`);
+        log.info(`ItchySats Port: ${itchySatsPort}`);
 
         // start itchysats taker on random ports
         // eslint-disable-next-line promise/no-nesting
-        itchysats(network, dataDir, port)
+        itchysats(network, dataDir, itchySatsPort)
             .then(() => log.info("Stopped ItchySats."))
             .catch((error: Error) => log.error(error));
 
