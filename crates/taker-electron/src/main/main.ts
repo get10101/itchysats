@@ -135,17 +135,27 @@ app.on("window-all-closed", () => {
 });
 
 // retry checking random port by the given amount of max retries.
-const retry = (maxRetries: number, fn: (port: number) => Promise<number>, port: number): Promise<number> => {
+const retry = (
+    maxRetries: number,
+    fn: (port: number) => Promise<number>,
+    port: number,
+): Promise<number> => {
     const minPort = 10_000;
     const maxPort = 65_535;
 
     return fn(port).catch(function(err) {
-        log.info(`Port: ${port} is not available retrying another random port. Retries: ${maxRetries}`);
+        log.info(
+            `Port: ${port} is not available retrying another random port. Retries: ${maxRetries}`,
+        );
         if (maxRetries <= 0) {
             log.error(`Reached max amount of retries. quitting.`);
             throw err;
         }
-        return retry(maxRetries - 1, fn, Math.floor(Math.random() * (maxPort - minPort + 1) + minPort));
+        return retry(
+            maxRetries - 1,
+            fn,
+            Math.floor(Math.random() * (maxPort - minPort + 1) + minPort),
+        );
     });
 };
 
@@ -165,33 +175,36 @@ const checkAvailablePort = (port: number): Promise<number> =>
         });
     });
 
-app.whenReady().then(async () => {
-    await createWindow();
-    log.debug("Waiting for ItchySats to become available.");
+app
+    .whenReady()
+    .then(async () => {
+        await createWindow();
+        log.debug("Waiting for ItchySats to become available.");
 
-    process.env.ITCHYSATS_ENV = "electron";
+        process.env.ITCHYSATS_ENV = "electron";
 
-    const dataDir = app.isPackaged ? app.getPath("userData") : app.getAppPath();
-    const network = app.isPackaged ? "mainnet" : "testnet";
+        const dataDir = app.isPackaged ? app.getPath("userData") : app.getAppPath();
+        const network = app.isPackaged ? "mainnet" : "testnet";
 
-    // try to pick the standard port and retry random ports if not available.
-    port = await retry(5, checkAvailablePort, 7113);
+        // try to pick the standard port and retry random ports if not available.
+        port = await retry(5, checkAvailablePort, 7113);
 
-    log.info("Starting ItchySats ...");
-    log.info(`Network: ${network}`);
-    log.info(`Data Dir: ${dataDir}`);
-    log.info(`Platform: ${process.platform}`);
-    log.info(`Port: ${port}`);
+        log.info("Starting ItchySats ...");
+        log.info(`Network: ${network}`);
+        log.info(`Data Dir: ${dataDir}`);
+        log.info(`Platform: ${process.platform}`);
+        log.info(`Port: ${port}`);
 
-    // start itchysats taker on random ports
-    // eslint-disable-next-line promise/no-nesting
-    itchysats(network, dataDir, port)
-        .then(() => log.info("Stopped ItchySats."))
-        .catch((error: Error) => log.error(error));
+        // start itchysats taker on random ports
+        // eslint-disable-next-line promise/no-nesting
+        itchysats(network, dataDir, port)
+            .then(() => log.info("Stopped ItchySats."))
+            .catch((error: Error) => log.error(error));
 
-    app.on("activate", () => {
-        // On macOS it's common to re-create a window in the app when the
-        // dock icon is clicked and there are no other windows open.
-        if (mainWindow === null) createWindow();
-    });
-}).catch(console.log);
+        app.on("activate", () => {
+            // On macOS it's common to re-create a window in the app when the
+            // dock icon is clicked and there are no other windows open.
+            if (mainWindow === null) createWindow();
+        });
+    })
+    .catch(console.log);

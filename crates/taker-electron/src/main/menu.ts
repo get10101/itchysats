@@ -164,9 +164,7 @@ export default class MenuBuilder {
                 {
                     label: "Join the Community",
                     click() {
-                        shell.openExternal(
-                            "https://t.me/joinchat/ULycH50PLV1jOTI0",
-                        );
+                        shell.openExternal("https://t.me/joinchat/ULycH50PLV1jOTI0");
                     },
                 },
                 {
@@ -267,9 +265,7 @@ export default class MenuBuilder {
                     {
                         label: "Join the Community",
                         click() {
-                            shell.openExternal(
-                                "https://t.me/joinchat/ULycH50PLV1jOTI0",
-                            );
+                            shell.openExternal("https://t.me/joinchat/ULycH50PLV1jOTI0");
                         },
                     },
                     {
