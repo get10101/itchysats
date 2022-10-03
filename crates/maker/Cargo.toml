@@ -8,7 +8,7 @@ publish = false
 anyhow = "1"
 async-trait = "0.1.57"
 bdk = { version = "0.21.0", default-features = false, features = ["electrum"] }
-clap = { version = "3", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 conquer-once = "0.3"
 daemon = { path = "../daemon" }
 futures = { version = "0.3", default-features = false, features = ["std"] }

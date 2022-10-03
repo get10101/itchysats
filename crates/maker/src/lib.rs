@@ -17,7 +17,7 @@ pub mod cfd;
 mod metrics;
 pub mod routes;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Password(String);
 
 impl From<[u8; 32]> for Password {

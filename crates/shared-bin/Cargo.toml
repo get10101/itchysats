@@ -9,7 +9,7 @@ description = "Code that is shared between the daemons but application specific 
 anyhow = "1"
 atty = "0.2"
 bitmex-stream = { path = "../bitmex-stream" }
-clap = { version = "3", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 console-subscriber = "0.1.8"
 daemon = { path = "../daemon" }
 http-api-problem = { version = "0.55.0", features = ["rocket"] }

@@ -1,7 +1,7 @@
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use clap::StructOpt;
+use clap::Parser;
 use daemon::bdk::FeeRate;
 use daemon::monitor;
 use daemon::oracle;
