@@ -113,7 +113,7 @@ jobs:
             arch: x64
     defaults:
       run:
-        working-directory: "taker-electron"
+        working-directory: "crates/taker-electron"
 
     steps:
       - name: Checkout tagged commit
@@ -147,7 +147,7 @@ jobs:
           cache: yarn
           cache-dependency-path: |
             taker-frontend/yarn.lock
-            taker-electron/package-lock.json
+            crates/taker-electron/package-lock.json
 
       - name: Build taker frontend
         working-directory: taker-frontend
@@ -159,7 +159,7 @@ jobs:
       - name: Bump version in package.json to ${{ github.event.release.tag_name }}
         uses: jaywcjlove/github-action-package@main
         with:
-          path: taker-electron/release/app/package.json
+          path: crates/taker-electron/release/app/package.json
           data: |
             {
               "version": "${{ github.event.release.tag_name }}"
