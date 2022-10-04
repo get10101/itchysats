@@ -25,6 +25,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      electron: ${{ steps.filter.outputs.electron }}
     steps:
       - uses: actions/checkout@v3
       - uses: dorny/paths-filter@v2
@@ -38,6 +39,8 @@ jobs:
             frontend:
               - 'taker-frontend/**'
               - 'maker-frontend/**'
+            electron:
+              - 'crates/taker-electron/**'
 
   gather_workspace_members:
     runs-on: ubuntu-latest
@@ -112,9 +115,30 @@ jobs:
       - run: yarn install
       - run: yarn run eslint
       - run: yarn run tsc
-      - run: yarn run npmPkgJsonLint .
       - run: yarn run test
       - run: yarn run build
+
+  electron:
+    needs: changes
+    if: ${{ needs.changes.outputs.electron == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/taker-electron
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          cache: "yarn"
+          cache-dependency-path: crates/taker-electron/yarn.lock
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+      - run: yarn install
+      - run: yarn run eslint
+      - run: yarn run tsc
+      - run: yarn run build:rust
+      - run: yarn run build:main
+      - run: yarn run build:renderer
 
   # Builds and archives the test so that they can be run later in multiple jobs
   build-tests:

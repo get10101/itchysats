@@ -1,5 +1,3 @@
-/* eslint global-require: off, no-console: off, promise/always-return: off */
-
 /**
  * This module executes inside of electron's main process. You can start
  * electron renderer process from here and communicate with the other processes
@@ -10,15 +8,16 @@
  */
 import { app, BrowserWindow, net, shell } from "electron";
 import log from "electron-log";
+import { AddressInfo } from "net";
 import nodenet from "node:net";
 import path from "path";
 import MenuBuilder from "./menu";
 import { resolveHtmlPath } from "./util";
-// eslint-disable-next-line import/no-unresolved
+/* eslint @typescript-eslint/no-var-requires: "off" */
 const { itchysats } = require("../../index.node");
 
 let mainWindow: BrowserWindow | null = null;
-let port = 8000;
+let itchySatsPort = 8000;
 
 if (process.env.NODE_ENV === "production") {
     const sourceMapSupport = require("source-map-support");
@@ -45,8 +44,8 @@ const installExtensions = async () => {
 };
 
 const alive = (timeout: number) => {
-    log.info(`Probing if ItchySats is alive at http://127.0.0.1:${port}`);
-    const request = net.request(`http://127.0.0.1:${port}`);
+    log.info(`Probing if ItchySats is alive at http://127.0.0.1:${itchySatsPort}`);
+    const request = net.request(`http://127.0.0.1:${itchySatsPort}`);
     request.on("response", () => {
         if (!mainWindow) {
             log.error("Main window not defined. Terminating");
@@ -55,7 +54,7 @@ const alive = (timeout: number) => {
         log.log("ItchySats is available!");
         log.debug("Loading ItchySats into browser window.");
         mainWindow
-            .loadURL(`http://127.0.0.1:${port}`)
+            .loadURL(`http://127.0.0.1:${itchySatsPort}`)
             .then(() => {
                 log.info("Successfully loaded ItchySats!");
             })
@@ -134,22 +133,32 @@ app.on("window-all-closed", () => {
     }
 });
 
-// retry checking random port by the given amount of max retries.
-const retry = (maxRetries: number, fn: (port: number) => Promise<number>, port: number): Promise<number> => {
+// retry checking random `itchySatsPort` by the given amount of max retries.
+const retry = (
+    maxRetries: number,
+    checkPort: (port: number) => Promise<number>,
+    port: number,
+): Promise<number> => {
     const minPort = 10_000;
     const maxPort = 65_535;
 
-    return fn(port).catch(function(err) {
-        log.info(`Port: ${port} is not available retrying another random port. Retries: ${maxRetries}`);
+    return checkPort(port).catch((err) => {
+        log.info(
+            `Port: ${port} is not available retrying another random port. Retries: ${maxRetries}`,
+        );
         if (maxRetries <= 0) {
             log.error(`Reached max amount of retries. quitting.`);
             throw err;
         }
-        return retry(maxRetries - 1, fn, Math.floor(Math.random() * (maxPort - minPort + 1) + minPort));
+        return retry(
+            maxRetries - 1,
+            checkPort,
+            Math.floor(Math.random() * (maxPort - minPort + 1) + minPort),
+        );
     });
 };
 
-// checks if the provided port is already taken on the localhost.
+// checks if the provided `itchySatsPort` is already taken on the localhost.
 const checkAvailablePort = (port: number): Promise<number> =>
     new Promise((resolve, reject) => {
         const server = nodenet.createServer();
@@ -157,41 +166,43 @@ const checkAvailablePort = (port: number): Promise<number> =>
         server.on("error", reject);
         log.debug(`Trying port: ${port}`);
         server.listen({ port, host: "127.0.0.1" }, () => {
-            const { port } = <any> server.address();
+            const { port: serverPort } = <AddressInfo> server.address();
             server.close(() => {
-                log.debug(`Found open port: ${port}!`);
-                resolve(port);
+                log.debug(`Found open port: ${serverPort}!`);
+                resolve(serverPort);
             });
         });
     });
 
-app.whenReady().then(async () => {
-    await createWindow();
-    log.debug("Waiting for ItchySats to become available.");
+app
+    .whenReady()
+    .then(async () => {
+        await createWindow();
+        log.debug("Waiting for ItchySats to become available.");
 
-    process.env.ITCHYSATS_ENV = "electron";
+        process.env.ITCHYSATS_ENV = "electron";
 
-    const dataDir = app.isPackaged ? app.getPath("userData") : app.getAppPath();
-    const network = app.isPackaged ? "mainnet" : "testnet";
+        const dataDir = app.isPackaged ? app.getPath("userData") : app.getAppPath();
+        const network = app.isPackaged ? "mainnet" : "testnet";
 
-    // try to pick the standard port and retry random ports if not available.
-    port = await retry(5, checkAvailablePort, 7113);
+        // try to pick the standard `itchySatsPort` and retry random ports if not available.
+        itchySatsPort = await retry(5, checkAvailablePort, 7113);
 
-    log.info("Starting ItchySats ...");
-    log.info(`Network: ${network}`);
-    log.info(`Data Dir: ${dataDir}`);
-    log.info(`Platform: ${process.platform}`);
-    log.info(`Port: ${port}`);
+        log.info("Starting ItchySats ...");
+        log.info(`Network: ${network}`);
+        log.info(`Data Dir: ${dataDir}`);
+        log.info(`Platform: ${process.platform}`);
+        log.info(`ItchySats Port: ${itchySatsPort}`);
 
-    // start itchysats taker on random ports
-    // eslint-disable-next-line promise/no-nesting
-    itchysats(network, dataDir, port)
-        .then(() => log.info("Stopped ItchySats."))
-        .catch((error: Error) => log.error(error));
+        // start itchysats taker on random ports
+        itchysats(network, dataDir, itchySatsPort)
+            .then(() => log.info("Stopped ItchySats."))
+            .catch((error: Error) => log.error(error));
 
-    app.on("activate", () => {
-        // On macOS it's common to re-create a window in the app when the
-        // dock icon is clicked and there are no other windows open.
-        if (mainWindow === null) createWindow();
-    });
-}).catch(console.log);
+        app.on("activate", () => {
+            // On macOS it's common to re-create a window in the app when the
+            // dock icon is clicked and there are no other windows open.
+            if (mainWindow === null) createWindow();
+        });
+    })
+    .catch(console.log);
