@@ -298,6 +298,9 @@ impl Endpoint {
             Some(control) => control,
         };
 
+        // Only decrement if the peer was actually found in controls - if not, return above exits
+        TOTAL_PEERS.dec();
+
         // TODO: Evaluate whether dropping and closing has to be in a particular order.
         tokio_extras::spawn(this, async move {
             let _ = control.close().await;
@@ -395,6 +398,8 @@ impl Endpoint {
 
         if self.controls.insert(peer_id, (control, tasks)).is_some() {
             tracing::warn!(%peer_id, "Missed drop event, replacing old connection")
+        } else {
+            TOTAL_PEERS.inc(); // Only increment if peer is new
         }
 
         self.notify_connection_established(peer_id).await;
@@ -796,3 +801,11 @@ pub struct ListenAddressAdded {
 pub struct ListenAddressRemoved {
     pub address: Multiaddr,
 }
+
+static TOTAL_PEERS: conquer_once::Lazy<prometheus::IntGauge> = conquer_once::Lazy::new(|| {
+    prometheus::register_int_gauge!(
+        "libp2p_connections_total",
+        "The number of active libp2p connections.",
+    )
+    .unwrap()
+});
