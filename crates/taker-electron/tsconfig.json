@@ -6,7 +6,7 @@
     "lib": ["dom", "es2021"],
     "declaration": true,
     "declarationMap": true,
-    "jsx": "react-jsx",
+    "jsx": "react",
     "strict": true,
     "pretty": true,
     "sourceMap": true,
