@@ -60,7 +60,7 @@ const TESTNET_MAKER: &str = "testnet.itchysats.network:10000";
 const TESTNET_MAKER_ID: &str = "69a42aa90da8b065b9532b62bff940a3ba07dbbb11d4482c7db83a7e049a9f1e";
 const TESTNET_MAKER_PEER_ID: &str = "12D3KooWEsK2X8Tp24XtyWh7DM65VfwXtNH2cmfs2JsWmkmwKbV1";
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Password(String);
 
 impl From<[u8; 32]> for Password {
@@ -94,7 +94,7 @@ pub struct Opts {
     /// The public key of the maker as a 32 byte hex string.
     ///
     /// If not specified it defaults to the itchysats maker-id for mainnet or testnet.
-    #[clap(long, parse(try_from_str = parse_x25519_pubkey))]
+    #[clap(long, value_parser(parse_x25519_pubkey))]
     maker_id: Option<x25519_dalek::PublicKey>,
 
     /// Maker's peer id, required for establishing libp2p encrypted connection.
@@ -162,7 +162,7 @@ pub struct Opts {
     #[clap(subcommand)]
     network: Option<Network>,
 
-    #[clap(short, long, parse(try_from_str = parse_app_seed))]
+    #[clap(short, long, value_parser(parse_app_seed))]
     app_seed: Option<[u8; 32]>,
 
     /// If provided will be used for internal wallet instead of a random key or app_seed. The

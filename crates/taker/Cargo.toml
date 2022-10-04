@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1"
-clap = { version = "3", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 daemon = { path = "../daemon" }
 hex = "0.4"
 http-api-problem = { version = "0.55.0", features = ["rocket"] }
