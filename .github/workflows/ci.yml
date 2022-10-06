@@ -291,6 +291,7 @@ jobs:
       - run-tests
       - sqlx-db-check
       - frontend
+      - electron
       - smoke_test
       - daemons_arm_build
       - clippy
