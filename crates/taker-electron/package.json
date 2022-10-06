@@ -45,7 +45,7 @@
     "cargo-cp-artifact": "^0.1",
     "chalk": "^4.1.2",
     "concurrently": "^7.3.0",
-    "core-js": "^3.24.1",
+    "core-js": "^3.25.5",
     "cross-env": "^7.0.3",
     "css-loader": "^6.7.1",
     "css-minimizer-webpack-plugin": "^4.0.0",
