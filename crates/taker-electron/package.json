@@ -1,7 +1,7 @@
 {
   "name": "itchysats",
   "version": "0.7.0",
-  "homepage": "https://itcysats.network",
+  "homepage": "https://itchysats.network",
   "description": "A non-custodial peer-to-peer CFD trading tool",
   "author": "hello@itchysats.network",
   "main": "./src/main/main.ts",
