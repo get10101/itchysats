@@ -44,6 +44,6 @@ yarn package
 
 **A:** Depending on your platform itchysats stores the user data in the following directories.
 
-- macos: ~/Library/Application Support/itchysats
-- windows: %APPDATA%\itchysats
-- linux: ~/.config/itchysats
+- macos: ~/Library/Application Support/itchysats-desktop
+- windows: %APPDATA%\itchysats-desktop
+- linux: ~/.config/itchysats-desktop
