@@ -19,7 +19,7 @@
     "@testing-library/dom": "^8.11.1",
     "@testing-library/jest-dom": "^5.15.0",
     "@testing-library/react": "^12.1.2",
-    "@testing-library/user-event": "^12.1.10",
+    "@testing-library/user-event": "^14.4.3",
     "@types/eslint": "^8.2.2",
     "@types/jest": "^29.0.0",
     "@types/node": "^16.11.7",
