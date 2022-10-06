@@ -269,7 +269,7 @@ export default function App() {
                         </CheckboxGroup>
 
                         <GridItem colSpan={2}>
-                            <Divider colSpan={2} />
+                            <Divider />
                         </GridItem>
 
                         <GridItem colSpan={2} textAlign="center">
