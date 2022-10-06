@@ -39,7 +39,7 @@
     "@types/react-dom": "^18.0.6",
     "@types/react-test-renderer": "^18.0.0",
     "@types/webpack-bundle-analyzer": "^4.4.2",
-    "@typescript-eslint/eslint-plugin": "^5.38.1",
+    "@typescript-eslint/eslint-plugin": "^5.39.0",
     "@typescript-eslint/parser": "^5.38.1",
     "browserslist-config-erb": "^0.0.3",
     "cargo-cp-artifact": "^0.1",
