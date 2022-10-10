@@ -94,8 +94,11 @@ To start the local dev-environment all the components can be started at once by 
 ./start_all.sh
 ```
 
-Note: Before first run, you need to run `cd maker-frontend; yarn install; cd../taker-frontend; yarn install` command to ensure that all dependencies get
-installed.
+Note: Before first run, you need to install all dependencies
+
+- Protocol buffers compiler e.g. `brew install protobuf` // see https://docs.rs/prost-build/latest/prost_build/#sourcing-protoc for more details.
+- CMake e.g. `brew install cmake`
+- Maker and taker frontend `cd maker-frontend; yarn install; cd../taker-frontend; yarn install`
 
 The script combines the logs from all binaries inside a single terminal so it
 might not be ideal for all cases, but it is convenient for quick regression testing.
