@@ -98,7 +98,6 @@ Note: Before first run, you need to install all dependencies
 
 - Protocol buffers compiler e.g. `brew install protobuf` // see https://docs.rs/prost-build/latest/prost_build/#sourcing-protoc for more details.
 - CMake e.g. `brew install cmake`
-- Maker and taker frontend `cd maker-frontend; yarn install; cd../taker-frontend; yarn install`
 
 The script combines the logs from all binaries inside a single terminal so it
 might not be ideal for all cases, but it is convenient for quick regression testing.
@@ -121,20 +120,8 @@ Embedded frontend is served on ports `8000` and `8001` by default.
 
 This means that it is highly recommended to build the frontend _before_ the daemons.
 
-##### Taker
-
 ```bash
-cd taker-frontend
-yarn install
-yarn build
-```
-
-##### Maker
-
-```bash
-cd maker-frontend
-yarn install
-yarn build
+./build_frontends.sh
 ```
 
 #### Developing frontend code
