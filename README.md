@@ -11,6 +11,38 @@ Here is some material to read up on DLCs and ItchySats' protocol implementation:
 - [Blogpost](https://comit.network/blog/2022/01/11/cfd-protocol-explained) by @luckysori of the COMIT team, describing the protocol in detail
 - [DLC overview](https://bitcoinops.org/en/topics/discreet-log-contracts/) on Bitcoin Optech for information beyond ItchySats
 
+## Installation
+
+### Bitcoin/Lightning nodes
+
+ItchySats is available on many DIY Bitcoin/Lightning node distributions:
+
+- [RaspiBlitz](https://github.com/rootzoll/raspiblitz#feature-overview)
+- [Umbrel](https://getumbrel.com/)
+- [Citadel](https://runcitadel.space/)
+
+### Desktop App
+
+We package ItchySats as an Electron app for Windows and MacOS.
+The latest release can be found [here](https://github.com/itchysats/itchysats/releases/latest).
+
+### Homebrew (macOS)
+
+We maintain a [homebrew](https://brew.sh/) tap with the latest version of ItchySats.
+
+```sh
+brew tap itchysats/itchysats
+brew install itchysats
+```
+
+After the initial install, homebrew will take care of keeping ItchySats up-to-date.
+
+### Mobile
+
+ItchySats is not available as a full mobile app yet.
+In the meantime, if you'd like to use ItchySats on-the-go, the best way is to install ItchySats on your bitcoin node and use
+[Tailscale](https://tailscale.com/) or connect to your node via Tor.
+
 ## Quickstart: Users / Traders
 
 This guide is for how to use ItchySats as a taker.
@@ -18,20 +50,15 @@ Currently, ItchySats does not officially support multiple makers.
 Please note that trade execution is already fully peer to peer, but there is currently only one maker out there.
 We are working on adding support for maker discovery and trading with multiple makers for a more competitive market.
 
-ItchySats is available in the [Umbrel](getumbrel.com/) appstore.
-ItchySats is available as bonus features on [RaspiBlitz](https://github.com/rootzoll/raspiblitz#feature-overview).
-
-We recommend using ItchySats on Umbrel or RaspiBlitz for the time being.
-
-If you want to try ItchySats without Umbrel you can use the [latest binary](github.com/itchysats/itchysats/releases/latest) or [latest docker container](https://github.com/itchysats/itchysats/pkgs/container/itchysats%2Ftaker) but that might not be as straightforward.
-
 To open a position:
 
-1. Install the App on Umbrel (or start the binary / container)
-2. Transfer funds into the ItchySats wallet
-3. Open a `long` or `short` position - this will lock the funds in a multisig on chain
-4. Wait for the price to move
-5. Close the position - this will spend the locked up funds according to the price
+1. Open ItchySats.
+2. Unlock ItchySats by typing in the default password (`weareallsatoshi` - except for Umbrel, where it depends on its seed and is visible in the AppStore).
+3. Choose your own secure password. Don't forget to store it securely; there's no way to reset it without removing the ItchySats database.
+4. Transfer funds into the ItchySats wallet.
+5. Open a `long` or `short` position - this will lock the funds in a multisig on chain.
+6. Wait for the price to move.
+7. Close the position - this will spend the locked up funds according to the price.
 
 With the current maker you can close positions at any point in time.
 Trades are limited to a contract size between `100` and `1000` contracts.
