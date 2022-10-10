@@ -29,6 +29,6 @@ xtras = { path = "../xtras" }
 rust_decimal = "1.26"
 rust_decimal_macros = "1.26"
 sluice = "0.5"
-time = { version = "0.3.14", features = ["macros"] }
+time = { version = "0.3.15", features = ["macros"] }
 tokio = { version = "1", features = ["macros", "tracing"] }
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

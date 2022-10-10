@@ -44,7 +44,7 @@ sqlx = { version = "0.6.2", features = ["offline", "sqlite", "uuid", "runtime-to
 statrs = "0.16"
 strum = "0.24"
 thiserror = "1"
-time = { version = "0.3.14", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
+time = { version = "0.3.15", features = ["serde", "macros", "parsing", "formatting", "serde-well-known"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "tracing"] }
 tokio-extras = { path = "../tokio-extras", features = ["xtra"] }
 tokio-util = { version = "0.7", features = ["codec"] }
@@ -59,4 +59,4 @@ xtras = { path = "../xtras" }
 
 [dev-dependencies]
 serde_test = "1"
-time = { version = "0.3.14", features = ["std"] }
+time = { version = "0.3.15", features = ["std"] }
