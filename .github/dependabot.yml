@@ -24,15 +24,3 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
-
-  - package-ecosystem: "npm"
-    directory: "/maker-frontend"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: "npm"
-    directory: "/crates/taker-electron"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
