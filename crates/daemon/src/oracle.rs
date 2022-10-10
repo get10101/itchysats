@@ -154,7 +154,10 @@ impl Actor {
             pending_attestations: HashSet::new(),
             executor,
             db,
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQWEST_TIMEOUT)
+                .build()
+                .expect("to build from static arguments"),
         }
     }
 
@@ -237,7 +240,6 @@ impl Actor {
 
                     let response = client
                         .get(url.clone())
-                        .timeout(REQWEST_TIMEOUT)
                         .send()
                         .await
                         .with_context(|| format!("Failed to GET {url}"))?;
