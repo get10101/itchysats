@@ -21,7 +21,6 @@ model = { path = "../model" }
 nonempty = { version = "0.8.0", default-features = false }
 offer = { path = "../xtra-libp2p-offer", package = "xtra-libp2p-offer" }
 ping-pong = { path = "../xtra-libp2p-ping", package = "xtra-libp2p-ping" }
-prometheus = { version = "0.13", default-features = false }
 quiet-spans = { path = "../quiet-spans" }
 rocket = { version = "0.5.0-rc.2", features = ["json", "uuid"] }
 rocket-cookie-auth = { path = "../rocket-cookie-auth" }

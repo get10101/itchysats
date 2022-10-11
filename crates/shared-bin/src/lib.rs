@@ -2,6 +2,7 @@ pub mod catchers;
 pub mod cli;
 pub mod fairings;
 pub mod logger;
+pub mod routes;
 mod to_sse_event;
 
 pub use crate::to_sse_event::*;
