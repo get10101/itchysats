@@ -6,7 +6,7 @@
  * When running `npm run build` or `npm run build:main`, this file is compiled to
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from "electron";
 import log from "electron-log";
 import path from "path";
 import { Endpoint } from "./endpoint";
@@ -16,13 +16,51 @@ import { resolveHtmlPath } from "./util";
 const { itchysats } = require("../../index.node");
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | undefined = undefined;
 
 if (process.env.NODE_ENV === "production") {
     const sourceMapSupport = require("source-map-support");
     sourceMapSupport.install();
 }
 
+const createTray = (endpoint: Endpoint) => {
+    const trayicon = nativeImage.createFromPath("./assets/64x64-BW.png");
+    tray = new Tray(trayicon.resize({ width: 20 }));
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: "Show App",
+            click: () => {
+                createWindow(endpoint);
+            },
+        },
+        {
+            label: "Quit",
+            click: () => {
+                app.quit(); // actually quit the app.
+            },
+        },
+    ]);
+
+    tray.setContextMenu(contextMenu);
+};
+
 const createWindow = async (endpoint: Endpoint) => {
+    if (process.platform === "win32" && mainWindow) {
+        mainWindow.setSkipTaskbar(false);
+    } else if (process.platform === "darwin") {
+        await app.dock.show();
+    }
+
+    if (!tray) { // if tray hasn't been created already.
+        log.info("Creating tray icon");
+        createTray(endpoint);
+    }
+
+    if (mainWindow) {
+        // If mainWindow is already created we don't need to create a new one.
+        return;
+    }
+
     const RESOURCES_PATH = app.isPackaged
         ? path.join(process.resourcesPath, "assets")
         : path.join(__dirname, "../../assets");
@@ -86,9 +124,11 @@ const createWindow = async (endpoint: Endpoint) => {
  */
 
 app.on("window-all-closed", () => {
-    // Respect the OSX convention of having the application in memory even
-    // after all windows have been closed
-    if (process.platform !== "darwin") {
+    if (process.platform === "win32" && mainWindow) {
+        mainWindow.setSkipTaskbar(true);
+    } else if (process.platform === "darwin") {
+        app.dock.hide();
+    } else {
         app.quit();
     }
 });
