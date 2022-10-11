@@ -48,7 +48,6 @@ pub type Maker = ActorSystem<oracle::Actor, wallet::Actor<ElectrumBlockchain, sl
 
 #[allow(clippy::too_many_arguments)]
 #[rocket::get("/feed")]
-#[instrument(name = "GET /feed", skip_all)]
 pub async fn maker_feed(
     rx: &State<FeedReceivers>,
     rx_wallet: &State<watch::Receiver<Option<WalletInfo>>>,
