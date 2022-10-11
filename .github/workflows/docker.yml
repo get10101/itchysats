@@ -41,6 +41,7 @@ jobs:
         id: build
         with:
           target: ${{ matrix.target }}
+          gh_token: ${{ secrets.ITCHY_GITHUB_TOKEN }}
           binary: ${{ matrix.bin }}
 
       - name: Login into github registry

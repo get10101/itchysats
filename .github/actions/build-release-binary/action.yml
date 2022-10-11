@@ -4,6 +4,9 @@ inputs:
   target:
     description: "The Rust target to build for."
     required: true
+  gh_token:
+    description: "A GITHUB_TOKEN authorized to check out source code and call GH API."
+    required: true
   binary:
     description: "The binary to build (maker | taker)."
     required: true
@@ -25,7 +28,7 @@ runs:
     - name: Install Protoc
       uses: arduino/setup-protoc@v1
       with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        repo-token: ${{ inputs.gh_token }}
 
     - name: Install compiler for aarch64 arch (armv8)
       shell: bash

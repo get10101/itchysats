@@ -50,6 +50,7 @@ jobs:
         id: build
         with:
           target: ${{ matrix.target }}
+          gh_token: ${{ secrets.ITCHY_GITHUB_TOKEN }}
           binary: ${{ matrix.bin }}
 
       # Remove once python 3 is the default
