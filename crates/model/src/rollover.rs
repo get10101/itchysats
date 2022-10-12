@@ -117,9 +117,6 @@ impl Dlc {
     }
 
     /// Construct the `BaseDlcParams` based on the latest DLC.
-    ///
-    /// This is called if neither party has fallen behind in terms of
-    /// rollovers.
     pub fn base_dlc_params_from_latest(&self, complete_fee: CompleteFee) -> BaseDlcParams {
         BaseDlcParams {
             base_commit_params: BaseCommitParams {
@@ -139,8 +136,6 @@ impl Dlc {
     /// Construct the `BaseDlcParams` based on a revoked DLC. The
     /// commit TXID is used to identify the rollover from which both
     /// parties intend to start the new rollover.
-    ///
-    /// This is called if a party is behind in terms of rollovers.
     fn base_dlc_params_from_revoked_commit(
         &self,
         revoked_commit_txid: Txid,
