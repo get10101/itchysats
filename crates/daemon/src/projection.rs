@@ -259,20 +259,20 @@ impl Aggregated {
         }
     }
 
-    fn payout(self, role: Role) -> Option<Amount> {
-        if let Some((tx, script)) = self.collab_settlement_tx {
+    fn payout(&self, role: Role) -> Option<Amount> {
+        if let Some((tx, script)) = &self.collab_settlement_tx {
             return Some(extract_payout_amount(tx, script));
         }
 
-        if let Some(tx) = self.refund_tx {
-            let script = self.latest_dlc?.script_pubkey_for(role);
-            return Some(extract_payout_amount(tx, script));
+        if let Some(tx) = &self.refund_tx {
+            let script = self.latest_dlc.as_ref()?.script_pubkey_for(role);
+            return Some(extract_payout_amount(tx, &script));
         }
 
-        let tx = self.cet.or(self.timelocked_cet)?;
-        let script = self.latest_dlc?.script_pubkey_for(role);
+        let tx = self.cet.as_ref().or(self.timelocked_cet.as_ref())?;
+        let script = self.latest_dlc.as_ref()?.script_pubkey_for(role);
 
-        Some(extract_payout_amount(tx, script))
+        Some(extract_payout_amount(tx, &script))
     }
 
     /// Derive Cfd state based on aggregated state from the events and the
@@ -303,10 +303,10 @@ impl Aggregated {
 /// Returns output if it can be found or zero amount
 ///
 /// If we cannot find an output for our script we assume that we were liquidated.
-fn extract_payout_amount(tx: Transaction, script: Script) -> Amount {
+fn extract_payout_amount(tx: &Transaction, script: &Script) -> Amount {
     tx.output
-        .into_iter()
-        .find(|tx_out| tx_out.script_pubkey == script)
+        .iter()
+        .find(|tx_out| tx_out.script_pubkey == *script)
         .map(|tx_out| Amount::from_sat(tx_out.value))
         .unwrap_or(Amount::ZERO)
 }
@@ -607,7 +607,7 @@ impl Cfd {
         }
 
         // If we have a dedicated closing price, use that one.
-        if let Some(payout) = self.aggregated.clone().payout(self.role) {
+        if let Some(payout) = self.aggregated.payout(self.role) {
             let (profit_btc, profit_percent) = calculate_profit(payout, self.margin);
 
             return Self {
@@ -787,10 +787,10 @@ impl Cfd {
 struct Tx(Arc<FeedSenders>);
 
 impl Tx {
-    fn send_cfds_update(&self, cfds: HashMap<OrderId, Cfd>, quotes: &LatestQuotes) {
+    fn send_cfds_update(&self, cfds: &HashMap<OrderId, Cfd>, quotes: &LatestQuotes) {
         let cfds_with_quote = cfds
-            .into_iter()
-            .map(|(_, cfd)| cfd.with_current_quote(Some(quotes)))
+            .iter()
+            .map(|(_, cfd)| cfd.clone().with_current_quote(Some(quotes)))
             .sorted_by(|a, b| {
                 Ord::cmp(
                     &b.aggregated.creation_timestamp,
@@ -1072,7 +1072,7 @@ impl State {
         }
     }
 
-    async fn update_cfd(&mut self, db: sqlite_db::Connection, id: OrderId) -> Result<()> {
+    async fn update_cfd(&mut self, db: &sqlite_db::Connection, id: OrderId) -> Result<()> {
         let cfd = db.load_open_cfd(id, self.network).await?;
 
         let cfds = self
@@ -1141,14 +1141,14 @@ impl Actor {
         self.tx.send_cfds_update(
             self.state
                 .cfds
-                .clone()
+                .as_ref()
                 .expect("we initialized the state above; qed"),
             &self.state.latest_quotes,
         );
     }
 
     async fn handle(&mut self, msg: CfdChanged) {
-        if let Err(e) = self.state.update_cfd(self.db.clone(), msg.0).await {
+        if let Err(e) = self.state.update_cfd(&self.db, msg.0).await {
             tracing::error!("Failed to rehydrate CFD: {e:#}");
             return;
         };
@@ -1156,7 +1156,7 @@ impl Actor {
         self.tx.send_cfds_update(
             self.state
                 .cfds
-                .clone()
+                .as_ref()
                 .expect("update_cfd fails if the CFDs have not been initialized yet"),
             &self.state.latest_quotes,
         );
@@ -1186,15 +1186,19 @@ impl Actor {
         self.state.update_quotes(msg.0.clone());
         self.tx.send_quotes_update(msg.0.clone());
 
-        let hydrated_cfds = match self.state.cfds.clone() {
-            None => {
-                tracing::debug!("Cannot update CFDs with new quote until they are initialized.");
-                return;
+        match self
+            .state
+            .cfds
+            .as_ref()
+            .context("Cannot update CFDs with new quote until they are initialized.")
+        {
+            Ok(hydrated_cfds) => {
+                self.tx.send_cfds_update(hydrated_cfds, &msg.0);
             }
-            Some(cfds) => cfds,
+            Err(e) => {
+                tracing::debug!("{e:#}");
+            }
         };
-
-        self.tx.send_cfds_update(hydrated_cfds, &msg.0);
     }
 }
 
