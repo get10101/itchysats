@@ -7,7 +7,7 @@ description = "State machine for sieving through Bitcoin transactions."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitcoin = "0.28.1"
+bitcoin = "0.29.1"
 tracing = "0.1"
 
 [dev-dependencies]
