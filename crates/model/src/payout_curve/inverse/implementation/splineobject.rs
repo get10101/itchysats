@@ -269,8 +269,7 @@ impl SplineObject {
     /// * direction: Direction number (axis) in which to get the knots.
     /// * with_multiplicities: If true, return knots with multiplicities \
     /// (i.e. repeated).
-    pub fn knots(&self, direction: isize, with_multiplicities: Option<bool>) -> Vec<Array1<f64>> {
-        let with_multiplicities = with_multiplicities.unwrap_or(false);
+    pub fn knots(&self, direction: isize, with_multiplicities: bool) -> Vec<Array1<f64>> {
         let out;
 
         if direction < 0 {

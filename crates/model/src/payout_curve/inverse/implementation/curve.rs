@@ -125,8 +125,8 @@ impl Curve {
 
         let p = max(p1, p2);
 
-        let old_knot = self.spline.knots(0, Some(true))[0].clone();
-        let mut add_knot = extending_curve.spline.knots(0, Some(true))[0].clone();
+        let old_knot = self.spline.knots(0, true)[0].clone();
+        let mut add_knot = extending_curve.spline.knots(0, true)[0].clone();
         add_knot -= add_knot[0];
         add_knot += old_knot[old_knot.len() - 1];
 
@@ -211,7 +211,7 @@ impl Curve {
     /// * t0: lower integration limit
     /// * t1: upper integration limit
     pub fn length(&self, t0: Option<f64>, t1: Option<f64>) -> Result<f64, Error> {
-        let mut knots = &self.spline.knots(0, Some(false))[0];
+        let mut knots = &self.spline.knots(0, false)[0];
 
         // keep only integration boundaries within given start (t0) and stop (t1) interval
         let new_knots_0 = t0
@@ -418,7 +418,7 @@ impl Curve {
         &self,
         target: impl Fn(&Array1<f64>) -> Array2<f64>,
     ) -> Result<(Array1<f64>, f64), Error> {
-        let knots = &self.spline.knots(0, Some(false))[0];
+        let knots = &self.spline.knots(0, false)[0];
         let n = self.spline.order(0)?[0];
         let gleg = GaussLegendreQuadrature::new(n + 1)?;
 
