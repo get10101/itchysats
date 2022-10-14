@@ -313,9 +313,9 @@ dependencies = [
 
 [[package]]
 name = "bdk"
-version = "0.21.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a7dad109193db0d196e9149bb56ba991aacfc1e1a2cf400053358b75f6c2fb5"
+checksum = "a03818e03fb03c159053bf474a23c474c92796cc0ebc5f677512e989ee449c04"
 dependencies = [
  "async-trait",
  "bdk-macros",
@@ -1341,17 +1341,20 @@ dependencies = [
 
 [[package]]
 name = "electrum-client"
-version = "0.10.1"
-source = "git+https://github.com/comit-network/rust-electrum-client/?branch=do-not-ignore-empty-lines#2f99465316fb49d5bd4143d563b81deaae4745a2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af53c415260dcb220fa02182669727c730535bfed4edbfde42e1291342af95cd"
 dependencies = [
  "bitcoin",
+ "byteorder",
+ "libc",
  "log",
  "rustls 0.20.6",
  "serde",
  "serde_json",
- "socks",
  "webpki 0.22.0",
  "webpki-roots 0.22.5",
+ "winapi",
 ]
 
 [[package]]
@@ -2229,8 +2232,8 @@ dependencies = [
 
 [[package]]
 name = "maia"
-version = "0.2.0"
-source = "git+https://github.com/comit-network/maia?rev=9899c9eda1f7685493aecdd7f8ba9124787056bd#9899c9eda1f7685493aecdd7f8ba9124787056bd"
+version = "0.2.1"
+source = "git+https://github.com/comit-network/maia?rev=1d70f7818d759fd57c41ca102bc1d4919f1b048a#1d70f7818d759fd57c41ca102bc1d4919f1b048a"
 dependencies = [
  "anyhow",
  "bdk",
@@ -2243,8 +2246,8 @@ dependencies = [
 
 [[package]]
 name = "maia-core"
-version = "0.1.1"
-source = "git+https://github.com/comit-network/maia?rev=9899c9eda1f7685493aecdd7f8ba9124787056bd#9899c9eda1f7685493aecdd7f8ba9124787056bd"
+version = "0.1.2"
+source = "git+https://github.com/comit-network/maia?rev=1d70f7818d759fd57c41ca102bc1d4919f1b048a#1d70f7818d759fd57c41ca102bc1d4919f1b048a"
 dependencies = [
  "anyhow",
  "bdk",
@@ -4596,17 +4599,6 @@ version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02e2d2db9033d13a1567121ddd7a095ee144db4e1ca1b1bda3419bc0da294ebd"
 dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
-name = "socks"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0c3dbbd9ae980613c6dd8e28a9407b50509d3803b57624d5dfe8315218cd58b"
-dependencies = [
- "byteorder",
  "libc",
  "winapi",
 ]

@@ -9,7 +9,7 @@ anyhow = "1"
 async-stream = "0.3"
 async-trait = "0.1.57"
 asynchronous-codec = { version = "0.6.0", features = ["json"] }
-bdk = { version = "0.21.0", default-features = false, features = ["key-value-db"] }
+bdk = { version = "0.23.0", default-features = false, features = ["key-value-db"] }
 bdk-ext = { path = "../bdk-ext" }
 btsieve = { path = "../btsieve" }
 bytes = "1"
