@@ -723,7 +723,7 @@ impl Cfd {
     fn lock_tx_url(&self, network: Network) -> Option<TxUrl> {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
         let url = TxUrl::from_transaction(
-            &dlc.lock.0.clone(),
+            &dlc.lock.0,
             &dlc.lock.1.script_pubkey(),
             network,
             TxLabel::Lock,
@@ -763,7 +763,7 @@ impl Cfd {
         let dlc = self.aggregated.latest_dlc.as_ref()?;
 
         let url = TxUrl::from_transaction(
-            &dlc.refund.0.clone(),
+            &dlc.refund.0,
             &dlc.script_pubkey_for(self.role),
             network,
             TxLabel::Refund,

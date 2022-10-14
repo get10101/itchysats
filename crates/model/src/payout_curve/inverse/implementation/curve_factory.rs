@@ -104,7 +104,7 @@ pub fn fit(
     let scale_64 = 12_f64;
 
     while target > rtol && err_max > atol {
-        let knot_span = &crv.spline.knots(0, Some(false))[0];
+        let knot_span = &crv.spline.knots(0, false)[0];
         let target_error = (rtol * length).powi(2) / err_l2.len() as f64;
         for i in 0..err_l2.len() {
             // figure out how many new knots we require in this knot interval:

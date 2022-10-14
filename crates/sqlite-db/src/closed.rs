@@ -420,7 +420,7 @@ impl ClosedCfdInputAggregate {
     fn cet(&self) -> Result<Settlement> {
         let (cet, price) = self.cet.as_ref().context("Cet not set")?;
 
-        let transaction = self.latest_dlc()?.commit.0.clone();
+        let transaction = &self.latest_dlc()?.commit.0;
         let commit_txid = transaction.txid();
 
         let own_script_pubkey = self.latest_dlc()?.script_pubkey_for(self.role);
@@ -450,7 +450,7 @@ impl ClosedCfdInputAggregate {
         let dlc = self.latest_dlc()?;
 
         let own_script_pubkey = dlc.script_pubkey_for(self.role);
-        let refund_tx = dlc.refund.0.clone();
+        let refund_tx = &dlc.refund.0;
 
         let OutPoint { txid, vout } = refund_tx
             .outpoint(&own_script_pubkey)
@@ -462,7 +462,7 @@ impl ClosedCfdInputAggregate {
             .with_context(|| format!("No output at vout {vout}"))?;
         let payout = model::Payout::new(Amount::from_sat(payout.value));
 
-        let transaction = dlc.commit.0.clone();
+        let transaction = &dlc.commit.0;
         let vout = model::Vout::new(vout);
 
         Ok(Settlement::Refund {

@@ -4,7 +4,6 @@ use anyhow::Context;
 use anyhow::Result;
 use bdk::bitcoin::Address;
 use bdk::bitcoin::Amount;
-use bdk::bitcoin::Denomination;
 use bdk::bitcoin::Network;
 use bdk::bitcoin::SignedAmount;
 use bdk::bitcoin::Txid;
@@ -240,8 +239,7 @@ impl Div<Price> for Contracts {
     fn div(self, rhs: Price) -> Self::Output {
         let mut btc = self.0 / rhs.0;
         btc.rescale(8);
-        Amount::from_str_in(&btc.to_string(), Denomination::Bitcoin)
-            .expect("Error computing BTC amount")
+        Amount::from_btc(btc.to_f64().expect("to fit in f64")).expect("Parse the BTC amount")
     }
 }
 

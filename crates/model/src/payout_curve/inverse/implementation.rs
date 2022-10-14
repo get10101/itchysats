@@ -299,7 +299,7 @@ impl PayoutCurve {
     }
 
     fn build_sampling_vector_upper_bounded(&self, n_segs: usize) -> Array1<f64> {
-        let knots = &self.curve.spline.knots(0, None)[0];
+        let knots = &self.curve.spline.knots(0, false)[0];
         let klen = knots.len();
         let n_64 = (n_segs + 1) as f64;
         let d = knots[klen - 2] - knots[1];
@@ -329,7 +329,7 @@ impl PayoutCurve {
     }
 
     fn build_sampling_vector_upper_unbounded(&self, n_segs: usize) -> Array1<f64> {
-        let knots = &self.curve.spline.knots(0, None)[0];
+        let knots = &self.curve.spline.knots(0, false)[0];
         let klen = knots.len();
         let n_64 = (n_segs + 1) as f64;
         let d = knots[klen - 1] - knots[1];
