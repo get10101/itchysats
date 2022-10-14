@@ -6,6 +6,7 @@ use bdk::bitcoin::secp256k1::SecretKey;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
+use bdk::BlockTime;
 use rand::CryptoRng;
 use rand::RngCore;
 
