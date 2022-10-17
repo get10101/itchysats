@@ -55,7 +55,7 @@ where
     pub fn update(
         &mut self,
         latest_block_height: BlockHeight,
-        status_list_batch: Vec<Vec<TxStatus>>,
+        status_list: Vec<TxStatus>,
     ) -> Vec<E> {
         let txid_to_script = self
             .awaiting_status
@@ -64,20 +64,16 @@ where
             .collect::<HashMap<_, _>>();
 
         let mut status_map = HashMap::new();
-        for status_list in status_list_batch {
-            for status in status_list {
-                let txid = status.tx_hash;
-                let script = match txid_to_script.get(&txid) {
-                    None => {
-                        tracing::trace!(
-                            "Could not find script in own state for txid {txid}, ignoring"
-                        );
-                        continue;
-                    }
-                    Some(script) => script,
-                };
-                status_map.insert((txid, script.clone()), status);
-            }
+        for status in status_list {
+            let txid = status.tx_hash;
+            let script = match txid_to_script.get(&txid) {
+                None => {
+                    tracing::trace!("Could not find script in own state for txid {txid}, ignoring");
+                    continue;
+                }
+                Some(script) => script,
+            };
+            status_map.insert((txid, script.clone()), status);
         }
 
         if latest_block_height > self.latest_block_height {

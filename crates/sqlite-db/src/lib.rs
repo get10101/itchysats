@@ -706,6 +706,8 @@ async fn load_cfd_events(
             if let Some((dlc, funding_fee, complete_fee)) =
                 rollover::load(&mut *conn, *cfd_row_id, *event_row_id).await?
             {
+                let dlc_id = dlc.commit.0.txid();
+                tracing::warn!("Attaching DLC {dlc_id} from event {event_row_id} to CFD {id}");
                 event.event = RolloverCompleted {
                     dlc: Some(dlc),
                     funding_fee,

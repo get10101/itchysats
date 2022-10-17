@@ -11,7 +11,9 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
+use bdk::electrum_client::GetHistoryRes;
 use bdk::miniscript::DescriptorTrait;
+use btsieve::BlockHeight;
 use btsieve::ScriptStatus;
 use btsieve::State;
 use btsieve::TxStatus;
@@ -24,6 +26,7 @@ use model::CET_TIMELOCK;
 use serde_json::Value;
 use sqlite_db;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
@@ -34,6 +37,7 @@ const CLOSE_FINALITY_CONFIRMATIONS: u32 = 3;
 const COMMIT_FINALITY_CONFIRMATIONS: u32 = 1;
 const CET_FINALITY_CONFIRMATIONS: u32 = 3;
 const REFUND_FINALITY_CONFIRMATIONS: u32 = 3;
+const BATCH_SIZE: usize = 25;
 
 pub struct MonitorAfterContractSetup {
     order_id: OrderId,
@@ -107,7 +111,7 @@ pub struct Sync;
 //  -> Might as well just send out all events independent of sending to the cfd actor.
 pub struct Actor {
     executor: command::Executor,
-    client: bdk::electrum_client::Client,
+    client: Arc<bdk::electrum_client::Client>,
     state: State<Event>,
     db: sqlite_db::Connection,
 }
@@ -340,7 +344,7 @@ impl Actor {
             .into();
 
         Ok(Self {
-            client,
+            client: Arc::new(client),
             executor,
             state: State::new(latest_block),
             db,
@@ -466,25 +470,76 @@ impl Actor {
 
         tracing::trace!("Updating status of {num_transactions} transactions",);
 
-        let histories = self
-            .client
-            .batch_script_get_history(self.state.monitoring_scripts())
-            .context("Failed to get script histories")?;
+        // TODO: Evaluate buffer; if we do batches of 25 and allow buffer of 100 here, does that
+        // mean we can at most process 4 batches at the time?  What happens if the buffer is
+        // exhausted? (I would expect the next messages will be queued) We use tokio::sync::
+        // mpsc::channel because we need the receiver to be in an async context because we do async
+        // work upon receiving script updates
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(100);
 
-        let mut ready_events = self.state.update(
-            latest_block_height,
-            histories
-                .into_iter()
-                .map(|list| {
-                    list.into_iter()
-                        .map(|response| TxStatus {
-                            height: response.height,
-                            tx_hash: response.tx_hash,
-                        })
-                        .collect()
-                })
-                .collect(),
-        );
+        let scripts = self
+            .state
+            .monitoring_scripts()
+            .cloned()
+            .collect::<Vec<Script>>();
+
+        let batches = scripts.chunks(BATCH_SIZE).map(|batch| batch.to_owned());
+
+        let client = self.client.clone();
+
+        let batch_futures = batches.into_iter().map(move |batch| {
+            tokio::task::spawn_blocking({
+                let client = client.clone();
+                let sender = sender.clone();
+                move || {
+                    for script in batch {
+                        // TODO: Evaluate if we should notify the receivers about errors, I feel
+                        //  logging is good enough here because the receiver won't know how to deal
+                        //  with an error.
+                        match client.script_get_history(&script) {
+                            Ok(resp) => {
+                                // We use blocking_send to stay within a sync context here
+                                // One should not use async code in a spawn_blocking block
+                                if let Err(e) = sender.blocking_send(resp) {
+                                    tracing::error!("Error during script history batching: {e:#}")
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("Error when fetching script history: {e:#}")
+                            }
+                        }
+                    }
+                }
+            })
+        });
+
+        let joined_batch_futures = futures::future::join_all(batch_futures);
+        tokio::spawn(joined_batch_futures);
+
+        while let Some(script_history) = receiver.recv().await {
+            // TODO: It's a bit weird that we pass in the latest block here several times but it
+            // won't cause trouble 🤷‍  - We could refactor this logic at some point
+            self.process_script_status_update(script_history, latest_block_height)
+                .await;
+        }
+
+        Ok(())
+    }
+
+    async fn process_script_status_update(
+        &mut self,
+        script_history: Vec<GetHistoryRes>,
+        latest_block_height: BlockHeight,
+    ) {
+        let status_list = script_history
+            .into_iter()
+            .map(|history| TxStatus {
+                height: history.height,
+                tx_hash: history.tx_hash,
+            })
+            .collect();
+
+        let mut ready_events = self.state.update(latest_block_height, status_list);
 
         while let Some(event) = ready_events.pop() {
             match event {
@@ -524,8 +579,6 @@ impl Actor {
                 }
             }
         }
-
-        Ok(())
     }
 
     async fn invoke_cfd_command(
