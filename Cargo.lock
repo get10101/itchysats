@@ -2108,7 +2108,7 @@ dependencies = [
  "log",
  "multiaddr",
  "multihash",
- "multistream-select",
+ "multistream-select 0.11.0",
  "parking_lot 0.12.1",
  "pin-project",
  "prost 0.10.4",
@@ -2547,6 +2547,20 @@ name = "multistream-select"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "363a84be6453a70e63513660f4894ef815daf88e3356bffcda9ca27d810ce83b"
+dependencies = [
+ "bytes",
+ "futures",
+ "log",
+ "pin-project",
+ "smallvec",
+ "unsigned-varint",
+]
+
+[[package]]
+name = "multistream-select"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bc41247ec209813e2fd414d6e16b9d94297dacf3cd613fa6ef09cd4d9755c10"
 dependencies = [
  "bytes",
  "futures",
@@ -5934,7 +5948,7 @@ dependencies = [
  "libp2p-core",
  "libp2p-noise",
  "libp2p-tcp",
- "multistream-select",
+ "multistream-select 0.12.0",
  "pin-project",
  "prometheus",
  "rand 0.8.5",

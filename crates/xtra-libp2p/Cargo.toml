@@ -13,7 +13,7 @@ conquer-once = "0.3"
 futures = "0.3"
 libp2p-core = { version = "0.33", default-features = false }
 libp2p-noise = "0.36"
-multistream-select = "0.11"
+multistream-select = "0.12"
 pin-project = "1"
 prometheus = { version = "0.13", default-features = false }
 thiserror = "1"
