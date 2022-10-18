@@ -1109,7 +1109,7 @@ mod test {
             scripts.push(script.clone());
         }
 
-        test_runner(scripts).await;
+        test_batch_script_get_history(scripts).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
@@ -1121,10 +1121,10 @@ mod test {
             .script_pubkey();
         let response_length_to_assert = 0;
 
-        test_runner(vec![script]).await;
+        test_batch_script_get_history(vec![script]).await;
     }
 
-    async fn test_runner(scripts: Vec<Script>) {
+    async fn test_batch_script_get_history(scripts: Vec<Script>) {
         let _guard = tracing_subscriber::fmt()
             .with_env_filter("info")
             .with_test_writer()
