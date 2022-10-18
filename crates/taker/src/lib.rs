@@ -352,12 +352,22 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     let bitcoin_network = network.bitcoin_network();
 
-    let seed: Arc<ThreadSafeSeed> = match opts.app_seed {
+    let wallet_seed_file = &data_dir.join(seed::TAKER_WALLET_SEED_FILE);
+    let wallet_seed: Arc<ThreadSafeSeed> = match opts.app_seed {
         Some(seed_bytes) => Arc::new(AppSeed::from(seed_bytes)),
-        None => Arc::new(RandomSeed::initialize(&data_dir.join(seed::TAKER_WALLET_SEED_FILE)).await?),
+        None => Arc::new(RandomSeed::initialize(wallet_seed_file).await?),
     };
 
-    let identities = seed.derive_identities();
+    let identity_seed_file = &data_dir.join(seed::TAKER_IDENTITY_SEED_FILE);
+    if !identity_seed_file.exists() {
+        tracing::info!("Copying wallet seed file for identity seed file");
+        // copy wallet seed file for backwards compatibility.
+        tokio::fs::copy(&wallet_seed_file, &identity_seed_file).await?;
+    }
+
+    // use a different seed for the libp2p identity.
+    let identity_seed = RandomSeed::initialize(identity_seed_file).await?;
+    let identities = identity_seed.derive_identities();
 
     let ext_priv_key = match opts.wallet_xprv {
         Some(wallet_xprv) => {
@@ -367,7 +377,7 @@ pub async fn run(opts: Opts) -> Result<()> {
             }
             wallet_xprv
         }
-        None => seed.derive_extended_priv_key(bitcoin_network)?,
+        None => wallet_seed.derive_extended_priv_key(bitcoin_network)?,
     };
 
     let mut tasks = Tasks::default();

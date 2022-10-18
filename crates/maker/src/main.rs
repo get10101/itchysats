@@ -64,7 +64,8 @@ async fn main() -> Result<()> {
         "CFDs created with this release will settle after {settlement_interval_hours} hours"
     );
 
-    let seed = RandomSeed::initialize(&data_dir.join(seed::MAKER_WALLET_SEED_FILE)).await?;
+    let wallet_seed_file = &data_dir.join(seed::MAKER_WALLET_SEED_FILE);
+    let wallet_seed = RandomSeed::initialize(wallet_seed_file).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
 
@@ -76,7 +77,7 @@ async fn main() -> Result<()> {
             }
             wallet_xprv
         }
-        None => seed.derive_extended_priv_key(bitcoin_network)?,
+        None => wallet_seed.derive_extended_priv_key(bitcoin_network)?,
     };
 
     let mut tasks = Tasks::default();
@@ -108,7 +109,16 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let identities = seed.derive_identities();
+    let identity_seed_file = &data_dir.join(seed::MAKER_IDENTITY_SEED_FILE);
+    if !identity_seed_file.exists() {
+        tracing::info!("Copying wallet seed file for identity seed file");
+        // copy wallet seed file for backwards compatibility.
+        tokio::fs::copy(&wallet_seed_file, &identity_seed_file).await?;
+    }
+
+    // generate a new seed for the libp2p identity.
+    let identity_seed = RandomSeed::initialize(identity_seed_file).await?;
+    let identities = identity_seed.derive_identities();
 
     let peer_id = identities.peer_id();
     let hex_pk = hex::encode(identities.identity_pk.to_bytes());
