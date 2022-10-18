@@ -705,7 +705,9 @@ impl Cfd {
             return Err(CannotRollover::TooRecent);
         }
 
-        Ok((dlc.commit.0.txid(), dlc.settlement_event_id))
+        let revoked_commit_data = dlc.revoked_commit_data_for_rollover_taker();
+
+        Ok(revoked_commit_data)
     }
 
     fn can_rollover(&self) -> Result<(), CannotRollover> {
@@ -2372,7 +2374,7 @@ pub struct RevokedCommit {
     /// The maker uses this key for verification if a taker triggers a rollover from a previous
     /// commit-txid.
     pub revocation_sk_ours: Option<SecretKey>,
-    pub revocation_sk_theirs: SecretKey,
+    pub revocation_sk_theirs: Option<SecretKey>,
     pub publication_pk_theirs: PublicKey,
     // To monitor revoked commit transaction
     pub txid: Txid,

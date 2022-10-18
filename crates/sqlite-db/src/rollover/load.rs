@@ -145,7 +145,9 @@ async fn load_revoked_commit_transactions(
             revocation_sk_ours: row
                 .revocation_sk_ours
                 .map(|revocation_sk_ours| revocation_sk_ours.into()),
-            revocation_sk_theirs: row.revocation_sk_theirs.into(),
+            revocation_sk_theirs: row
+                .revocation_sk_theirs
+                .map(|revocation_sk_theirs| revocation_sk_theirs.into()),
             publication_pk_theirs: row.publication_pk_theirs.into(),
             script_pubkey: Script::from_hex(row.script_pubkey.as_str())?,
             txid: row.txid.into(),

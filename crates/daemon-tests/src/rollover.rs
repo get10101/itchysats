@@ -92,6 +92,12 @@ async fn do_rollover(
         taker.latest_settlement_event_id(),
         "Taker's latest event-id does not match given event-id after rollover"
     );
+
+    assert_eq!(
+        taker.latest_revoked_revocation_sk_theirs(),
+        Some(maker.latest_revoked_revocation_sk_ours()),
+        "Taker receives maker's revocation sk during rollover"
+    )
 }
 
 pub fn assert_rollover_fees(

@@ -3,10 +3,13 @@ use crate::current::protocol::*;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
+use asynchronous_codec::Framed;
+use asynchronous_codec::JsonCodec;
 use bdk::bitcoin::Txid;
 use bdk_ext::keypair;
 use futures::SinkExt;
 use futures::StreamExt;
+use maia_core::secp256k1_zkp::SecretKey;
 use maia_core::secp256k1_zkp::XOnlyPublicKey;
 use model::libp2p::PeerId;
 use model::olivia::BitMexPriceEventId;
@@ -300,24 +303,21 @@ where
                                 .await
                                 .context("Failed to send Msg2")?;
 
-                            let msg2 = framed
-                                .next()
-                                .timeout(ROLLOVER_MSG_TIMEOUT, next_rollover_span)
-                                .await
-                                .with_context(|| {
-                                    format!(
-                                        "Expected Msg2 within {} seconds",
-                                        ROLLOVER_MSG_TIMEOUT.as_secs()
-                                    )
-                                })?
-                                .context("Empty stream instead of Msg2")?
-                                .context("Unable to decode listener Msg2")?
-                                .into_rollover_msg()?
-                                .try_into_msg2()?;
+                            let base_dlc_params =
+                                dlc.base_dlc_params_from_latest(complete_fee_before_rollover);
 
-                            let revocation_sk_theirs = msg2.revocation_sk;
-                            let revoked_commits = dlc
-                                .base_dlc_params_from_latest(complete_fee_before_rollover)
+                            let revocation_sk_theirs =
+                                match receive_maker_revocation_key(&mut framed).await {
+                                    Ok(revocation_sk_theirs) => Some(revocation_sk_theirs),
+                                    Err(e) => {
+                                        tracing::warn!(
+                                        "Finalising rollover without maker's revocation key: {e:#}"
+                                    );
+                                        None
+                                    }
+                                };
+
+                            let revoked_commits = base_dlc_params
                                 .revoke_base_commit_tx(revocation_sk_theirs)
                                 .context("Maker sent invalid revocation sk")?;
 
@@ -365,4 +365,27 @@ where
             },
         );
     }
+}
+
+async fn receive_maker_revocation_key(
+    framed: &mut Framed<Substream, JsonCodec<DialerMessage, ListenerMessage>>,
+) -> Result<SecretKey> {
+    let msg2 = framed
+        .next()
+        .timeout(ROLLOVER_MSG_TIMEOUT, || {
+            tracing::debug_span!("next rollover message")
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Expected Msg2 within {} seconds",
+                ROLLOVER_MSG_TIMEOUT.as_secs()
+            )
+        })?
+        .context("Empty stream instead of Msg2")?
+        .context("Unable to decode listener Msg2")?
+        .into_rollover_msg()?
+        .try_into_msg2()?;
+
+    Ok(msg2.revocation_sk)
 }

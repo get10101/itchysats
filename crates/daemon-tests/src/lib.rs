@@ -14,6 +14,7 @@ use daemon::bdk::bitcoin::Network;
 use daemon::bdk::bitcoin::SignedAmount;
 use daemon::bdk::bitcoin::Txid;
 use daemon::libp2p_utils::create_connect_multiaddr;
+use daemon::maia_core::secp256k1_zkp::SecretKey;
 use daemon::maia_core::secp256k1_zkp::XOnlyPublicKey;
 use daemon::online_status::ConnectionStatus;
 use daemon::oracle::Attestation;
@@ -773,6 +774,19 @@ impl Maker {
             .await
             .unwrap();
     }
+
+    pub fn latest_revoked_revocation_sk_ours(&mut self) -> SecretKey {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .revoked_commit
+            .first()
+            .unwrap()
+            .revocation_sk_ours
+            .unwrap()
+    }
 }
 
 /// Taker Test Setup
@@ -823,6 +837,18 @@ impl Taker {
             .as_ref()
             .unwrap()
             .settlement_event_id
+    }
+
+    pub fn latest_revoked_revocation_sk_theirs(&mut self) -> Option<SecretKey> {
+        self.first_cfd()
+            .aggregated()
+            .latest_dlc()
+            .as_ref()
+            .unwrap()
+            .revoked_commit
+            .first()
+            .unwrap()
+            .revocation_sk_theirs
     }
 
     pub fn latest_dlc(&mut self) -> Dlc {

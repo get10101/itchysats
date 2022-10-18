@@ -350,7 +350,7 @@ where
 
                 let revocation_sk_theirs = msg2.revocation_sk;
                 let revoked_commits = base_dlc_params
-                    .revoke_base_commit_tx(revocation_sk_theirs)
+                    .revoke_base_commit_tx(Some(revocation_sk_theirs))
                     .context("Taker sent invalid revocation sk")?;
 
                 let dlc = Dlc {

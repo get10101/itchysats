@@ -159,6 +159,7 @@ impl Dlc {
         let settlement_event_id = settlement_event_id.context("Missing settlement event id")?;
         let complete_fee = complete_fee.context("Missing complete fee")?;
         let revocation_sk_ours = revocation_sk_ours.context("Missing own revocation sk")?;
+        let revocation_sk_theirs = revocation_sk_theirs.context("Missing their revocation sk")?;
 
         let revoked_commits = self
             .revoked_commit
@@ -181,24 +182,49 @@ impl Dlc {
             revoked_commits,
         })
     }
+
+    /// The commit TXID to be used for rolling over for the taker.
+    ///
+    /// Use the commit TXID corresponding to the current state of the DLC, unless the previous
+    /// rollover was incomplete for the taker.
+    pub(crate) fn revoked_commit_data_for_rollover_taker(&self) -> (Txid, BitMexPriceEventId) {
+        match self.revoked_commit.first() {
+            Some(RevokedCommit {
+                revocation_sk_theirs: None,
+                txid,
+                settlement_event_id,
+                ..
+            }) => {
+                let settlement_event_id = settlement_event_id
+                    .expect("settlement event ID associated with revoked commit transaction");
+                (*txid, settlement_event_id)
+            }
+            _ => (self.commit.0.txid(), self.settlement_event_id),
+        }
+    }
 }
 
 impl BaseDlcParams {
-    /// Produce the set of revoked commit transactions that correspond
-    /// to rolling over from this DLC as a base.
+    /// Produce the set of revoked commit transactions that correspond to rolling over from this DLC
+    /// as a base.
     ///
-    /// The success of this operation hinges on the revocation secret
-    /// key provided by the counterparty. If must match the revocation
-    /// public key they provided when building the base DLC.
+    /// If `revocation_sk_theirs` is [`Some`], the success of this operation hinges on the
+    /// revocation secret key provided by the counterparty. If must match the revocation public
+    /// key they provided when building the base DLC.
+    ///
+    /// If `revocation_sk_theirs` is [`None`], the latest [`RevokedCommit`] transaction data will be
+    /// incomplete, corresponding to a partially successful rollover protocol for the taker.
     pub fn revoke_base_commit_tx(
         self,
-        revocation_sk_theirs: SecretKey,
+        revocation_sk_theirs: Option<SecretKey>,
     ) -> Result<Vec<RevokedCommit>> {
-        let derived_revocation_pk_theirs = PublicKey::new(
-            secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, &revocation_sk_theirs),
-        );
+        if let Some(revocation_sk_theirs) = &revocation_sk_theirs {
+            let derived_revocation_pk_theirs = PublicKey::new(
+                secp256k1_zkp::PublicKey::from_secret_key(SECP256K1, revocation_sk_theirs),
+            );
 
-        ensure!(derived_revocation_pk_theirs == self.base_commit_params.revocation_pk_theirs);
+            ensure!(derived_revocation_pk_theirs == self.base_commit_params.revocation_pk_theirs);
+        }
 
         let new_revoked_commit = RevokedCommit {
             encsig_ours: self.base_commit_params.commit_encsig_ours,

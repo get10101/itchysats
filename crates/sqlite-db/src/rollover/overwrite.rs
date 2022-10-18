@@ -169,7 +169,7 @@ async fn insert_revoked_commit_transaction(
     revoked: RevokedCommit,
 ) -> Result<()> {
     let revoked_tx_script_pubkey = revoked.script_pubkey.to_hex();
-    let revocation_sk_theirs = models::SecretKey::from(revoked.revocation_sk_theirs);
+    let revocation_sk_theirs = revoked.revocation_sk_theirs.map(models::SecretKey::from);
     let revocation_sk_ours = revoked.revocation_sk_ours.map(models::SecretKey::from);
     let publication_pk_theirs = models::PublicKey::from(revoked.publication_pk_theirs);
     let encsig_ours = models::AdaptorSignature::from(revoked.encsig_ours);
