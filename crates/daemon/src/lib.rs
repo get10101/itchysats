@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 
 use crate::bitcoin::util::psbt::PartiallySignedTransaction;
+use crate::bitcoin::Network;
 use crate::bitcoin::Txid;
 use crate::listen_protocols::TAKER_LISTEN_PROTOCOLS;
 use anyhow::bail;
@@ -31,6 +32,7 @@ use ping_pong::ping;
 use ping_pong::pong;
 use seed::Identities;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use time::ext::NumericalDuration;
@@ -78,7 +80,7 @@ pub const N_PAYOUTS: usize = 200;
 
 pub struct TakerActorSystem<O, W, P> {
     pub cfd_actor: Address<taker_cfd::Actor>,
-    wallet_actor: Address<W>,
+    pub wallet_actor: Address<W>,
     _oracle_actor: Address<O>,
     pub auto_rollover_actor: Address<auto_rollover::Actor>,
     pub price_feed_actor: Address<P>,
@@ -93,6 +95,8 @@ pub struct TakerActorSystem<O, W, P> {
     pub identify_info_feed_receiver: watch::Receiver<Option<PeerInfo>>,
 
     _tasks: Tasks,
+
+    db: sqlite_db::Connection,
 }
 
 impl<O, W, P> TakerActorSystem<O, W, P>
@@ -105,6 +109,7 @@ where
     W: Handler<wallet::BuildPartyParams, Return = Result<maia_core::PartyParams>>
         + Handler<wallet::Sign, Return = Result<PartiallySignedTransaction>>
         + Handler<wallet::Withdraw, Return = Result<Txid>>
+        + Handler<wallet::ImportSeed, Return = Result<bdk::wallet::AddressInfo>>
         + Handler<wallet::Sync, Return = ()>
         + Actor<Stop = ()>,
     P: Handler<
@@ -333,7 +338,7 @@ where
         let close_cfds_actor = archive_closed_cfds::Actor::new(db.clone())
             .create(None)
             .spawn(&mut tasks);
-        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db)
+        let archive_failed_cfds_actor = archive_failed_cfds::Actor::new(db.clone())
             .create(None)
             .spawn(&mut tasks);
 
@@ -354,6 +359,7 @@ where
             _online_status_actor: online_status_actor,
             _pong_actor: pong_address,
             _identify_dialer_actor: identify_dialer_actor,
+            db,
         })
     }
 
@@ -443,6 +449,36 @@ where
     #[instrument(skip(self), err)]
     pub async fn sync_wallet(&self) -> Result<()> {
         self.wallet_actor.send(wallet::Sync).await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self, seed), err)]
+    pub async fn import_seed(
+        &self,
+        seed: Vec<u8>,
+        data_dir: PathBuf,
+        network: Network,
+        name: &str,
+    ) -> Result<()> {
+        let open_cfd_ids = self.db.load_open_cfd_ids().await?;
+
+        if !open_cfd_ids.is_empty() {
+            use anyhow::bail;
+            bail!("Cannot accept imported seed since open CFDs exist");
+        }
+
+        // recreate the wallet within the wallet actor
+        self.wallet_actor
+            .send(wallet::ImportSeed {
+                seed,
+                path: data_dir,
+                network,
+                name: name.to_string(),
+            })
+            .await??;
+
+        self.wallet_actor.send(wallet::Sync).await?;
+
         Ok(())
     }
 }

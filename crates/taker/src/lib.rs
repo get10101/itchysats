@@ -10,6 +10,7 @@ use daemon::libp2p_utils::create_connect_tcp_multiaddr;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::seed;
 use daemon::seed::AppSeed;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
@@ -353,7 +354,7 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     let seed: Arc<ThreadSafeSeed> = match opts.app_seed {
         Some(seed_bytes) => Arc::new(AppSeed::from(seed_bytes)),
-        None => Arc::new(RandomSeed::initialize(&data_dir.join("taker_seed")).await?),
+        None => Arc::new(RandomSeed::initialize(&data_dir.join(seed::TAKER_WALLET_SEED_FILE)).await?),
     };
 
     let identities = seed.derive_identities();
@@ -373,8 +374,12 @@ pub async fn run(opts: Opts) -> Result<()> {
 
     let mut wallet_dir = data_dir.clone();
     wallet_dir.push(TAKER_WALLET_ID);
-    let (wallet, wallet_feed_receiver) =
-        wallet::Actor::spawn(network.electrum(), ext_priv_key, wallet_dir)?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::spawn(
+        network.electrum(),
+        ext_priv_key,
+        wallet_dir,
+        wallet_seed.is_managed(),
+    )?;
 
     if let Some(Withdraw::Withdraw {
         amount,
@@ -486,7 +491,7 @@ pub async fn run(opts: Opts) -> Result<()> {
     let rocket_auth_db_connection = RocketAuthDbConnection::new(db.clone());
     let users = Users::new(Box::new(rocket_auth_db_connection));
 
-    let mission_success = rocket::custom(figment)
+    let mut rocket = rocket::custom(figment)
         .manage(feed_receivers)
         .manage(wallet_feed_receiver)
         .manage(identity_info)
@@ -502,7 +507,6 @@ pub async fn run(opts: Opts) -> Result<()> {
                 routes::post_cfd_action,
                 routes::post_withdraw_request,
                 routes::put_sync_wallet,
-                routes::get_seed_backup,
                 shared_bin::routes::get_health_check,
                 shared_bin::routes::get_metrics,
                 shared_bin::routes::get_version,
@@ -514,15 +518,22 @@ pub async fn run(opts: Opts) -> Result<()> {
         )
         .register("/api", default_catchers())
         .manage(users)
-        .manage(seed)
+        .manage(data_dir)
+        .manage(network)
         .mount("/", rocket::routes![routes::dist, routes::index])
         .register("/", default_catchers())
         .attach(fairings::log_launch())
         .attach(fairings::log_requests())
-        .attach(fairings::ui_browser_launch(!opts.headless))
-        .launch()
-        .await?;
+        .attach(fairings::ui_browser_launch(!opts.headless));
 
+    if wallet_seed.is_managed() {
+        rocket = rocket.mount(
+            "/api",
+            rocket::routes![routes::get_export_seed, routes::put_import_seed],
+        );
+    }
+
+    let mission_success = rocket.launch().await?;
     tracing::trace!(?mission_success, "Rocket has landed");
 
     db.close().await;

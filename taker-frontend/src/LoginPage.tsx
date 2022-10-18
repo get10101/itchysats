@@ -28,7 +28,6 @@ export default function Login() {
     const handleClick = () => setShow(!show);
     const [password, setPassword] = useState("");
 
-    console.log(localStorage.getItem("oldUser"));
     function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         login(password);

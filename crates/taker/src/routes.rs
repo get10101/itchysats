@@ -11,7 +11,8 @@ use daemon::oracle;
 use daemon::projection;
 use daemon::projection::CfdAction;
 use daemon::projection::FeedReceivers;
-use daemon::seed::ThreadSafeSeed;
+use daemon::seed;
+use daemon::seed::RANDOM_SEED_SIZE;
 use daemon::wallet;
 use daemon::TakerActorSystem;
 use http_api_problem::HttpApiProblem;
@@ -22,6 +23,7 @@ use model::OrderId;
 use model::Price;
 use model::Timestamp;
 use model::WalletInfo;
+use rocket::data::ToByteUnit;
 use rocket::http::ContentType;
 use rocket::http::Status;
 use rocket::response::stream::Event;
@@ -29,6 +31,7 @@ use rocket::response::stream::EventStream;
 use rocket::response::Responder;
 use rocket::serde::json::Json;
 use rocket::serde::uuid::Uuid;
+use rocket::Data;
 use rocket::State;
 use rocket_cookie_auth::user::User;
 use rocket_download_response::mime;
@@ -40,7 +43,6 @@ use serde::Serialize;
 use shared_bin::ToSseEvent;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tokio::select;
 use tokio::sync::watch;
 use tracing::instrument;
@@ -305,18 +307,66 @@ pub async fn put_sync_wallet(taker: &State<Taker>, _user: User) -> Result<(), Ht
     Ok(())
 }
 
-#[rocket::get("/backup")]
-#[instrument(name = "GET /backup", skip_all)]
-pub async fn get_seed_backup(
-    seed: &State<Arc<ThreadSafeSeed>>,
+#[rocket::get("/export")]
+#[instrument(name = "GET /export", skip_all)]
+pub async fn get_export_seed(
+    data_dir: &State<PathBuf>,
     _user: User,
 ) -> Result<DownloadResponsePro, HttpApiProblem> {
+    let seed = tokio::fs::read(data_dir.join(seed::TAKER_WALLET_SEED_FILE))
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Could not export seed file")
+                .detail(format!("{e:#}"))
+        })?;
+
     let resp = DownloadResponsePro::from_vec(
-        seed.inner().seed(),
-        Some("taker_seed"),
+        seed,
+        Some(seed::TAKER_WALLET_SEED_FILE),
         Some(mime::APPLICATION_OCTET_STREAM),
     );
     Ok(resp)
+}
+
+#[rocket::put("/import", data = "<seed>")]
+#[instrument(name = "PUT /import", skip_all)]
+pub async fn put_import_seed(
+    seed: Data<'_>,
+    taker: &State<Taker>,
+    data_dir: &State<PathBuf>,
+    network: &State<Network>,
+) -> Result<(), HttpApiProblem> {
+    // fetch seed from upload stream as bytes. we only support the random seed.
+    let seed = seed
+        .open(RANDOM_SEED_SIZE.bytes())
+        .into_bytes()
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Could not import seed file")
+                .detail(format!("{e:#}"))
+        })?;
+
+    if !seed.is_complete() {
+        return Err(HttpApiProblem::new(StatusCode::BAD_REQUEST).title("Exceeded max file size."));
+    }
+
+    taker
+        .import_seed(
+            seed.into_inner(),
+            data_dir.inner().clone(),
+            *network.inner(),
+            seed::TAKER_WALLET_SEED_FILE,
+        )
+        .await
+        .map_err(|e| {
+            HttpApiProblem::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .title("Could not restore seed file")
+                .detail(format!("{e:#}"))
+        })?;
+
+    Ok(())
 }
 
 #[cfg(test)]

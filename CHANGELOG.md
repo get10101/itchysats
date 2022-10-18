@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Electron App has now a tray icon for macOS 🚀
+- Split identity and wallet seed into two separate files.
+- Wallet seeds created by ItchySats can now be imported and exported for the taker.
 
 ## [0.7.0] - 2022-09-30
 

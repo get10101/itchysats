@@ -6,6 +6,7 @@ use bdk::bitcoin::secp256k1::SecretKey;
 use bdk::bitcoin::util::bip32::ExtendedPrivKey;
 use bdk::bitcoin::Amount;
 use bdk::bitcoin::Network;
+use bdk::database::BatchDatabase;
 use bdk::BlockTime;
 use rand::CryptoRng;
 use rand::RngCore;
@@ -17,6 +18,20 @@ pub fn new_test_wallet(
     utxo_amount: Amount,
     num_utxos: u8,
 ) -> Result<bdk::Wallet<bdk::database::MemoryDatabase>> {
+    new_test_wallet_from_database(
+        rng,
+        utxo_amount,
+        num_utxos,
+        bdk::database::MemoryDatabase::new(),
+    )
+}
+
+pub fn new_test_wallet_from_database<DB: BatchDatabase>(
+    rng: &mut (impl RngCore + CryptoRng),
+    utxo_amount: Amount,
+    num_utxos: u8,
+    mut database: DB,
+) -> Result<bdk::Wallet<DB>> {
     use bdk::populate_test_db;
     use bdk::testutils;
 
@@ -25,8 +40,6 @@ pub fn new_test_wallet(
 
     let key = ExtendedPrivKey::new_master(Network::Regtest, &seed)?;
     let descriptors = testutils!(@descriptors (&format!("wpkh({key}/*)")));
-
-    let mut database = bdk::database::MemoryDatabase::new();
 
     for index in 0..num_utxos {
         populate_test_db!(

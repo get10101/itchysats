@@ -6,6 +6,7 @@ use daemon::bdk::FeeRate;
 use daemon::monitor;
 use daemon::oracle;
 use daemon::projection;
+use daemon::seed;
 use daemon::seed::RandomSeed;
 use daemon::seed::Seed;
 use daemon::wallet;
@@ -63,7 +64,7 @@ async fn main() -> Result<()> {
         "CFDs created with this release will settle after {settlement_interval_hours} hours"
     );
 
-    let seed = RandomSeed::initialize(&data_dir.join("maker_seed")).await?;
+    let seed = RandomSeed::initialize(&data_dir.join(seed::MAKER_WALLET_SEED_FILE)).await?;
 
     let bitcoin_network = opts.network.bitcoin_network();
 
@@ -83,8 +84,12 @@ async fn main() -> Result<()> {
     let mut wallet_dir = data_dir.clone();
 
     wallet_dir.push(MAKER_WALLET_ID);
-    let (wallet, wallet_feed_receiver) =
-        wallet::Actor::spawn(opts.network.electrum(), ext_priv_key, wallet_dir)?;
+    let (wallet, wallet_feed_receiver) = wallet::Actor::spawn(
+        opts.network.electrum(),
+        ext_priv_key,
+        wallet_dir,
+        wallet_seed.is_managed(),
+    )?;
 
     if let Some(Withdraw::Withdraw {
         amount,
