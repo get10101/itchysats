@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
+use xtras::SendAsyncNext;
 use xtras::SendInterval;
 
 const LOCK_FINALITY_CONFIRMATIONS: u32 = 1;
@@ -453,7 +454,9 @@ impl Actor {
     }
 
     #[tracing::instrument("Sync monitor", skip_all, err)]
-    async fn sync(&mut self) -> Result<()> {
+    async fn start_sync(
+        &mut self,
+    ) -> Result<(BlockHeight, tokio::sync::mpsc::Receiver<Vec<GetHistoryRes>>)> {
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
         // subscription push notifications because eventually the Electrum server will
@@ -470,12 +473,7 @@ impl Actor {
 
         tracing::trace!("Updating status of {num_transactions} transactions",);
 
-        // TODO: Evaluate buffer; if we do batches of 25 and allow buffer of 100 here, does that
-        // mean we can at most process 4 batches at the time?  What happens if the buffer is
-        // exhausted? (I would expect the next messages will be queued) We use tokio::sync::
-        // mpsc::channel because we need the receiver to be in an async context because we do async
-        // work upon receiving script updates
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(100);
+        let (tx_script_updates, rx_script_updates) = tokio::sync::mpsc::channel(BATCH_SIZE * 4);
 
         let scripts = self
             .state
@@ -487,21 +485,22 @@ impl Actor {
 
         let client = self.client.clone();
 
-        let batch_futures = batches.into_iter().map(move |batch| {
+        for batch in batches {
             tokio::task::spawn_blocking({
                 let client = client.clone();
-                let sender = sender.clone();
+                let tx_script_updates = tx_script_updates.clone();
                 move || {
                     for script in batch {
-                        // TODO: Evaluate if we should notify the receivers about errors, I feel
-                        //  logging is good enough here because the receiver won't know how to deal
-                        //  with an error.
                         match client.script_get_history(&script) {
-                            Ok(resp) => {
+                            Ok(script_history_response) => {
                                 // We use blocking_send to stay within a sync context here
                                 // One should not use async code in a spawn_blocking block
-                                if let Err(e) = sender.blocking_send(resp) {
-                                    tracing::error!("Error during script history batching: {e:#}")
+                                if let Err(e) =
+                                    tx_script_updates.blocking_send(script_history_response)
+                                {
+                                    tracing::error!(
+                                        "Error when processing script_get_history response: {e:#}"
+                                    )
                                 }
                             }
                             Err(e) => {
@@ -510,75 +509,10 @@ impl Actor {
                         }
                     }
                 }
-            })
-        });
-
-        let joined_batch_futures = futures::future::join_all(batch_futures);
-        tokio::spawn(joined_batch_futures);
-
-        while let Some(script_history) = receiver.recv().await {
-            // TODO: It's a bit weird that we pass in the latest block here several times but it
-            // won't cause trouble 🤷‍  - We could refactor this logic at some point
-            self.process_script_status_update(script_history, latest_block_height)
-                .await;
+            });
         }
 
-        Ok(())
-    }
-
-    async fn process_script_status_update(
-        &mut self,
-        script_history: Vec<GetHistoryRes>,
-        latest_block_height: BlockHeight,
-    ) {
-        let status_list = script_history
-            .into_iter()
-            .map(|history| TxStatus {
-                height: history.height,
-                tx_hash: history.tx_hash,
-            })
-            .collect();
-
-        let mut ready_events = self.state.update(latest_block_height, status_list);
-
-        while let Some(event) = ready_events.pop() {
-            match event {
-                Event::LockFinality(id) => {
-                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_lock_confirmed())))
-                        .await
-                }
-                Event::CommitFinality(id) => {
-                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_commit_confirmed())))
-                        .await
-                }
-                Event::CloseFinality(id) => {
-                    self.invoke_cfd_command(id, |cfd| {
-                        Ok(Some(cfd.handle_collaborative_settlement_confirmed()))
-                    })
-                    .await
-                }
-                Event::CetTimelockExpired(id) => {
-                    self.invoke_cfd_command(id, |cfd| cfd.handle_cet_timelock_expired().map(Some))
-                        .await
-                }
-                Event::CetFinality(id) => {
-                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_cet_confirmed())))
-                        .await
-                }
-                Event::RefundFinality(id) => {
-                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_refund_confirmed())))
-                        .await
-                }
-                Event::RevokedTransactionFound(id) => {
-                    self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_revoke_confirmed())))
-                        .await
-                }
-                Event::RefundTimelockExpired(id) => {
-                    self.invoke_cfd_command(id, |cfd| cfd.handle_refund_timelock_expired())
-                        .await
-                }
-            }
-        }
+        Ok((latest_block_height, rx_script_updates))
     }
 
     async fn invoke_cfd_command(
@@ -1046,9 +980,76 @@ struct ReinitMonitoring {
 
 #[xtra_productivity]
 impl Actor {
-    async fn handle(&mut self, _: Sync) {
-        if let Err(e) = self.sync().await {
-            tracing::warn!("Sync failed: {:#}", e);
+    async fn handle(&mut self, _: Sync, ctx: &mut xtra::Context<Self>) {
+        match self.start_sync().await {
+            Ok((latest_block_height, mut rx_script_updates)) => {
+                while let Some(script_history) = rx_script_updates.recv().await {
+                    let script_status = script_history
+                        .into_iter()
+                        .map(|history| TxStatus {
+                            height: history.height,
+                            tx_hash: history.tx_hash,
+                        })
+                        .collect();
+
+                    let mut ready_events = self.state.update(latest_block_height, script_status);
+
+                    if ready_events.is_empty() {
+                        return;
+                    }
+
+                    let this = ctx.address().expect("we are alive");
+
+                    while let Some(event) = ready_events.pop() {
+                        // Dispatch handling the cfd update so we don't block sync processing
+                        // These messages will be handled once the sync finished because the sync
+                        // blocks the actor from processing new messages until done
+                        this.send_async_next(event).await;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Sync failed: {:#}", e);
+            }
+        }
+    }
+
+    async fn handle_event(&mut self, msg: Event) {
+        match msg {
+            Event::LockFinality(id) => {
+                self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_lock_confirmed())))
+                    .await
+            }
+            Event::CommitFinality(id) => {
+                self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_commit_confirmed())))
+                    .await
+            }
+            Event::CloseFinality(id) => {
+                self.invoke_cfd_command(id, |cfd| {
+                    Ok(Some(cfd.handle_collaborative_settlement_confirmed()))
+                })
+                .await
+            }
+            Event::CetTimelockExpired(id) => {
+                self.invoke_cfd_command(id, |cfd| cfd.handle_cet_timelock_expired().map(Some))
+                    .await
+            }
+            Event::CetFinality(id) => {
+                self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_cet_confirmed())))
+                    .await
+            }
+            Event::RefundFinality(id) => {
+                self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_refund_confirmed())))
+                    .await
+            }
+            Event::RevokedTransactionFound(id) => {
+                self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_revoke_confirmed())))
+                    .await
+            }
+            Event::RefundTimelockExpired(id) => {
+                self.invoke_cfd_command(id, |cfd| cfd.handle_refund_timelock_expired())
+                    .await
+            }
         }
     }
 }
