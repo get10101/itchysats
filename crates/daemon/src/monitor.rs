@@ -487,24 +487,23 @@ impl Actor {
             .cloned()
             .collect::<Vec<Script>>();
 
-        let histories = batch_script_get_history(self.client.clone(), scripts).await;
+        let mut rx_script_updates = batch_script_get_history(self.client.clone(), scripts).await;
 
-        let mut ready_events = self.state.update(
-            latest_block_height,
-            histories
+        let mut all_ready_events = Vec::new();
+        while let Some(script_history) = rx_script_updates.recv().await {
+            let script_status = script_history
                 .into_iter()
-                .map(|list| {
-                    list.into_iter()
-                        .map(|response| TxStatus {
-                            height: response.height,
-                            tx_hash: response.tx_hash,
-                        })
-                        .collect()
+                .map(|history| TxStatus {
+                    height: history.height,
+                    tx_hash: history.tx_hash,
                 })
-                .collect(),
-        );
+                .collect();
 
-        while let Some(event) = ready_events.pop() {
+            let mut ready_events = self.state.update(latest_block_height, script_status);
+            all_ready_events.append(&mut ready_events)
+        }
+
+        while let Some(event) = all_ready_events.pop() {
             match event {
                 Event::LockFinality(id) => {
                     self.invoke_cfd_command(id, |cfd| Ok(Some(cfd.handle_lock_confirmed())))
@@ -1033,10 +1032,9 @@ static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterV
 async fn batch_script_get_history(
     client: Arc<electrum_client::Client>,
     scripts: Vec<Script>,
-) -> Vec<Vec<GetHistoryRes>> {
-    let (tx_script_updates, mut rx_script_updates) = tokio::sync::mpsc::channel(BATCH_SIZE * 4);
+) -> tokio::sync::mpsc::Receiver<Vec<GetHistoryRes>> {
+    let (tx_script_updates, rx_script_updates) = tokio::sync::mpsc::channel(BATCH_SIZE * 4);
 
-    let scripts_len = scripts.len();
     let batches = scripts.chunks(BATCH_SIZE).map(|batch| batch.to_owned());
 
     // It's important to move here so the sender gets dropped and the receiver finishes correctly
@@ -1067,12 +1065,7 @@ async fn batch_script_get_history(
         });
     });
 
-    let mut histories = Vec::with_capacity(scripts_len);
-    while let Some(script_history) = rx_script_updates.recv().await {
-        histories.push(script_history)
-    }
-
-    histories
+    rx_script_updates
 }
 
 #[cfg(test)]
@@ -1119,7 +1112,6 @@ mod test {
         let script = bitcoin::Address::from_str("2MsQEtPJ6JJZszMYrD6udjUyTDFLczWQrv9")
             .unwrap()
             .script_pubkey();
-        let response_length_to_assert = 0;
 
         test_batch_script_get_history(vec![script]).await;
     }
@@ -1143,9 +1135,14 @@ mod test {
         .unwrap();
 
         let scripts_len = scripts.len();
-        let rx_script_history = batch_script_get_history(Arc::new(client), scripts).await;
+        let mut rx_script_history = batch_script_get_history(Arc::new(client), scripts).await;
 
-        assert_eq!(scripts_len, rx_script_history.len());
+        let mut complete_history = Vec::new();
+        while let Some(script_history) = rx_script_history.recv().await {
+            complete_history.push(script_history);
+        }
+
+        assert_eq!(scripts_len, complete_history.len());
 
         let end_time = SystemTime::now();
         let execution_duration = end_time.duration_since(start_time).unwrap();
