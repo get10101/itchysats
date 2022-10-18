@@ -292,20 +292,20 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(10),
-            vec![vec![TxStatus {
+            vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-            }]],
+            }],
         );
 
         assert_eq!(ready_events, vec![foo_finality]);
 
         let ready_events = state.update(
             BlockHeight(20),
-            vec![vec![TxStatus {
+            vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-            }]],
+            }],
         );
 
         assert_eq!(ready_events, vec![baz_expired]);
@@ -335,10 +335,10 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(0),
-            vec![vec![TxStatus {
+            vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-            }]],
+            }],
         );
 
         assert_eq!(ready_events, vec![bar_finality]);
@@ -361,10 +361,10 @@ mod tests {
 
         let ready_events = state.update(
             BlockHeight(0),
-            vec![vec![TxStatus {
+            vec![TxStatus {
                 height: 5,
                 tx_hash: txid1(),
-            }]],
+            }],
         );
 
         assert_eq!(ready_events, vec![foo_finality]);
