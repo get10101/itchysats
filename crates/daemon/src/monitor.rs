@@ -35,6 +35,13 @@ const COMMIT_FINALITY_CONFIRMATIONS: u32 = 1;
 const CET_FINALITY_CONFIRMATIONS: u32 = 3;
 const REFUND_FINALITY_CONFIRMATIONS: u32 = 3;
 
+/// Electrum client timeout in seconds
+///
+/// This timeout is used when establishing the connection and for all requests of the electrum
+/// client. We explicitly set the timeout because otherwise the underlying TCP connection timeout is
+/// used which is hard to be predicted.
+const ELECTRUM_CLIENT_TIMEOUT_SECS: u8 = 120;
+
 pub struct MonitorAfterContractSetup {
     order_id: OrderId,
     transactions: TransactionsAfterContractSetup,
@@ -328,8 +335,13 @@ impl Actor {
         electrum_rpc_url: String,
         executor: command::Executor,
     ) -> Result<Self> {
-        let client = bdk::electrum_client::Client::new(&electrum_rpc_url)
-            .context("Failed to initialize Electrum RPC client")?;
+        let client = bdk::electrum_client::Client::from_config(
+            &electrum_rpc_url,
+            electrum_client::ConfigBuilder::new()
+                .timeout(Some(ELECTRUM_CLIENT_TIMEOUT_SECS))?
+                .build(),
+        )
+        .context("Failed to initialize Electrum RPC client")?;
 
         // Initially fetch the latest block for storing the height.
         // We do not act on this subscription after this call.
