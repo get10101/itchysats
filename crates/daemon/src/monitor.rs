@@ -481,14 +481,13 @@ impl Actor {
 
         tracing::trace!("Updating status of {num_transactions} transactions",);
 
-        let scripts = self.state.monitoring_scripts().cloned().collect();
+        let scripts = self
+            .state
+            .monitoring_scripts()
+            .cloned()
+            .collect::<Vec<Script>>();
 
-        let mut rx_script_history = batch_script_get_history(self.client.clone(), scripts);
-
-        let mut histories = Vec::new();
-        while let Some(script_history) = rx_script_history.recv().await {
-            histories.push(script_history)
-        }
+        let histories = batch_script_get_history(self.client.clone(), scripts).await;
 
         let mut ready_events = self.state.update(
             latest_block_height,
@@ -1031,12 +1030,13 @@ static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterV
         .unwrap()
     });
 
-fn batch_script_get_history(
+async fn batch_script_get_history(
     client: Arc<electrum_client::Client>,
     scripts: Vec<Script>,
-) -> tokio::sync::mpsc::Receiver<Vec<GetHistoryRes>> {
-    let (tx_script_updates, rx_script_updates) = tokio::sync::mpsc::channel(BATCH_SIZE * 4);
+) -> Vec<Vec<GetHistoryRes>> {
+    let (tx_script_updates, mut rx_script_updates) = tokio::sync::mpsc::channel(BATCH_SIZE * 4);
 
+    let scripts_len = scripts.len();
     let batches = scripts.chunks(BATCH_SIZE).map(|batch| batch.to_owned());
 
     // It's important to move here so the sender gets dropped and the receiver finishes correctly
@@ -1067,7 +1067,12 @@ fn batch_script_get_history(
         });
     });
 
-    rx_script_updates
+    let mut histories = Vec::with_capacity(scripts_len);
+    while let Some(script_history) = rx_script_updates.recv().await {
+        histories.push(script_history)
+    }
+
+    histories
 }
 
 #[cfg(test)]
@@ -1077,10 +1082,8 @@ mod test {
     use bdk::bitcoin;
     use bdk::bitcoin::Script;
     use bdk::electrum_client;
-    use bdk::electrum_client::GetHistoryRes;
     use std::str::FromStr;
     use std::sync::Arc;
-    use std::time::Duration;
     use std::time::SystemTime;
     use tracing_subscriber::util::SubscriberInitExt;
 
@@ -1099,15 +1102,14 @@ mod test {
         let script = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF")
             .unwrap()
             .script_pubkey();
-        let response_length_to_assert = 328;
 
         let mut scripts = Vec::new();
 
-        for _ in 1..100 {
+        for _ in 0..100 {
             scripts.push(script.clone());
         }
 
-        test_runner(scripts, response_length_to_assert).await;
+        test_runner(scripts).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
@@ -1119,10 +1121,10 @@ mod test {
             .script_pubkey();
         let response_length_to_assert = 0;
 
-        test_runner(vec![script], response_length_to_assert).await;
+        test_runner(vec![script]).await;
     }
 
-    async fn test_runner(scripts: Vec<Script>, assert_response_len: usize) {
+    async fn test_runner(scripts: Vec<Script>) {
         let _guard = tracing_subscriber::fmt()
             .with_env_filter("info")
             .with_test_writer()
@@ -1140,37 +1142,13 @@ mod test {
         )
         .unwrap();
 
-        let rx_script_history = batch_script_get_history(Arc::new(client), scripts);
+        let scripts_len = scripts.len();
+        let rx_script_history = batch_script_get_history(Arc::new(client), scripts).await;
 
-        handle_result(rx_script_history, start_time, assert_response_len).await;
+        assert_eq!(scripts_len, rx_script_history.len());
 
         let end_time = SystemTime::now();
         let execution_duration = end_time.duration_since(start_time).unwrap();
         tracing::info!("Total execution duration: {execution_duration:?}");
-    }
-
-    async fn handle_result(
-        mut receiver: tokio::sync::mpsc::Receiver<Vec<GetHistoryRes>>,
-        start: SystemTime,
-        assert_response_len: usize,
-    ) {
-        let mut counter = 1;
-
-        // We don't actually assert on the response
-        while let Some(resp) = receiver.recv().await {
-            counter += 1;
-
-            if counter % 25 == 0 {
-                let current = SystemTime::now();
-                let duration = current.duration_since(start).unwrap();
-                tracing::info!("processing response {counter} at time: {duration:?}");
-            }
-
-            assert!(resp.len() >= assert_response_len);
-
-            // Simulate some async processing, we also do work here in production
-            #[allow(clippy::disallowed_methods)]
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
     }
 }
