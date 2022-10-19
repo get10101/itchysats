@@ -6,7 +6,7 @@ description = "Extension trait for the xtra actor framework"
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1.57"
+async-trait = "0.1.58"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 quiet-spans = { path = "../quiet-spans" }
 thiserror = "1"

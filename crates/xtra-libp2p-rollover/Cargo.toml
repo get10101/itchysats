@@ -6,7 +6,7 @@ description = "Implementation of the `/itchysats/rollover` protocol using xtra-l
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1.57"
+async-trait = "0.1.58"
 asynchronous-codec = { version = "0.6.0", features = ["json"] }
 bdk = { version = "0.23.0", default-features = false }
 bdk-ext = { path = "../bdk-ext" }
