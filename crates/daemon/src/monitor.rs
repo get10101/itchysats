@@ -27,6 +27,7 @@ use sqlite_db;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
@@ -465,6 +466,8 @@ impl Actor {
 
     #[tracing::instrument("Sync monitor", skip_all, err)]
     async fn sync(&mut self) -> Result<()> {
+        let start_time = Instant::now();
+
         // Fetch the latest block for storing the height.
         // We do not act on this subscription after this call, as we cannot rely on
         // subscription push notifications because eventually the Electrum server will
@@ -479,7 +482,7 @@ impl Actor {
 
         let num_transactions = self.state.num_monitoring();
 
-        tracing::trace!("Updating status of {num_transactions} transactions",);
+        tracing::trace!("Sync Started: Updating status of {num_transactions} transactions");
 
         let scripts = self
             .state
@@ -542,6 +545,10 @@ impl Actor {
                 }
             }
         }
+
+        let execution_time = start_time.elapsed().as_secs_f64();
+        SYNC_DURATION_HISTOGRAM.observe(execution_time);
+        tracing::trace!("Sync Finished: Execution time {execution_time:?}");
 
         Ok(())
     }
@@ -1074,6 +1081,20 @@ async fn batch_script_get_history(
 
     histories
 }
+
+static SYNC_DURATION_HISTOGRAM: conquer_once::Lazy<prometheus::Histogram> =
+    conquer_once::Lazy::new(|| {
+        prometheus::register_histogram!(
+            "monitor_sync_duration_seconds",
+            "The duration of one sync run of the monitor.",
+            vec![
+                2.0, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0, 110.0,
+                120.0, 130.0, 140.0, 150.0, 160.0, 170.0, 180.0, 190.0, 200.0, 210.0, 220.0, 230.0,
+                240.0, 250.0, 260.0, 270.0, 280.0, 290.0, 300.0
+            ]
+        )
+        .unwrap()
+    });
 
 #[cfg(test)]
 mod test {
