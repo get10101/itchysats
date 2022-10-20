@@ -28,6 +28,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+use tokio_extras::FutureExt;
+use tracing::debug_span;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
@@ -45,6 +47,13 @@ const BATCH_SIZE: usize = 25;
 /// client. We explicitly set the timeout because otherwise the underlying TCP connection timeout is
 /// used which is hard to be predicted.
 const ELECTRUM_CLIENT_TIMEOUT_SECS: u8 = 120;
+
+/// Timeout for each response from script_get_history
+///
+/// Requests are batched and all batches handled in parallel. We expect the responses to arrive
+/// continuously. If we don't receive a response within the bounds of this timeout then we break the
+/// receiver loop and stop processing.
+const SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct MonitorAfterContractSetup {
     order_id: OrderId,
@@ -482,7 +491,7 @@ impl Actor {
 
         let num_transactions = self.state.num_monitoring();
 
-        tracing::trace!("Sync Started: Updating status of {num_transactions} transactions");
+        tracing::debug!("Sync Started: Updating status of {num_transactions} transactions");
 
         let scripts = self
             .state
@@ -491,6 +500,8 @@ impl Actor {
             .collect::<Vec<Script>>();
 
         let histories = batch_script_get_history(self.client.clone(), scripts).await;
+
+        tracing::trace!("Sync Update: Fetching histories finished, updating state");
 
         let mut ready_events = self.state.update(
             latest_block_height,
@@ -506,6 +517,8 @@ impl Actor {
                 })
                 .collect(),
         );
+
+        tracing::trace!("Sync Update: Processing events: {ready_events:?}");
 
         while let Some(event) = ready_events.pop() {
             match event {
@@ -548,7 +561,7 @@ impl Actor {
 
         let execution_time = start_time.elapsed().as_secs_f64();
         SYNC_DURATION_HISTOGRAM.observe(execution_time);
-        tracing::trace!("Sync Finished: Execution time {execution_time:?}");
+        tracing::debug!("Sync Finished: Execution time {execution_time:?}");
 
         Ok(())
     }
@@ -1075,8 +1088,31 @@ async fn batch_script_get_history(
     });
 
     let mut histories = Vec::with_capacity(scripts_len);
-    while let Some(script_history) = rx_script_updates.recv().await {
-        histories.push(script_history)
+
+    loop {
+        match rx_script_updates
+            .recv()
+            .timeout(SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT, || {
+                debug_span!("script_get_history")
+            })
+            .await
+        {
+            Ok(Some(script_history)) => histories.push(script_history),
+            Ok(None) => break,
+            Err(tokio::time::error::Elapsed { .. }) => {
+                let histories_len = histories.len();
+                tracing::warn!(
+                    requests_sent=%scripts_len,
+                    responses_received=histories_len,
+                    timeout=?SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT,
+                    "Not all responses received because timeout reached"
+                );
+
+                // We only break, we will still return the histories that were fetched and process
+                // them, but it might not be all
+                break;
+            }
+        }
     }
 
     histories
