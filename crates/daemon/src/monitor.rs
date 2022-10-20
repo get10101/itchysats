@@ -492,6 +492,8 @@ impl Actor {
 
         let histories = batch_script_get_history(self.client.clone(), scripts).await;
 
+        tracing::trace!("Sync Update: Fetching histories finished, updating state");
+
         let mut ready_events = self.state.update(
             latest_block_height,
             histories
@@ -506,6 +508,8 @@ impl Actor {
                 })
                 .collect(),
         );
+
+        tracing::trace!("Sync Update: Processing events: {ready_events:?}");
 
         while let Some(event) = ready_events.pop() {
             match event {
