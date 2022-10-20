@@ -482,7 +482,7 @@ impl Actor {
 
         let num_transactions = self.state.num_monitoring();
 
-        tracing::trace!("Sync Started: Updating status of {num_transactions} transactions");
+        tracing::debug!("Sync Started: Updating status of {num_transactions} transactions");
 
         let scripts = self
             .state
@@ -548,7 +548,7 @@ impl Actor {
 
         let execution_time = start_time.elapsed().as_secs_f64();
         SYNC_DURATION_HISTOGRAM.observe(execution_time);
-        tracing::trace!("Sync Finished: Execution time {execution_time:?}");
+        tracing::debug!("Sync Finished: Execution time {execution_time:?}");
 
         Ok(())
     }
