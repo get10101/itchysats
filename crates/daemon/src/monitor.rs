@@ -55,6 +55,8 @@ const ELECTRUM_CLIENT_TIMEOUT_SECS: u8 = 120;
 /// receiver loop and stop processing.
 const SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
+const SYNC_INTERVAL: Duration = Duration::from_secs(120);
+
 pub struct MonitorAfterContractSetup {
     order_id: OrderId,
     transactions: TransactionsAfterContractSetup,
@@ -600,7 +602,7 @@ impl xtra::Actor for Actor {
         tokio_extras::spawn(
             &this,
             this.clone().send_interval(
-                Duration::from_secs(20),
+                SYNC_INTERVAL,
                 || Sync,
                 xtras::IncludeSpan::Always,
             ),
