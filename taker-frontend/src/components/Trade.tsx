@@ -156,7 +156,7 @@ export default function Trade({
 
     return (
         <VStack>
-            ?<Center>
+            <Center>
                 <Grid
                     templateRows="repeat(1, 1fr)"
                     templateColumns="repeat(1, 1fr)"

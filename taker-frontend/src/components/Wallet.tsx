@@ -2,6 +2,7 @@ import { CheckIcon, CopyIcon, RepeatIcon } from "@chakra-ui/icons";
 import {
     Box,
     Button,
+    ButtonGroup,
     Center,
     CircularProgress,
     Divider,
@@ -11,8 +12,11 @@ import {
     FormLabel,
     Heading,
     HStack,
+    Icon,
     IconButton,
     Input,
+    InputGroup,
+    InputLeftElement,
     Link,
     NumberDecrementStepper,
     NumberIncrementStepper,
@@ -28,30 +32,40 @@ import {
     VStack,
 } from "@chakra-ui/react";
 import { useAsync } from "@react-hookz/web";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import dayjs from "dayjs";
 import FileSaver from "file-saver";
 import { QRCodeCanvas } from "qrcode.react";
 import * as React from "react";
 import { useState } from "react";
 import { BsArrowDownRightCircle, BsArrowUpRightCircle } from "react-icons/all";
+import { FaSeedling } from "react-icons/fa";
 import { Transaction, WalletInfo, WithdrawRequest } from "../types";
 import usePostRequest from "../usePostRequest";
 import Timestamp from "./Timestamp";
 
 interface WalletProps {
     walletInfo: WalletInfo | null;
+    cfds: boolean;
+}
+
+interface SeedFile {
+    name: string;
+    blob: Blob;
 }
 
 export default function Wallet(
     {
         walletInfo,
+        cfds,
     }: WalletProps,
 ) {
     const toast = useToast();
 
     const { hasCopied, onCopy } = useClipboard(walletInfo ? walletInfo.address : "");
     const { balance, address, last_updated_at } = walletInfo || {};
+
+    const [seed, setSeed] = useState<SeedFile | string>("");
 
     const [withdrawAmount, setWithdrawAmount] = useState(0);
     const [fee, setFee] = useState(1);
@@ -100,13 +114,48 @@ export default function Wallet(
     );
     let isSyncingWallet = walletSyncing === "loading";
 
+    let [{ status: importing }, { execute: importSeed }] = useAsync(
+        async () => {
+            try {
+                await axios.put("/api/import", (seed as SeedFile).blob, {
+                    withCredentials: true,
+                    headers: {
+                        "Content-Type": "application/octet-stream",
+                    },
+                });
+
+                toast({
+                    title: "Success: Importing Seed",
+                    description: "Successfully imported seed",
+                    status: "success",
+                    duration: 10000,
+                    isClosable: true,
+                });
+            } catch (e: any) {
+                let message = "Unknown error!";
+                if (e instanceof AxiosError) {
+                    // @ts-ignore
+                    message = e.response.data.title;
+                }
+                toast({
+                    title: "Error: Importing Seed",
+                    description: message,
+                    status: "error",
+                    duration: 10000,
+                    isClosable: true,
+                });
+            }
+        },
+    );
+    let isImporting = importing === "loading";
+
     const exportSeed = () => {
         // downloads the taker seed file directly from the endpoint. No error handling as this is using
-        // the native html 5 functionality similar to <a href="/api/backup" download></a>
-        FileSaver.saveAs("/api/backup", "taker-seed", { autoBom: false });
+        // the native html 5 functionality similar to <a href="/api/export" download></a>
+        FileSaver.saveAs("/api/export", "taker_seed", { autoBom: false });
 
         toast({
-            title: "Backup successful",
+            title: "Export successful",
             description: "Keep that safe!",
             status: "success",
             duration: 10000,
@@ -228,17 +277,119 @@ export default function Wallet(
                         >
                             Withdraw
                         </Button>
-                        <Button
-                            variant={"solid"}
-                            colorScheme={"blue"}
-                            onClick={exportSeed}
-                        >
-                            Backup Seed
-                        </Button>
                     </HStack>
                 </VStack>
 
-                <Divider marginTop={2} marginBottom={2} />
+                {walletInfo?.managed_wallet && (
+                    <Box>
+                        <Divider marginTop={3} marginBottom={4} />
+                        <Center>
+                            <Heading size={"sm"}>Import / Export Seed</Heading>
+                        </Center>
+
+                        <VStack padding={2}>
+                            <HStack>
+                                <FormControl id="seed">
+                                    <FormLabel>Seed</FormLabel>
+                                    <input
+                                        type="file"
+                                        id={"importSeed"}
+                                        style={{ display: "none" }}
+                                        onChange={(event) => {
+                                            if (
+                                                !event.target || !event.target.files || event.target.files.length === 0
+                                            ) {
+                                                setSeed("");
+                                                return;
+                                            }
+                                            const file = event.target.files[0];
+
+                                            if (file.size !== 256) {
+                                                toast({
+                                                    title: "Error: Incorrect seed file",
+                                                    description:
+                                                        "The selected seed file needs to be exactly 256 bytes long.",
+                                                    status: "error",
+                                                    duration: 10000,
+                                                    isClosable: true,
+                                                });
+                                                return;
+                                            }
+
+                                            const fileReader = new FileReader();
+
+                                            fileReader.readAsArrayBuffer(file);
+                                            fileReader.onload = () => {
+                                                setSeed({
+                                                    name: file.name,
+                                                    blob: new Blob([fileReader.result as ArrayBuffer], {
+                                                        // This will set the mimetype of the file
+                                                        type: "application/octet-stream",
+                                                    }),
+                                                });
+                                            };
+                                        }}
+                                    />
+                                    <InputGroup>
+                                        <InputLeftElement
+                                            pointerEvents="none"
+                                            children={<Icon as={FaSeedling} />}
+                                        />
+                                        <Input
+                                            placeholder="Click here to import your seed ..."
+                                            onClick={() => {
+                                                const element = document.getElementById("importSeed");
+                                                if (element) {
+                                                    element.click();
+                                                }
+                                            }}
+                                            onChange={(change) => {}}
+                                            value={seed ? (seed as SeedFile).name : ""}
+                                            isDisabled={cfds}
+                                        />
+                                    </InputGroup>
+                                    <FormHelperText>
+                                        You can not import your seed after CFDs have been created.
+                                    </FormHelperText>
+                                </FormControl>
+                                <Box pt={2}>
+                                    <ButtonGroup>
+                                        <Button
+                                            variant={"solid"}
+                                            colorScheme={"blue"}
+                                            onClick={async () => {
+                                                await importSeed();
+                                                setSeed("");
+                                                const element = document.getElementById("importSeed");
+                                                if (element) {
+                                                    // clear selected value from upload field.
+                                                    // @ts-ignore
+                                                    element.value = "";
+                                                }
+                                            }}
+                                            isLoading={isImporting}
+                                            disabled={seed === "" || isImporting || cfds}
+                                            size={"md"}
+                                        >
+                                            Import
+                                        </Button>
+
+                                        <Button
+                                            variant={"solid"}
+                                            colorScheme={"blue"}
+                                            onClick={exportSeed}
+                                            size={"md"}
+                                        >
+                                            Export
+                                        </Button>
+                                    </ButtonGroup>
+                                </Box>
+                            </HStack>
+                        </VStack>
+                    </Box>
+                )}
+
+                <Divider marginTop={7} marginBottom={2} />
                 <Box>
                     <Center>
                         <Heading size={"sm"}>History</Heading>

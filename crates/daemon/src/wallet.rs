@@ -1,4 +1,9 @@
 use crate::bitcoin::secp256k1::Secp256k1;
+use crate::seed::RandomSeed;
+use crate::seed::Seed;
+use crate::seed::RANDOM_SEED_SIZE;
+use crate::wallet::sled::Db;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
@@ -21,13 +26,16 @@ use bdk::database::BatchDatabase;
 use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
 use bdk::sled;
+use bdk::sled::Tree;
 use bdk::wallet::tx_builder::TxOrdering;
 use bdk::wallet::wallet_name_from_descriptor;
 use bdk::wallet::AddressIndex;
+use bdk::wallet::AddressInfo;
 use bdk::FeeRate;
 use bdk::KeychainKind;
 use bdk::SignOptions;
 use bdk::SyncOptions;
+use bdk::Wallet;
 use maia_core::PartyParams;
 use maia_core::TxBuilderExt;
 use model::Timestamp;
@@ -98,17 +106,20 @@ static STD_DEV_UTXO_VALUE_GAUGE: conquer_once::Lazy<prometheus::Gauge> =
     });
 
 pub struct Actor<B, DB> {
-    wallet: bdk::Wallet<DB>,
+    wallet: Wallet<DB>,
     blockchain_client: B,
     used_utxos: LockedUtxos,
     sender: watch::Sender<Option<WalletInfo>>,
+    db: Option<Db>,
+    managed_wallet: bool,
 }
 
-impl Actor<ElectrumBlockchain, sled::Tree> {
+impl Actor<ElectrumBlockchain, Tree> {
     pub fn spawn(
         electrum_rpc_url: &str,
         ext_priv_key: ExtendedPrivKey,
         db_path: PathBuf,
+        managed_wallet: bool,
     ) -> Result<(xtra::Address<Self>, watch::Receiver<Option<WalletInfo>>)> {
         let client = electrum_client::Client::new(electrum_rpc_url)
             .context("Failed to initialize Electrum RPC client")?;
@@ -118,23 +129,9 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
             "Wallet seed and Electrum RPC client on different networks."
         );
 
-        let wallet_name = wallet_name_from_descriptor(
-            bdk::template::Bip84(ext_priv_key, KeychainKind::External),
-            Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
-            ext_priv_key.network,
-            &Secp256k1::new(),
-        )?;
-
         // Create a database (using default sled type) to store wallet data
         let db = sled::open(db_path)?;
-        let db = db.open_tree(wallet_name)?;
-
-        let wallet = bdk::Wallet::new(
-            bdk::template::Bip84(ext_priv_key, KeychainKind::External),
-            Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
-            ext_priv_key.network,
-            db,
-        )?;
+        let wallet = Actor::build_wallet(ext_priv_key, db.clone())?;
 
         // UTXOs chosen after coin selection will only be locked for a
         // few wallet sync intervals. UTXOs which were actually
@@ -145,11 +142,14 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
         let time_to_lock = SYNC_INTERVAL * 4;
 
         let (sender, receiver) = watch::channel(None);
+
         let actor = Self {
             wallet,
             sender,
             used_utxos: LockedUtxos::new(time_to_lock),
             blockchain_client: ElectrumBlockchain::from(client),
+            db: Some(db),
+            managed_wallet,
         };
 
         let (addr, fut) = actor.create(None).run();
@@ -157,6 +157,67 @@ impl Actor<ElectrumBlockchain, sled::Tree> {
         std::thread::spawn(move || handle.block_on(fut));
 
         Ok((addr, receiver))
+    }
+
+    fn build_wallet(ext_priv_key: ExtendedPrivKey, db: Db) -> Result<Wallet<Tree>> {
+        let wallet_name = wallet_name_from_descriptor(
+            bdk::template::Bip84(ext_priv_key, KeychainKind::External),
+            Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
+            ext_priv_key.network,
+            &Secp256k1::new(),
+        )?;
+
+        let db = db.open_tree(wallet_name)?;
+
+        let wallet = Wallet::new(
+            bdk::template::Bip84(ext_priv_key, KeychainKind::External),
+            Some(bdk::template::Bip84(ext_priv_key, KeychainKind::Internal)),
+            ext_priv_key.network,
+            db,
+        )?;
+
+        Ok(wallet)
+    }
+}
+
+#[xtra_productivity]
+impl<B> Actor<B, Tree>
+where
+    Self: xtra::Actor,
+{
+    pub async fn import_seed(&mut self, msg: ImportSeed) -> Result<AddressInfo> {
+        let seed = msg.seed;
+        let import_seed: [u8; RANDOM_SEED_SIZE] = seed
+            .clone()
+            .try_into()
+            .map_err(|_| anyhow!("seed must be {RANDOM_SEED_SIZE} bytes long"))?;
+
+        let import_seed = RandomSeed::from(import_seed);
+        let ext_priv_key = import_seed.derive_extended_priv_key(msg.network)?;
+
+        // reuse existing database as the file has already been opened.
+        let db = self.db.clone().expect("database should be existing.");
+
+        // recreate and update wallet
+        self.wallet = Actor::build_wallet(ext_priv_key, db)?;
+
+        let name = msg.name;
+        let wallet_seed = msg.path.join(&name);
+
+        let now = Timestamp::now();
+        let backup_seed = msg.path.join(format!("{name}.{now}.back"));
+
+        if wallet_seed.exists() {
+            // copying old seed file to safety.
+            tokio::fs::copy(&wallet_seed, &backup_seed).await?;
+        }
+
+        // write imported seed file to disk.
+        tokio::fs::write(wallet_seed.as_path(), seed).await?;
+
+        self.wallet
+            .get_address(AddressIndex::LastUnused)
+            .map_err(|_| anyhow!("Could not get address"))
     }
 }
 
@@ -210,6 +271,7 @@ where
             address,
             last_updated_at: Timestamp::now(),
             transactions,
+            managed_wallet: self.managed_wallet,
         };
 
         tracing::trace!(target : "wallet", sync_time_sec = %now.elapsed().as_secs(), "Wallet sync done");
@@ -361,6 +423,13 @@ pub struct Sign {
     pub psbt: PartiallySignedTransaction,
 }
 
+pub struct ImportSeed {
+    pub seed: Vec<u8>,
+    pub path: PathBuf,
+    pub name: String,
+    pub network: Network,
+}
+
 pub struct Withdraw {
     pub amount: Option<Amount>,
     pub fee: Option<FeeRate>,
@@ -398,9 +467,9 @@ trait BuildLockTx {
     ) -> Result<PartiallySignedTransaction>;
 }
 
-impl<D> BuildLockTx for bdk::Wallet<D>
+impl<DB> BuildLockTx for Wallet<DB>
 where
-    D: BatchDatabase,
+    DB: BatchDatabase,
 {
     fn build_lock_tx(
         &mut self,
@@ -487,20 +556,31 @@ fn seed_and_rpc_on_same_network(rpc: &electrum_client::Client, network: Network)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bdk::database::MemoryDatabase;
     use bdk_ext::keypair;
     use bdk_ext::new_test_wallet;
+    use bdk_ext::new_test_wallet_from_database;
     use itertools::Itertools;
+    use rand::distributions::Alphanumeric;
     use rand::thread_rng;
+    use rand::Rng;
     use std::collections::HashSet;
+    use std::env;
+    use std::path::Path;
     use tokio_extras::Tasks;
 
-    impl Actor<(), bdk::database::MemoryDatabase> {
-        pub fn new_offline(
+    impl<DB: 'static> Actor<(), DB>
+    where
+        DB: BatchDatabase,
+    {
+        pub fn new_offline<D>(
             utxo_amount: Amount,
             num_utxos: u8,
             time_to_lock: Duration,
+            database: DB,
         ) -> Result<Self> {
-            let wallet = new_test_wallet(&mut thread_rng(), utxo_amount, num_utxos)?;
+            let wallet =
+                new_test_wallet_from_database(&mut thread_rng(), utxo_amount, num_utxos, database)?;
 
             let (sender, _receiver) = watch::channel(None);
 
@@ -512,6 +592,8 @@ mod tests {
                     time_to_lock,
                 },
                 blockchain_client: (),
+                db: None,
+                managed_wallet: true,
             })
         }
     }
@@ -524,6 +606,119 @@ mod tests {
         type Stop = ();
 
         async fn stopped(self) -> Self::Stop {}
+    }
+
+    pub async fn create_random_folder() -> Result<PathBuf> {
+        // create temporary folder
+        let random_folder: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(7)
+            .map(char::from)
+            .collect();
+        let data_dir = env::temp_dir().join(Path::new(&random_folder));
+        tokio::fs::create_dir_all(&data_dir).await?;
+
+        Ok(data_dir)
+    }
+
+    #[tokio::test]
+    async fn import_itchysats_seed_with_invalid_seed_length() {
+        let data_dir = create_random_folder()
+            .await
+            .expect("could not create random temp folder");
+
+        let mut tasks = Tasks::default();
+
+        let database = sled::open(data_dir.clone()).expect("could not open database");
+        let database = database
+            .open_tree("wallet name")
+            .expect("could not open tree");
+
+        // create wallet with only one UTXO which will be locked for a
+        // long time after being used
+        let actor =
+            Actor::new_offline::<Tree>(Amount::ONE_BTC, 1, Duration::from_secs(120), database)
+                .unwrap()
+                .create(None)
+                .spawn(&mut tasks);
+
+        // generate empty export seed (e.g. umbrel like)
+        let mut import_seed = [0u8; 32];
+        thread_rng().fill(&mut import_seed);
+
+        // import seed
+        actor
+            .send(ImportSeed {
+                seed: import_seed.to_vec(),
+                network: Network::Testnet,
+                path: data_dir,
+                name: crate::seed::TAKER_WALLET_SEED_FILE.to_string(),
+            })
+            .await
+            .unwrap()
+            .expect_err("seed should be too short");
+    }
+
+    #[tokio::test]
+    async fn import_itchysats_seed() {
+        let data_dir = create_random_folder()
+            .await
+            .expect("could not create random temp folder");
+
+        let mut tasks = Tasks::default();
+
+        let db = sled::open(data_dir.clone()).expect("could not open database");
+        let database = db.open_tree("wallet name").expect("could not open tree");
+
+        // create wallet with only one UTXO which will be locked for a
+        // long time after being used
+        let mut actor =
+            Actor::new_offline::<Tree>(Amount::ONE_BTC, 1, Duration::from_secs(120), database)
+                .unwrap();
+
+        actor.db = Some(db);
+
+        let old_address = &actor
+            .wallet
+            .get_address(AddressIndex::LastUnused)
+            .expect("old address")
+            .address;
+
+        let wallet = actor.create(None).spawn(&mut tasks);
+
+        const IMPORT_SEED: [u8; 256] = [
+            137, 78, 181, 39, 89, 143, 9, 224, 92, 125, 51, 183, 87, 95, 206, 236, 135, 33, 54, 10,
+            237, 169, 132, 74, 230, 66, 244, 244, 89, 224, 23, 62, 163, 60, 39, 66, 19, 213, 68,
+            56, 125, 14, 244, 247, 52, 68, 200, 153, 127, 86, 77, 119, 239, 133, 59, 129, 112, 250,
+            77, 36, 101, 31, 45, 181, 13, 55, 159, 179, 107, 50, 70, 70, 168, 192, 23, 51, 70, 84,
+            108, 101, 244, 99, 105, 36, 227, 118, 221, 245, 104, 33, 3, 91, 176, 176, 157, 42, 201,
+            92, 99, 104, 235, 84, 237, 229, 131, 204, 227, 15, 223, 109, 8, 47, 155, 132, 236, 108,
+            106, 59, 185, 70, 20, 247, 133, 192, 164, 93, 65, 141, 16, 18, 105, 251, 23, 168, 95,
+            145, 252, 101, 27, 218, 97, 26, 20, 71, 102, 221, 182, 146, 148, 11, 117, 159, 67, 132,
+            223, 245, 141, 174, 157, 226, 67, 5, 61, 218, 98, 131, 8, 170, 233, 140, 139, 198, 24,
+            107, 60, 147, 236, 194, 234, 227, 58, 54, 61, 245, 94, 209, 12, 28, 131, 156, 37, 169,
+            32, 38, 38, 212, 2, 26, 204, 231, 154, 194, 38, 142, 30, 71, 33, 100, 164, 169, 168,
+            34, 6, 110, 126, 22, 120, 191, 168, 219, 64, 70, 172, 224, 218, 142, 135, 179, 79, 140,
+            174, 157, 60, 43, 141, 218, 178, 45, 30, 184, 79, 100, 43, 97, 228, 35, 122, 60, 143,
+            239, 109, 104, 56, 64, 3, 131,
+        ]; // holds 0.001 btc on testnet
+
+        let address_info = wallet
+            .send(ImportSeed {
+                seed: IMPORT_SEED.to_vec(),
+                network: Network::Testnet,
+                path: data_dir,
+                name: crate::seed::TAKER_WALLET_SEED_FILE.to_string(),
+            })
+            .await
+            .unwrap()
+            .expect("failed to import seed");
+
+        assert_ne!(old_address.to_string(), address_info.address.to_string());
+        assert_eq!(
+            "tb1q6nn7xprjrztheedzy5353vv22nr43p8u8zamcc",
+            address_info.address.to_string()
+        );
     }
 
     #[test]
@@ -581,12 +776,15 @@ mod tests {
     async fn utxo_is_locked_after_building_party_params() {
         let mut tasks = Tasks::default();
 
-        // create wallet with only one UTXO which will be locked for a
-        // long time after being used
-        let actor = Actor::new_offline(Amount::ONE_BTC, 1, Duration::from_secs(120))
-            .unwrap()
-            .create(None)
-            .spawn(&mut tasks);
+        let actor = Actor::new_offline::<MemoryDatabase>(
+            Amount::ONE_BTC,
+            1,
+            Duration::from_secs(120),
+            MemoryDatabase::new(),
+        )
+        .unwrap()
+        .create(None)
+        .spawn(&mut tasks);
 
         let (_, identity_pk) = keypair::new(&mut thread_rng());
 
@@ -621,10 +819,15 @@ mod tests {
         // create wallet with only one UTXO which will be locked for a
         // few seconds after being used
         let time_to_lock = Duration::from_secs(2);
-        let actor = Actor::new_offline(Amount::ONE_BTC, 1, time_to_lock)
-            .unwrap()
-            .create(None)
-            .spawn(&mut tasks);
+        let actor = Actor::new_offline::<MemoryDatabase>(
+            Amount::ONE_BTC,
+            1,
+            time_to_lock,
+            MemoryDatabase::new(),
+        )
+        .unwrap()
+        .create(None)
+        .spawn(&mut tasks);
 
         let (_, identity_pk) = keypair::new(&mut thread_rng());
 

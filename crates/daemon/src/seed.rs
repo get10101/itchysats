@@ -14,6 +14,15 @@ use std::fmt;
 use std::fmt::Debug;
 use std::path::Path;
 
+pub const TAKER_WALLET_SEED_FILE: &str = "taker_seed";
+pub const TAKER_IDENTITY_SEED_FILE: &str = "taker_id_seed";
+
+pub const MAKER_WALLET_SEED_FILE: &str = "maker_seed";
+pub const MAKER_IDENTITY_SEED_FILE: &str = "maker_id_seed";
+
+pub const RANDOM_SEED_SIZE: usize = 256;
+pub const APP_SEED_SIZE: usize = 32;
+
 /// Struct containing keys for both legacy and libp2p connections.
 ///
 /// It is located here as all the information is derived from the seed.
@@ -32,6 +41,8 @@ impl Identities {
 
 pub trait Seed {
     fn seed(&self) -> Vec<u8>;
+
+    fn is_managed(&self) -> bool;
 
     fn derive_extended_priv_key(&self, network: Network) -> Result<ExtendedPrivKey> {
         let mut ext_priv_key_seed = [0u8; 64];
@@ -82,11 +93,14 @@ pub trait Seed {
 }
 
 #[derive(Copy, Clone)]
-pub struct RandomSeed([u8; 256]);
+pub struct RandomSeed([u8; RANDOM_SEED_SIZE]);
 
 impl Seed for RandomSeed {
     fn seed(&self) -> Vec<u8> {
         self.0.to_vec()
+    }
+    fn is_managed(&self) -> bool {
+        true
     }
 }
 
@@ -133,9 +147,15 @@ impl RandomSeed {
     }
 }
 
+impl From<[u8; RANDOM_SEED_SIZE]> for RandomSeed {
+    fn from(bytes: [u8; RANDOM_SEED_SIZE]) -> Self {
+        Self(bytes)
+    }
+}
+
 impl Default for RandomSeed {
     fn default() -> Self {
-        let mut seed = [0u8; 256];
+        let mut seed = [0u8; RANDOM_SEED_SIZE];
         rand::thread_rng().fill(&mut seed);
 
         Self(seed)
@@ -143,16 +163,19 @@ impl Default for RandomSeed {
 }
 
 #[derive(Copy, Clone)]
-pub struct AppSeed([u8; 32]);
+pub struct AppSeed([u8; APP_SEED_SIZE]);
 
 impl Seed for AppSeed {
     fn seed(&self) -> Vec<u8> {
         self.0.to_vec()
     }
+    fn is_managed(&self) -> bool {
+        false
+    }
 }
 
-impl From<[u8; 32]> for AppSeed {
-    fn from(bytes: [u8; 32]) -> Self {
+impl From<[u8; APP_SEED_SIZE]> for AppSeed {
+    fn from(bytes: [u8; APP_SEED_SIZE]) -> Self {
         Self(bytes)
     }
 }

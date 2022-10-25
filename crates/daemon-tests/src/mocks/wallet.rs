@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bdk_ext::new_test_wallet;
+use daemon::bdk;
 use daemon::bdk::bitcoin::util::psbt::PartiallySignedTransaction;
 use daemon::bdk::bitcoin::Amount;
 use daemon::bdk::bitcoin::Txid;
@@ -52,6 +53,9 @@ impl WalletActor {
     async fn handle(&mut self, msg: wallet::Sync) {
         self.mock.lock().await.sync(msg)
     }
+    async fn handle(&mut self, msg: wallet::ImportSeed) -> Result<bdk::wallet::AddressInfo> {
+        self.mock.lock().await.import_seed(msg)
+    }
 }
 
 #[automock]
@@ -69,6 +73,10 @@ pub trait Wallet {
     }
 
     fn sync(&mut self, _msg: wallet::Sync) {
+        unreachable!("mockall will reimplement this method")
+    }
+
+    fn import_seed(&mut self, _msg: wallet::ImportSeed) -> Result<bdk::wallet::AddressInfo> {
         unreachable!("mockall will reimplement this method")
     }
 }

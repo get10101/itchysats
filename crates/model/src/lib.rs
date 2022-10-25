@@ -456,6 +456,7 @@ pub struct WalletInfo {
     pub address: Address,
     pub last_updated_at: Timestamp,
     pub transactions: Vec<TransactionDetails>,
+    pub managed_wallet: bool,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -484,6 +485,12 @@ impl Timestamp {
     pub fn seconds_u64(&self) -> Result<u64> {
         let out = self.0.try_into().context("Unable to convert i64 to u64")?;
         Ok(out)
+    }
+}
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 

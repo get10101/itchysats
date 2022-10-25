@@ -29,6 +29,7 @@ pub struct WalletInfo {
     address: String,
     last_updated_at: Timestamp,
     transactions: Vec<TransactionDetails>,
+    managed_wallet: bool,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -75,6 +76,7 @@ impl ToSseEvent for Option<model::WalletInfo> {
                 address: wallet_info.address.to_string(),
                 last_updated_at: wallet_info.last_updated_at,
                 transactions: transaction_details,
+                managed_wallet: wallet_info.managed_wallet,
             }
         });
 

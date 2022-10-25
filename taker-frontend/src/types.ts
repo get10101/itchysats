@@ -11,6 +11,7 @@ export interface WalletInfo {
     address: string;
     last_updated_at: number;
     transactions: Transaction[];
+    managed_wallet: boolean;
 }
 
 export interface Transaction {

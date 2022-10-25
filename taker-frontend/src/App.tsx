@@ -287,7 +287,7 @@ export const App = () => {
             >
                 <Route
                     path="/wallet"
-                    element={<Wallet walletInfo={walletInfo} />}
+                    element={<Wallet walletInfo={walletInfo} cfds={cfds.length > 0} />}
                 />
                 <Route
                     element={
