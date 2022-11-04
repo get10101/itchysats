@@ -44,7 +44,7 @@ jobs:
       - name: Setup rust toolchain
         working-directory: "./"
         run: rustup show
-      - uses: Swatinem/rust-cache@v2.0.1
+      - uses: Swatinem/rust-cache@v2.0.2
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
