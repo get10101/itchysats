@@ -7,7 +7,6 @@ use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
 use model::libp2p::PeerId;
-use model::market_closing_price;
 use model::Cfd;
 use model::Contracts;
 use model::Identity;
@@ -15,7 +14,7 @@ use model::Leverage;
 use model::OfferId;
 use model::OrderId;
 use model::Price;
-use model::Role;
+use model::{ContractSymbol, Position};
 use sqlite_db;
 use std::collections::HashMap;
 use time::OffsetDateTime;
@@ -43,6 +42,7 @@ pub struct Actor {
     collab_settlement_actor: xtra::Address<collab_settlement::taker::Actor>,
     order_actor: xtra::Address<order::taker::Actor>,
     offers: Offers,
+    latest_offers: HashMap<(ContractSymbol, Position), model::Offer>,
     maker_identity: Identity,
     maker_peer_id: PeerId,
 }
@@ -64,6 +64,7 @@ impl Actor {
             offers: Offers::default(),
             maker_identity,
             maker_peer_id,
+            latest_offers: HashMap::new(),
         }
     }
 }
@@ -72,6 +73,18 @@ impl Actor {
 impl Actor {
     async fn handle_latest_offers(&mut self, msg: offer::taker::LatestOffers) {
         self.offers.insert(msg.0.clone());
+
+        for i in msg.0.iter() {
+            tracing::info!(
+                "Received new offer: {:?} with price {}",
+                i.position_maker.counter_position(),
+                i.price
+            );
+            self.latest_offers.insert(
+                (i.contract_symbol, i.position_maker.counter_position()),
+                i.clone(),
+            );
+        }
 
         if let Err(e) = self.projection_actor.send(projection::Update(msg.0)).await {
             tracing::warn!("Failed to send current offers to projection actor: {e:#}");
@@ -88,7 +101,16 @@ impl Actor {
 
         let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
 
-        let proposal_closing_price = market_closing_price(bid, ask, Role::Taker, cfd.position());
+        let offer = self
+            .latest_offers
+            .get(&(cfd.contract_symbol(), cfd.position().counter_position()))
+            .context("Cannot propose settlement without price")?;
+
+        if !offer.is_safe_to_take(OffsetDateTime::now_utc()) {
+            bail!("The maker's offer appears to be outdated, cannot close position");
+        }
+
+        let proposal_closing_price = offer.price;
 
         tracing::debug!(%order_id, %proposal_closing_price, %bid, %ask, %quote_timestamp, "Proposing settlement of contract");
 
