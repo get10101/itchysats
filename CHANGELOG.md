@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Market close position: when closing a position we will take the latest price from the maker you are connected to, i.e. market close the position.
+
 ## [0.7.0] - 2022-09-30
 
 ### Added
