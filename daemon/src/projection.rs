@@ -20,7 +20,6 @@ use model::calculate_profit;
 use model::calculate_short_liquidation_price;
 use model::libp2p::PeerId;
 use model::long_and_short_leverage;
-use model::market_closing_price;
 use model::CfdEvent;
 use model::ClosedCfd;
 use model::ContractSymbol;
@@ -599,7 +598,7 @@ impl Cfd {
         self
     }
 
-    pub fn with_current_quote(self, latest_quotes: Option<&LatestQuotes>) -> Self {
+    pub fn with_current_offer(self, latest_offer: Option<CfdOffer>) -> Self {
         // If the payout was already set we don't care about the current quote, this applies to
         // closed CFDs
         if self.payout.is_some() {
@@ -619,10 +618,9 @@ impl Cfd {
         }
 
         // Otherwise, compute based on current quote.
-        let latest_quote = latest_quotes.and_then(|quote| quote.get(&self.contract_symbol));
 
-        let latest_quote = match latest_quote {
-            Some(latest_quote) => latest_quote,
+        let latest_offer = match latest_offer {
+            Some(offer) => offer,
             None => {
                 tracing::trace!(order_id = %self.order_id, "Unable to calculate profit/loss without current price");
 
@@ -635,24 +633,7 @@ impl Cfd {
             }
         };
 
-        let (bid, ask) = match (Price::new(latest_quote.bid), Price::new(latest_quote.ask)) {
-            (Ok(bid), Ok(ask)) => (bid, ask),
-            (Err(e), Err(_)) | (Err(e), Ok(_)) | (Ok(_), Err(e)) => {
-                tracing::warn!(
-                    "Failed to compute profit/loss because latest price is invalid: {e}"
-                );
-
-                return Self {
-                    payout: None,
-                    profit_btc: None,
-                    profit_percent: None,
-                    ..self
-                };
-            }
-        };
-
-        let closing_price = market_closing_price(bid, ask, self.role, self.position);
-
+        let closing_price = latest_offer.price;
         let (long_leverage, short_leverage) =
             long_and_short_leverage(self.leverage_taker, self.role, self.position);
 
@@ -787,10 +768,19 @@ impl Cfd {
 struct Tx(Arc<FeedSenders>);
 
 impl Tx {
-    fn send_cfds_update(&self, cfds: HashMap<OrderId, Cfd>, quotes: &LatestQuotes) {
+    fn send_cfds_update(&self, cfds: HashMap<OrderId, Cfd>, offers: &MakerOffers) {
         let cfds_with_quote = cfds
             .into_iter()
-            .map(|(_, cfd)| cfd.with_current_quote(Some(quotes)))
+            .map(|(_, cfd)| {
+                let offer = match (cfd.position, cfd.contract_symbol) {
+                    // for calculating the profit we need to take the counter direction
+                    (Position::Long, ContractSymbol::EthUsd) => offers.ethusd_long.clone(),
+                    (Position::Long, ContractSymbol::BtcUsd) => offers.btcusd_long.clone(),
+                    (Position::Short, ContractSymbol::EthUsd) => offers.ethusd_short.clone(),
+                    (Position::Short, ContractSymbol::BtcUsd) => offers.btcusd_short.clone(),
+                };
+                cfd.with_current_offer(offer)
+            })
             .sorted_by(|a, b| {
                 Ord::cmp(
                     &b.aggregated.creation_timestamp,
@@ -1143,7 +1133,7 @@ impl Actor {
                 .cfds
                 .clone()
                 .expect("we initialized the state above; qed"),
-            &self.state.latest_quotes,
+            &self.state.offers,
         );
     }
 
@@ -1158,7 +1148,7 @@ impl Actor {
                 .cfds
                 .clone()
                 .expect("update_cfd fails if the CFDs have not been initialized yet"),
-            &self.state.latest_quotes,
+            &self.state.offers,
         );
     }
 
@@ -1180,11 +1170,6 @@ impl Actor {
         if let Err(e) = self.tx.send_offer_update(self.state.offers.clone()) {
             tracing::error!("Failed to propagate offer update: {e:#}");
         }
-    }
-
-    fn handle(&mut self, msg: Update<LatestQuotes>) {
-        self.state.update_quotes(msg.0.clone());
-        self.tx.send_quotes_update(msg.0.clone());
 
         let hydrated_cfds = match self.state.cfds.clone() {
             None => {
@@ -1194,7 +1179,12 @@ impl Actor {
             Some(cfds) => cfds,
         };
 
-        self.tx.send_cfds_update(hydrated_cfds, &msg.0);
+        self.tx.send_cfds_update(hydrated_cfds, &self.state.offers);
+    }
+
+    fn handle(&mut self, msg: Update<LatestQuotes>) {
+        self.state.update_quotes(msg.0.clone());
+        self.tx.send_quotes_update(msg.0);
     }
 }
 
@@ -1811,7 +1801,7 @@ mod tests {
                 .load_open_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
+            projection_open.with_current_offer(None) // unconditional processing in `projection`
         };
 
         db.move_to_failed_cfds().await.unwrap();
@@ -1821,7 +1811,7 @@ mod tests {
                 .load_failed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            projection_failed.with_current_quote(None) // unconditional processing in `projection`
+            projection_failed.with_current_offer(None) // unconditional processing in `projection`
         };
 
         // this comparison actually omits the `aggregated` field on
@@ -1847,7 +1837,7 @@ mod tests {
                 .load_open_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
+            projection_open.with_current_offer(None) // unconditional processing in `projection`
         };
 
         db.move_to_failed_cfds().await.unwrap();
@@ -1857,7 +1847,7 @@ mod tests {
                 .load_failed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            projection_failed.with_current_quote(None) // unconditional processing in `projection`
+            projection_failed.with_current_offer(None) // unconditional processing in `projection`
         };
 
         // this comparison actually omits the `aggregated` field on
@@ -1891,7 +1881,7 @@ mod tests {
                 .load_open_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            projection_open.with_current_quote(None) // unconditional processing in `projection`
+            projection_open.with_current_offer(None) // unconditional processing in `projection`
         };
 
         db.move_to_closed_cfds().await.unwrap();
@@ -1901,7 +1891,7 @@ mod tests {
                 .load_closed_cfd::<Cfd>(order_id, bdk::bitcoin::Network::Testnet)
                 .await
                 .unwrap();
-            let mut projection_closed = projection_closed.with_current_quote(None); // unconditional processing in `projection`
+            let mut projection_closed = projection_closed.with_current_offer(None); // unconditional processing in `projection`
 
             // We expect these liquidation prices to differ, because they are calculated to
             // different level of precision depending on whether the CFD is open, closed or failed
