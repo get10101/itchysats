@@ -3,7 +3,6 @@
 use crate::bitcoin::util::psbt::PartiallySignedTransaction;
 use crate::bitcoin::Txid;
 use crate::listen_protocols::TAKER_LISTEN_PROTOCOLS;
-use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
 pub use bdk;
@@ -23,7 +22,6 @@ use model::Identity;
 use model::Leverage;
 use model::OfferId;
 use model::OrderId;
-use model::Price;
 use model::Role;
 use online_status::ConnectionStatus;
 use parse_display::Display;
@@ -33,12 +31,10 @@ use seed::Identities;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
-use time::ext::NumericalDuration;
 use tokio::sync::watch;
 use tokio_extras::Tasks;
 use tracing::instrument;
 use xtra::prelude::*;
-use xtra_bitmex_price_feed::QUOTE_INTERVAL_MINUTES;
 use xtra_libp2p::dialer;
 use xtra_libp2p::endpoint;
 use xtra_libp2p::multiaddress_ext::MultiaddrExt;
@@ -387,40 +383,8 @@ where
 
     #[instrument(skip(self), err)]
     pub async fn propose_settlement(&self, order_id: OrderId) -> Result<()> {
-        let contract_symbol = self
-            .executor
-            .query(order_id, |cfd| Ok(cfd.contract_symbol()))
-            .await?;
-
-        let latest_quote = *self
-            .price_feed_actor
-            .send(xtra_bitmex_price_feed::GetLatestQuotes)
-            .await
-            .context("Price feed not available")?
-            .get(&into_price_feed_symbol(contract_symbol))
-            .context("No quote available")?;
-
-        let quote_timestamp = latest_quote
-            .timestamp
-            .format(&time::format_description::well_known::Rfc3339)
-            .context("Failed to format timestamp")?;
-
-        let threshold = QUOTE_INTERVAL_MINUTES.minutes() * 2;
-
-        if latest_quote.is_older_than(threshold) {
-            bail!(
-                "Latest quote is older than {} minutes. Refusing to settle with old price.",
-                threshold.whole_minutes()
-            )
-        }
-
         self.cfd_actor
-            .send(taker_cfd::ProposeSettlement {
-                order_id,
-                bid: Price::new(latest_quote.bid())?,
-                ask: Price::new(latest_quote.ask())?,
-                quote_timestamp,
-            })
+            .send(taker_cfd::ProposeSettlement { order_id })
             .await?
     }
 
@@ -480,13 +444,6 @@ impl Environment {
 /// The version of the `daemon` crate, as specified in its `Cargo.toml` file.
 pub fn version() -> String {
     VERSION.to_string()
-}
-
-fn into_price_feed_symbol(symbol: model::ContractSymbol) -> xtra_bitmex_price_feed::ContractSymbol {
-    match symbol {
-        model::ContractSymbol::BtcUsd => xtra_bitmex_price_feed::ContractSymbol::BtcUsd,
-        model::ContractSymbol::EthUsd => xtra_bitmex_price_feed::ContractSymbol::EthUsd,
-    }
 }
 
 #[cfg(test)]

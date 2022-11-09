@@ -13,7 +13,6 @@ use model::Identity;
 use model::Leverage;
 use model::OfferId;
 use model::OrderId;
-use model::Price;
 use model::{ContractSymbol, Position};
 use sqlite_db;
 use std::collections::HashMap;
@@ -28,12 +27,9 @@ pub struct PlaceOrder {
     pub leverage: Leverage,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ProposeSettlement {
     pub order_id: OrderId,
-    pub bid: Price,
-    pub ask: Price,
-    pub quote_timestamp: String,
 }
 
 pub struct Actor {
@@ -92,12 +88,7 @@ impl Actor {
     }
 
     async fn handle_propose_settlement(&mut self, msg: ProposeSettlement) -> Result<()> {
-        let ProposeSettlement {
-            order_id,
-            bid,
-            ask,
-            quote_timestamp,
-        } = msg;
+        let ProposeSettlement { order_id } = msg;
 
         let cfd = self.db.load_open_cfd::<Cfd>(order_id, ()).await?;
 
@@ -111,8 +102,12 @@ impl Actor {
         }
 
         let proposal_closing_price = offer.price;
+        let offer_timestamp = offer
+            .creation_timestamp_maker
+            .format()
+            .context("Failed to format timestamp")?;
 
-        tracing::debug!(%order_id, %proposal_closing_price, %bid, %ask, %quote_timestamp, "Proposing settlement of contract");
+        tracing::debug!(%order_id, %proposal_closing_price, %offer_timestamp, "Proposing settlement of contract");
 
         // Wait for the response to check for invariants (ie. whether it is possible to settle)
         self.collab_settlement_actor

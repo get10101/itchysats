@@ -487,6 +487,13 @@ impl Timestamp {
         let out = self.0.try_into().context("Unable to convert i64 to u64")?;
         Ok(out)
     }
+
+    pub fn format(&self) -> Result<String> {
+        let formatted = OffsetDateTime::from_unix_timestamp(self.0)
+            .context("Could not parse timestamp")?
+            .format(&time::format_description::well_known::Rfc3339)?;
+        Ok(formatted)
+    }
 }
 
 /// Funding rate per SETTLEMENT_INTERVAL
