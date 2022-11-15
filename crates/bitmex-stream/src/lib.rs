@@ -13,7 +13,6 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio_tungstenite::tungstenite;
 use tracing::Instrument;
-use url::Url;
 
 pub use anyhow::Error;
 
@@ -68,7 +67,7 @@ fn subscribe_impl<const N: usize>(
                 .duration_since(UNIX_EPOCH)?
                 .add(Duration::from_secs(5))
                 .as_secs();
-            let signature = credentials.sign(Method::GET, expires, &Url::parse(url.as_str())?, "");
+            let signature = credentials.sign(Method::GET, expires, &url, "");
             let _ = connection
                 .send(tungstenite::Message::try_from(Command::from(signature))?)
                 .await;
@@ -185,19 +184,9 @@ impl Credentials {
         }
     }
 
-    fn sign(&self, method: Method, expires: u64, url: &Url, body: &str) -> Signature {
+    fn sign(&self, method: Method, expires: u64, url: &str, body: &str) -> Signature {
         let signed_key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, self.secret.as_bytes());
-        let sign_message = match url.query() {
-            Some(query) => format!(
-                "{}{}?{}{}{}",
-                method.as_str(),
-                url.path(),
-                query,
-                expires,
-                body
-            ),
-            None => format!("{}{}{}{}", method.as_str(), url.path(), expires, body),
-        };
+        let sign_message = format!("{}{}{}{}", method.as_str(), url, expires, body);
 
         let signature = hex::encode(ring::hmac::sign(&signed_key, sign_message.as_bytes()));
         Signature {
@@ -234,7 +223,6 @@ mod test {
     use crate::Signature;
     use anyhow::Result;
     use serde_json::to_string;
-    use url::Url;
 
     #[test]
     fn test_signature_get() -> Result<()> {
@@ -242,12 +230,8 @@ mod test {
             "LAqUlngMIQkIUjXMUreyu3qn",
             "chNOOS4KvNXR_Xq4k4c9qsfoKWvnDecLATCRlcBwyKDYnWgO",
         );
-        let Signature { signature, .. } = tr.sign(
-            Method::GET,
-            1518064236,
-            &Url::parse("http://a.com/api/v1/instrument")?,
-            "",
-        );
+        let Signature { signature, .. } =
+            tr.sign(Method::GET, 1518064236, "/api/v1/instrument", "");
         assert_eq!(
             signature,
             "c7682d435d0cfe87c16098df34ef2eb5a549d4c5a3c2b1f0f77b8af73423bf00"
@@ -264,10 +248,7 @@ mod test {
         let Signature { signature, .. } = tr.sign(
             Method::GET,
             1518064237,
-            &Url::parse_with_params(
-                "http://a.com/api/v1/instrument",
-                &[("filter", r#"{"symbol": "XBTM15"}"#)],
-            )?,
+            "/api/v1/instrument?filter=%7B%22symbol%22%3A+%22XBTM15%22%7D",
             "",
         );
         assert_eq!(
@@ -286,7 +267,7 @@ mod test {
         let Signature {  signature, .. } = credentials.sign(
             Method::POST,
             1518064238,
-            &Url::parse("http://a.com/api/v1/order")?,
+            "/api/v1/order",
             r#"{"symbol":"XBTM15","price":219.0,"clOrdID":"mm_bitmex_1a/oemUeQ4CAJZgP3fjHsA","orderQty":98}"#,
         );
         assert_eq!(

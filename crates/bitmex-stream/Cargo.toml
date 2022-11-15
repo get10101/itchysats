@@ -17,7 +17,6 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "time", "tracing"] }
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tracing = "0.1"
-url = "2.3.1"
 
 [dev-dependencies]
 anyhow = "1"
