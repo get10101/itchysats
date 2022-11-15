@@ -83,7 +83,7 @@ fn subscribe_impl<const N: usize>(
 
         loop {
             tokio::select! {
-                _ = tokio_extras::time::sleep_silent(Duration::from_secs(5)) => {
+                _ = sleep(Duration::from_secs(5)) => {
                     let span = tracing::trace_span!("Ping BitMex");
                     span.in_scope(|| tracing::trace!("No message from BitMex in the last 5 seconds, pinging"));
                     let _ = connection
@@ -124,6 +124,11 @@ fn subscribe_impl<const N: usize>(
     };
 
     stream.boxed()
+}
+
+pub async fn sleep(duration: Duration) {
+    #[allow(clippy::disallowed_methods)]
+    tokio::time::sleep(duration).await
 }
 
 #[derive(Debug, Copy, Clone)]
