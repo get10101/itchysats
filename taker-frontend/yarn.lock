@@ -7067,10 +7067,10 @@ walker@^1.0.8:
   dependencies:
     makeerror "1.0.12"
 
-web-vitals@^3.0.3:
-  version "3.0.3"
-  resolved "https://registry.yarnpkg.com/web-vitals/-/web-vitals-3.0.3.tgz#e08cf4d30398baf91984f230a87872d6049e173f"
-  integrity sha512-8K6cl3alkVhwv7RQm3WAWFzvP9dBTH4CwOE7G3DfQDEnBJTdtNgX5XMqgE7aE79wac/kJ8fHWftUfH3AVxxbBw==
+web-vitals@^3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/web-vitals/-/web-vitals-3.1.0.tgz#a6f5156cb6c7fee562da46078540265ac2cd2d16"
+  integrity sha512-zCeQ+bOjWjJbXv5ZL0r8Py3XP2doCQMZXNKlBGfUjPAVZWokApdeF/kFlK1peuKlCt8sL9TFkKzyXE9/cmNJQA==
 
 webidl-conversions@^7.0.0:
   version "7.0.0"
