@@ -156,7 +156,7 @@ cd taker-frontend && yarn run eslint
 
 ## Contact
 
-Feel free to reach out to us on [Twitter](twitter.com/itchysats), [Telegram](https://t.me/joinchat/ULycH50PLV1jOTI0) or [Matrix](https://matrix.to/#/!OSErkwZgvuIhcizfaI:matrix.org?via=matrix.org).
+Feel free to reach out to us on [Twitter](https://twitter.com/itchysats), [Telegram](https://t.me/joinchat/ULycH50PLV1jOTI0) or [Matrix](https://matrix.to/#/!OSErkwZgvuIhcizfaI:matrix.org?via=matrix.org).
 
 ## Contributing
 
