@@ -9,7 +9,7 @@ jobs:
   add_issue_to_project:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/add-to-project@v0.3.0
+      - uses: actions/add-to-project@v0.4.0
         with:
           project-url: https://github.com/orgs/itchysats/projects/1
           github-token: ${{ secrets.ITCHY_PROJECT_AUTOMATION_TOKEN }}
