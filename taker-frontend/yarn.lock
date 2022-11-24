@@ -4459,10 +4459,10 @@ form-data@^4.0.0:
     combined-stream "^1.0.8"
     mime-types "^2.1.12"
 
-framer-motion@^7.5.3:
-  version "7.5.3"
-  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-7.5.3.tgz#a1de7d6c4abbf7333619d4a6c8df74c12240be43"
-  integrity sha512-VvANga9Z7bYtKMAsM/je81FwJDHfThOYywN04xVQ4OGdMVY09Bowx/q7nZd6XtytLuv6byc6GT1mYwag+SQ/nw==
+framer-motion@^7.6.10:
+  version "7.6.10"
+  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-7.6.10.tgz#5eaf5448065167e67b46aa0f189ac0fa150e3711"
+  integrity sha512-XAzeEIezmK1RZ/YPn4rviOCOLhIUta5+KSsRv4VZ9dDnnzhp8sq676AKKR2K5Kvuj6JU4wL3QEXC20yVX0XjvA==
   dependencies:
     "@motionone/dom" "10.13.1"
     framesync "6.1.2"
