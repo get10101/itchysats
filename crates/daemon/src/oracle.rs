@@ -262,8 +262,16 @@ impl Actor {
 
                     Ok(())
                 },
-                |e| async move {
-                    tracing::debug!("Failed to fetch attestation: {:#}", e);
+                move |e| async move {
+                    let now = OffsetDateTime::now_utc();
+
+                    // If the event is more than 10 minutes in the past we expect an attestation to
+                    // be available and log an error if we can't fetch it
+                    if now > event_id.timestamp() + Duration::minutes(10) {
+                        tracing::error!("Failed to fetch attestation for {event_id}: {e:#}");
+                    } else {
+                        tracing::debug!("Failed to fetch attestation for {event_id}: {e:#}");
+                    }
                 },
             )
         }
