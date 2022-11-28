@@ -11,7 +11,6 @@ use bdk::bitcoin::Txid;
 use bdk::descriptor::Descriptor;
 use bdk::electrum_client;
 use bdk::electrum_client::ElectrumApi;
-use bdk::electrum_client::GetHistoryRes;
 use bdk::miniscript::DescriptorTrait;
 use btsieve::ScriptStatus;
 use btsieve::State;
@@ -25,11 +24,8 @@ use model::CET_TIMELOCK;
 use serde_json::Value;
 use sqlite_db;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tokio_extras::FutureExt;
-use tracing::debug_span;
 use tracing::Instrument;
 use xtra_productivity::xtra_productivity;
 use xtras::SendInterval;
@@ -39,7 +35,6 @@ const CLOSE_FINALITY_CONFIRMATIONS: u32 = 3;
 const COMMIT_FINALITY_CONFIRMATIONS: u32 = 1;
 const CET_FINALITY_CONFIRMATIONS: u32 = 3;
 const REFUND_FINALITY_CONFIRMATIONS: u32 = 3;
-const BATCH_SIZE: usize = 25;
 
 /// Electrum client timeout in seconds
 ///
@@ -47,13 +42,6 @@ const BATCH_SIZE: usize = 25;
 /// client. We explicitly set the timeout because otherwise the underlying TCP connection timeout is
 /// used which is hard to be predicted.
 const ELECTRUM_CLIENT_TIMEOUT_SECS: u8 = 120;
-
-/// Timeout for each response from script_get_history
-///
-/// Requests are batched and all batches handled in parallel. We expect the responses to arrive
-/// continuously. If we don't receive a response within the bounds of this timeout then we break the
-/// receiver loop and stop processing.
-const SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct MonitorAfterContractSetup {
     order_id: OrderId,
@@ -127,7 +115,7 @@ pub struct Sync;
 //  -> Might as well just send out all events independent of sending to the cfd actor.
 pub struct Actor {
     executor: command::Executor,
-    client: Arc<bdk::electrum_client::Client>,
+    client: bdk::electrum_client::Client,
     state: State<Event>,
     db: sqlite_db::Connection,
 }
@@ -365,7 +353,7 @@ impl Actor {
             .into();
 
         Ok(Self {
-            client: Arc::new(client),
+            client,
             executor,
             state: State::new(latest_block),
             db,
@@ -493,13 +481,10 @@ impl Actor {
 
         tracing::debug!("Sync Started: Updating status of {num_transactions} transactions");
 
-        let scripts = self
-            .state
-            .monitoring_scripts()
-            .cloned()
-            .collect::<Vec<Script>>();
-
-        let histories = batch_script_get_history(self.client.clone(), scripts).await;
+        let histories = self
+            .client
+            .batch_script_get_history(self.state.monitoring_scripts())
+            .context("Failed to get script histories")?;
 
         tracing::trace!("Sync Update: Fetching histories finished, updating state");
 
@@ -1050,74 +1035,6 @@ static TRANSACTION_BROADCAST_COUNTER: conquer_once::Lazy<prometheus::IntCounterV
         .unwrap()
     });
 
-async fn batch_script_get_history(
-    client: Arc<electrum_client::Client>,
-    scripts: Vec<Script>,
-) -> Vec<Vec<GetHistoryRes>> {
-    let (tx_script_updates, mut rx_script_updates) = tokio::sync::mpsc::channel(BATCH_SIZE * 4);
-
-    let scripts_len = scripts.len();
-    let batches = scripts.chunks(BATCH_SIZE).map(|batch| batch.to_owned());
-
-    // It's important to move here so the sender gets dropped and the receiver finishes correctly
-    batches.for_each(move |batch| {
-        let tx_script_updates = tx_script_updates.clone();
-        let client = client.clone();
-
-        tokio::task::spawn_blocking({
-            move || {
-                for script in batch {
-                    match client.script_get_history(&script) {
-                        Ok(script_history_response) => {
-                            // We use blocking_send to stay within a sync context here
-                            // One should not use async code in a spawn_blocking block
-                            if let Err(e) = tx_script_updates.blocking_send(script_history_response)
-                            {
-                                tracing::error!(
-                                    "Error when processing script_get_history response: {e:#}"
-                                )
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("Error when fetching script history: {e:#}")
-                        }
-                    }
-                }
-            }
-        });
-    });
-
-    let mut histories = Vec::with_capacity(scripts_len);
-
-    loop {
-        match rx_script_updates
-            .recv()
-            .timeout(SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT, || {
-                debug_span!("script_get_history")
-            })
-            .await
-        {
-            Ok(Some(script_history)) => histories.push(script_history),
-            Ok(None) => break,
-            Err(tokio::time::error::Elapsed { .. }) => {
-                let histories_len = histories.len();
-                tracing::warn!(
-                    requests_sent=%scripts_len,
-                    responses_received=histories_len,
-                    timeout=?SCRIPT_GET_HISTORY_RESPONSE_TIMEOUT,
-                    "Not all responses received because timeout reached"
-                );
-
-                // We only break, we will still return the histories that were fetched and process
-                // them, but it might not be all
-                break;
-            }
-        }
-    }
-
-    histories
-}
-
 static SYNC_DURATION_HISTOGRAM: conquer_once::Lazy<prometheus::Histogram> =
     conquer_once::Lazy::new(|| {
         prometheus::register_histogram!(
@@ -1131,80 +1048,3 @@ static SYNC_DURATION_HISTOGRAM: conquer_once::Lazy<prometheus::Histogram> =
         )
         .unwrap()
     });
-
-#[cfg(test)]
-mod test {
-    use crate::monitor::batch_script_get_history;
-    use crate::monitor::ELECTRUM_CLIENT_TIMEOUT_SECS;
-    use bdk::bitcoin;
-    use bdk::bitcoin::Script;
-    use bdk::electrum_client;
-    use std::str::FromStr;
-    use std::sync::Arc;
-    use std::time::SystemTime;
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    fn get_test_server() -> String {
-        std::env::var("TEST_ELECTRUM_SERVER")
-            .unwrap_or_else(|_| "electrum.blockstream.info:50001".into())
-    }
-
-    /// Test sanity of batch_script_get_history by simulating what the production code does
-    ///
-    /// Ignored on CI because it requires a mainnet Electrum instance to run properly
-    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-    #[ignore]
-    async fn given_many_scripts_then_batch_script_get_history_works() {
-        // Mt.Gox hack address
-        let script = bitcoin::Address::from_str("1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF")
-            .unwrap()
-            .script_pubkey();
-
-        let mut scripts = Vec::new();
-
-        for _ in 0..100 {
-            scripts.push(script.clone());
-        }
-
-        test_batch_script_get_history(scripts).await;
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-    #[ignore]
-    async fn given_script_not_on_chain_then_batch_script_get_history_returns_empty_response() {
-        // Some testnet address (to simulate a script where we get an empty response)
-        let script = bitcoin::Address::from_str("2MsQEtPJ6JJZszMYrD6udjUyTDFLczWQrv9")
-            .unwrap()
-            .script_pubkey();
-
-        test_batch_script_get_history(vec![script]).await;
-    }
-
-    async fn test_batch_script_get_history(scripts: Vec<Script>) {
-        let _guard = tracing_subscriber::fmt()
-            .with_env_filter("info")
-            .with_test_writer()
-            .set_default();
-
-        tracing::info!("Test runner started...");
-        let start_time = SystemTime::now();
-
-        let client = bdk::electrum_client::Client::from_config(
-            get_test_server().as_str(),
-            electrum_client::ConfigBuilder::new()
-                .timeout(Some(ELECTRUM_CLIENT_TIMEOUT_SECS))
-                .unwrap()
-                .build(),
-        )
-        .unwrap();
-
-        let scripts_len = scripts.len();
-        let rx_script_history = batch_script_get_history(Arc::new(client), scripts).await;
-
-        assert_eq!(scripts_len, rx_script_history.len());
-
-        let end_time = SystemTime::now();
-        let execution_duration = end_time.duration_since(start_time).unwrap();
-        tracing::info!("Total execution duration: {execution_duration:?}");
-    }
-}

@@ -1054,7 +1054,6 @@ dependencies = [
  "tokio-extras",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
  "uuid 1.1.2",
  "x25519-dalek",
  "xtra",
