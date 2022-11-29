@@ -6,7 +6,7 @@ description = "Implementation of the `/itchysats/offer` protocol using xtra-libp
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1.57"
+async-trait = "0.1.59"
 asynchronous-codec = { version = "0.6.0", features = ["json"] }
 conquer-once = "0.3.2"
 futures = { version = "0.3", default-features = false }
