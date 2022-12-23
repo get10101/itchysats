@@ -238,6 +238,7 @@ pub struct Aggregated {
 
     version: u32,
     creation_timestamp: Timestamp,
+    last_update: Timestamp,
 }
 
 impl Aggregated {
@@ -256,6 +257,7 @@ impl Aggregated {
             settlement_state: None,
             version: 0,
             creation_timestamp: Timestamp::now(),
+            last_update: Timestamp::now(),
         }
     }
 
@@ -297,6 +299,10 @@ impl Aggregated {
     // Only used in integration tests
     pub fn latest_fees(&self) -> model::CompleteFee {
         self.fee_account.settle()
+    }
+
+    pub fn last_update(&self) -> Timestamp {
+        self.last_update
     }
 }
 
@@ -422,6 +428,7 @@ impl Cfd {
         if self.aggregated.version == 0 {
             self.aggregated.creation_timestamp = event.timestamp;
         }
+        self.aggregated.last_update = event.timestamp;
 
         // First, try to set state based on event.
         use EventKind::*;

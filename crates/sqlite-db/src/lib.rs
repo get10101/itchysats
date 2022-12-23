@@ -378,6 +378,24 @@ impl Connection {
         Box::pin(stream)
     }
 
+    pub fn load_all_closed_cfds<'a, C>(
+        &'a self,
+        args: C::CtorArgs,
+    ) -> impl Stream<Item = Result<C>> + Unpin + '_
+    where
+        C: CfdAggregate + ClosedCfdAggregate,
+        C::CtorArgs: Clone + Send + Sync,
+    {
+        let stream = async_stream::stream! {
+            let ids = self.load_closed_cfd_ids().await?;
+            for id in ids {
+                yield self.load_closed_cfd(id, args.clone()).await
+                    .with_context(|| format!("Failed to load closed CFD {id}"));
+            }
+        };
+        Box::pin(stream)
+    }
+
     /// Loads all CFDs where we are still able to append events
     ///
     /// This function is to be called when we only want to process CFDs where events can still be

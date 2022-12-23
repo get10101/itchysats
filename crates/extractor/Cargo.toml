@@ -1,0 +1,20 @@
+[package]
+name = "extractor"
+description = "Extracts useful stats from an ItchySats database into CSV format"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.68"
+clap = { version = "4", features = ["derive"] }
+csv = "1.1.6"
+daemon = { path = "../daemon" }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+sqlite-db = { path = "../sqlite-db" }
+sqlx = { version = "0.6.2", features = ["offline", "sqlite", "uuid", "runtime-tokio-rustls"] }
+time = { version = "0.3.15", features = ["serde", "formatting", "serde-well-known"] }
+tokio = "1.23.0"
+tracing = "0.1.37"
