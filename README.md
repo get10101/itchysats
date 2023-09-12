@@ -1,3 +1,11 @@
+# WARNING
+
+> ⚠️ **Unmaintained: This project is unmaintained. We've continued the core idea of non-custodial trading with our new project 10101 here: https://github.com/get10101/10101/**
+
+# WARNING
+
+
+
 # ItchySats
 
 [![Bors enabled](https://bors.tech/images/badge_small.svg)](https://app.bors.tech/repositories/39253)
